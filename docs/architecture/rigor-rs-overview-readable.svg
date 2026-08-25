@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1350" viewBox="0 0 2400 1350" role="img" aria-labelledby="title desc">
+  <title id="title">RIGOR-RS human-readable end-to-end architecture</title>
+  <desc id="desc">A three-row architecture showing authoritative inputs, integrity controls, official baseline reproduction, diagnostics, research planning, code execution, validation evaluation, outcome decisions, finalization, hidden evaluation, and scientific memory.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#334155"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#16835b"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#c73030"/>
+    </marker>
+    <style>
+      .title { font: 700 42px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 23px 'Segoe UI', Arial, sans-serif; fill: #475569; }
+      .section { font: 700 21px 'Segoe UI', Arial, sans-serif; fill: #334155; letter-spacing: 1px; }
+      .box-title { font: 700 25px 'Segoe UI', Arial, sans-serif; fill: #13213c; }
+      .box-text { font: 400 21px 'Segoe UI', Arial, sans-serif; fill: #27364f; }
+      .small { font: 600 18px 'Segoe UI', Arial, sans-serif; fill: #475569; }
+      .edge { font: 700 19px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .yes { font: 700 20px 'Segoe UI', Arial, sans-serif; fill: #087a55; }
+      .no { font: 700 20px 'Segoe UI', Arial, sans-serif; fill: #b42318; }
+      .input { fill: #e8f1ff; stroke: #2762c6; stroke-width: 3; }
+      .guard { fill: #fff7df; stroke: #b7791f; stroke-width: 3; }
+      .agent { fill: #f2eaff; stroke: #7c3aed; stroke-width: 3; }
+      .process { fill: #ecfdf3; stroke: #16835b; stroke-width: 3; }
+      .decision { fill: #fff4e6; stroke: #c45d05; stroke-width: 4; }
+      .danger { fill: #ffe8e8; stroke: #c73030; stroke-width: 3; }
+      .store { fill: #eef2f7; stroke: #64748b; stroke-width: 3; }
+      .line { fill: none; stroke: #334155; stroke-width: 4; marker-end: url(#arrow); }
+      .line-green { fill: none; stroke: #16835b; stroke-width: 5; marker-end: url(#arrowGreen); }
+      .line-red { fill: none; stroke: #c73030; stroke-width: 4; marker-end: url(#arrowRed); }
+      .line-dash { fill: none; stroke: #64748b; stroke-width: 3; stroke-dasharray: 10 8; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="2400" height="1350" fill="#ffffff"/>
+  <text x="70" y="62" class="title">RIGOR-RS — Autonomous Recommender-System Research</text>
+  <text x="70" y="98" class="subtitle">Two reasoning agents, one deterministic integrity kernel, and no test-feedback loop</text>
+
+  <rect x="1660" y="34" width="135" height="40" rx="8" class="guard"/>
+  <text x="1727" y="61" text-anchor="middle" class="small">GUARD</text>
+  <rect x="1810" y="34" width="135" height="40" rx="8" class="agent"/>
+  <text x="1877" y="61" text-anchor="middle" class="small">AGENT</text>
+  <rect x="1960" y="34" width="135" height="40" rx="8" class="process"/>
+  <text x="2027" y="61" text-anchor="middle" class="small">PROCESS</text>
+  <polygon points="2170,34 2240,54 2170,74 2100,54" class="decision"/>
+  <text x="2170" y="61" text-anchor="middle" class="small">DECISION</text>
+
+  <text x="70" y="150" class="section">A. ESTABLISH TRUST AND REPRODUCE THE ORGANIZER BASELINE</text>
+
+  <rect x="70" y="180" width="360" height="250" rx="18" class="input"/>
+  <text x="250" y="222" text-anchor="middle" class="box-title">1. AUTHORITATIVE INPUTS</text>
+  <text x="100" y="270" class="box-text">
+    <tspan x="100" dy="0">• User goal and preferences</tspan>
+    <tspan x="100" dy="38">• AliCCP dataset and fixed splits</tspan>
+    <tspan x="100" dy="38">• Official NISE baseline</tspan>
+    <tspan x="100" dy="38">• Metrics, evaluator and schema</tspan>
+    <tspan x="100" dy="38">• ε, patience and resource limits</tspan>
+  </text>
+
+  <rect x="500" y="180" width="410" height="250" rx="18" class="guard"/>
+  <text x="705" y="222" text-anchor="middle" class="box-title">2. RESEARCH INTEGRITY KERNEL</text>
+  <text x="535" y="270" class="box-text">
+    <tspan x="535" dy="0">• Organizer rules override prompts</tspan>
+    <tspan x="535" dy="38">• Train / validation / test firewall</tspan>
+    <tspan x="535" dy="38">• Hashes data, code and evaluator</tspan>
+    <tspan x="535" dy="38">• Enforces tokens, GPU and retries</tspan>
+    <tspan x="535" dy="38">• Starts immutable event logging</tspan>
+  </text>
+
+  <rect x="980" y="180" width="390" height="250" rx="18" class="guard"/>
+  <text x="1175" y="222" text-anchor="middle" class="box-title">3. OFFICIAL BASELINE GATE</text>
+  <text x="1015" y="270" class="box-text">
+    <tspan x="1015" dy="0">• Pin environment, source and seeds</tspan>
+    <tspan x="1015" dy="38">• Validate schema and leakage</tspan>
+    <tspan x="1015" dy="38">• Run smoke test</tspan>
+    <tspan x="1015" dy="38">• Train official baseline</tspan>
+    <tspan x="1015" dy="38">• Use official validation evaluator</tspan>
+  </text>
+
+  <polygon points="1540,180 1695,305 1540,430 1385,305" class="decision"/>
+  <text x="1540" y="276" text-anchor="middle" class="box-title">BASELINE</text>
+  <text x="1540" y="310" text-anchor="middle" class="box-title">REPRODUCED?</text>
+  <text x="1540" y="347" text-anchor="middle" class="small">Within supplied tolerance</text>
+
+  <rect x="1790" y="180" width="540" height="250" rx="18" class="process"/>
+  <text x="2060" y="222" text-anchor="middle" class="box-title">4. DATA DIAGNOSIS</text>
+  <text x="1830" y="270" class="box-text">
+    <tspan x="1830" dy="0">• Deterministic EDA and versioned visuals</tspan>
+    <tspan x="1830" dy="38">• CTR/CVR imbalance and clicked subset</tspan>
+    <tspan x="1830" dy="38">• Cardinality, missingness and unseen IDs</tspan>
+    <tspan x="1830" dy="38">• Train/validation shift and leakage checks</tspan>
+    <tspan x="1830" dy="38">• Immutable transform/data artifacts</tspan>
+  </text>
+
+  <path d="M430 305 H500" class="line"/>
+  <path d="M910 305 H980" class="line"/>
+  <path d="M1370 305 H1385" class="line"/>
+  <path d="M1695 305 H1790" class="line-green"/>
+  <text x="1725" y="285" class="yes">YES</text>
+
+  <rect x="1395" y="465" width="290" height="100" rx="14" class="danger"/>
+  <text x="1540" y="500" text-anchor="middle" class="box-title">NO → REPAIR</text>
+  <text x="1540" y="530" text-anchor="middle" class="small">env → data → schema → evaluator</text>
+  <text x="1540" y="555" text-anchor="middle" class="small" style="fill:#b42318;font-weight:700">Retry cap reached → integrity halt</text>
+  <path d="M1540 430 V465" class="line-red"/>
+  <text x="1560" y="455" class="no">NO</text>
+  <path d="M1395 515 H1175 V440" class="line-red"/>
+  <text x="1210" y="495" class="no">RETRY BASELINE</text>
+
+  <text x="70" y="625" class="section">B. RUN ONE BOUNDED EXPERIMENT AT A TIME</text>
+
+  <rect x="1790" y="655" width="540" height="245" rx="18" class="agent"/>
+  <text x="2060" y="697" text-anchor="middle" class="box-title">5. RESEARCH AGENT</text>
+  <text x="1830" y="744" class="box-text">
+    <tspan x="1830" dy="0">• Reads scoped diagnostics and prior runs</tspan>
+    <tspan x="1830" dy="38">• Chooses one evidence-based hypothesis</tspan>
+    <tspan x="1830" dy="38">• Pre-registers success and failure signals</tspan>
+    <tspan x="1830" dy="38">• Sets budget, guardrails and fallback</tspan>
+    <tspan x="1830" dy="38">• Optional read-only research retrieval</tspan>
+  </text>
+
+  <rect x="1305" y="655" width="415" height="245" rx="18" class="agent"/>
+  <text x="1512" y="697" text-anchor="middle" class="box-title">6. CODE + TRAINING</text>
+  <text x="1340" y="744" class="box-text">
+    <tspan x="1340" dy="0">• Isolated minimal code patch</tspan>
+    <tspan x="1340" dy="38">• Unit, schema and leakage tests</tspan>
+    <tspan x="1340" dy="38">• Cheap smoke run</tspan>
+    <tspan x="1340" dy="38">• Train on TRAIN only</tspan>
+    <tspan x="1340" dy="38">• Checkpoints and resource telemetry</tspan>
+  </text>
+
+  <rect x="835" y="655" width="400" height="245" rx="18" class="process"/>
+  <text x="1035" y="697" text-anchor="middle" class="box-title">7. OFFICIAL VALIDATION</text>
+  <text x="870" y="744" class="box-text">
+    <tspan x="870" dy="0">• Official evaluator only</tspan>
+    <tspan x="870" dy="38">• CTR AUC: all impressions</tspan>
+    <tspan x="870" dy="38">• CVR AUC: clicked impressions</tspan>
+    <tspan x="870" dy="38">• Compare with parent and B0</tspan>
+    <tspan x="870" dy="38">• Add diagnostic metrics separately</tspan>
+  </text>
+
+  <rect x="70" y="655" width="695" height="245" rx="18" class="guard"/>
+  <text x="417" y="697" text-anchor="middle" class="box-title">8. DETERMINISTIC OUTCOME CONTROLLER</text>
+  <text x="110" y="744" class="box-text">
+    <tspan x="110" dy="0">① Invalid run? → bounded recovery or fail safely</tspan>
+    <tspan x="110" dy="38">② Improvement &gt; ε? → retain; otherwise reject/confirm</tspan>
+    <tspan x="110" dy="38">③ CTR/CVR trade-off? → apply composite + guardrails</tspan>
+    <tspan x="110" dy="38">④ Over/underfit? → create one causal follow-up</tspan>
+    <tspan x="110" dy="38">⑤ Converged/budget exhausted? → finalize best</tspan>
+  </text>
+
+  <path d="M2060 430 V655" class="line"/>
+  <path d="M1790 778 H1720" class="line"/>
+  <path d="M1305 778 H1235" class="line"/>
+  <path d="M835 778 H765" class="line"/>
+
+  <text x="70" y="970" class="section">C. DECIDE, LOOP, OR FINALIZE</text>
+
+  <rect x="70" y="1000" width="520" height="210" rx="18" class="store"/>
+  <text x="330" y="1042" text-anchor="middle" class="box-title">SCIENTIFIC MEMORY + FRONTIER</text>
+  <text x="110" y="1087" class="box-text">
+    <tspan x="110" dy="0">• Validation-best and stable fallback</tspan>
+    <tspan x="110" dy="36">• Accepted, rejected, failed and pending runs</tspan>
+    <tspan x="110" dy="36">• Data lineage, Git diff, logs and resource ledger</tspan>
+    <tspan x="110" dy="36">• Conflicts kept with scope and provenance</tspan>
+  </text>
+
+  <rect x="705" y="1000" width="450" height="210" rx="18" class="process"/>
+  <text x="930" y="1042" text-anchor="middle" class="box-title">CONTINUE RESEARCH</text>
+  <text x="745" y="1090" class="box-text">
+    <tspan x="745" dy="0">If not converged and budget remains:</tspan>
+    <tspan x="745" dy="40">select the highest evidence-value</tspan>
+    <tspan x="745" dy="40">non-duplicate hypothesis and loop.</tspan>
+  </text>
+
+  <rect x="1270" y="1000" width="470" height="210" rx="18" class="process"/>
+  <text x="1505" y="1042" text-anchor="middle" class="box-title">ONE-WAY FINALIZER</text>
+  <text x="1310" y="1087" class="box-text">
+    <tspan x="1310" dy="0">• Freeze validation-best artifact</tspan>
+    <tspan x="1310" dy="36">• Clean replay and schema verification</tspan>
+    <tspan x="1310" dy="36">• Generate test predictions once</tspan>
+    <tspan x="1310" dy="36">• No model change from test information</tspan>
+  </text>
+
+  <rect x="1855" y="1000" width="475" height="210" rx="18" class="danger"/>
+  <text x="2092" y="1042" text-anchor="middle" class="box-title">TERMINAL OUTPUT</text>
+  <text x="1895" y="1087" class="box-text">
+    <tspan x="1895" dy="0">• Official-schema submission</tspan>
+    <tspan x="1895" dy="36">• Organizer hidden evaluation once</tspan>
+    <tspan x="1895" dy="36">• Human-readable report + replay</tspan>
+    <tspan x="1895" dy="36">• Hidden score never restarts the loop</tspan>
+  </text>
+
+  <path d="M417 900 V1000" class="line"/>
+  <path d="M590 1105 H705" class="line-green"/>
+  <path d="M930 1000 V950 H2060 V900" class="line-green"/>
+  <text x="1390" y="943" class="yes">CONTINUE LOOP</text>
+  <path d="M600 900 V1235 H1505 V1210" class="line-green"/>
+  <text x="755" y="1252" class="yes">STOP CONDITION MET → FREEZE BEST</text>
+  <path d="M1740 1105 H1855" class="line-red"/>
+
+  <rect x="70" y="1260" width="2260" height="55" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+  <text x="1200" y="1296" text-anchor="middle" class="small">Every plan, action, metric, retry, decision, token, GPU-second and manual intervention is append-only and judge-replayable.</text>
+</svg>

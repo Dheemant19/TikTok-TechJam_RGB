@@ -1,0 +1,258 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1800" viewBox="0 0 2600 1800" role="img" aria-labelledby="title desc">
+  <title id="title">RIGOR-RS decision-first experiment control flow</title>
+  <desc id="desc">A readable three-lane decision map covering policy checks, preflight, training failures, official evaluation, metric outcomes, experiment promotion, convergence, finalization, and one-time hidden evaluation.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#334155"/></marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#16835b"/></marker>
+    <marker id="arrowRed" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#c73030"/></marker>
+    <style>
+      .title { font: 700 42px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 23px 'Segoe UI', Arial, sans-serif; fill: #475569; }
+      .lane-title { font: 700 24px 'Segoe UI', Arial, sans-serif; fill: #24324a; letter-spacing: 1px; }
+      .box-title { font: 700 23px 'Segoe UI', Arial, sans-serif; fill: #13213c; }
+      .body { font: 400 20px 'Segoe UI', Arial, sans-serif; fill: #27364f; }
+      .small { font: 600 17px 'Segoe UI', Arial, sans-serif; fill: #475569; }
+      .label { font: 700 18px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .yes { font: 700 19px 'Segoe UI', Arial, sans-serif; fill: #087a55; }
+      .no { font: 700 19px 'Segoe UI', Arial, sans-serif; fill: #b42318; }
+      .process { fill: #e8f1ff; stroke: #2762c6; stroke-width: 3; }
+      .action { fill: #ecfdf3; stroke: #16835b; stroke-width: 3; }
+      .decision { fill: #fff4e6; stroke: #c45d05; stroke-width: 4; }
+      .warning { fill: #fff7df; stroke: #b7791f; stroke-width: 3; }
+      .failure { fill: #ffe8e8; stroke: #c73030; stroke-width: 3; }
+      .memory { fill: #f2eaff; stroke: #7c3aed; stroke-width: 3; }
+      .line { fill: none; stroke: #334155; stroke-width: 4; marker-end: url(#arrow); }
+      .line-green { fill: none; stroke: #16835b; stroke-width: 5; marker-end: url(#arrowGreen); }
+      .line-red { fill: none; stroke: #c73030; stroke-width: 4; marker-end: url(#arrowRed); }
+      .line-dash { fill: none; stroke: #64748b; stroke-width: 3; stroke-dasharray: 11 8; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="2600" height="1800" fill="#ffffff"/>
+  <text x="70" y="62" class="title">RIGOR-RS — Every Decision in the Research Loop</text>
+  <text x="70" y="98" class="subtitle">Green advances or accepts · Red rejects or blocks · Orange diamonds are deterministic decisions</text>
+
+  <rect x="40" y="125" width="790" height="1610" rx="22" fill="#f7faff" stroke="#b9c9e8" stroke-width="2"/>
+  <rect x="865" y="125" width="870" height="1610" rx="22" fill="#fbf9ff" stroke="#d0c0ef" stroke-width="2"/>
+  <rect x="1770" y="125" width="790" height="1610" rx="22" fill="#f7fcf9" stroke="#b9ddca" stroke-width="2"/>
+  <text x="435" y="168" text-anchor="middle" class="lane-title">1 · CAN THIS EXPERIMENT RUN SAFELY?</text>
+  <text x="1300" y="168" text-anchor="middle" class="lane-title">2 · WHAT DID VALIDATION PROVE?</text>
+  <text x="2165" y="168" text-anchor="middle" class="lane-title">3 · LOOP OR FINALIZE?</text>
+
+  <rect x="245" y="200" width="380" height="80" rx="40" class="memory"/>
+  <text x="435" y="250" text-anchor="middle" class="box-title">PRE-REGISTERED EXPERIMENT</text>
+
+  <polygon points="435,320 620,410 435,500 250,410" class="decision"/>
+  <text x="435" y="395" text-anchor="middle" class="box-title">POLICY + BUDGET</text>
+  <text x="435" y="428" text-anchor="middle" class="box-title">CHECKS PASS?</text>
+
+  <rect x="55" y="355" width="160" height="110" rx="14" class="failure"/>
+  <text x="135" y="398" text-anchor="middle" class="box-title">BLOCK</text>
+  <text x="135" y="428" text-anchor="middle" class="small">Log reason</text>
+  <text x="135" y="454" text-anchor="middle" class="small">Choose next idea</text>
+  <path d="M250 410 H215" class="line-red"/>
+  <text x="220" y="390" class="no">NO</text>
+
+  <rect x="235" y="550" width="400" height="95" rx="16" class="process"/>
+  <text x="435" y="590" text-anchor="middle" class="box-title">CREATE ISOLATED PATCH</text>
+  <text x="435" y="620" text-anchor="middle" class="small">Immutable config + exact diff</text>
+  <path d="M435 500 V550" class="line-green"/>
+  <text x="455" y="530" class="yes">YES</text>
+
+  <polygon points="435,685 615,770 435,855 255,770" class="decision"/>
+  <text x="435" y="758" text-anchor="middle" class="box-title">PREFLIGHT + SMOKE</text>
+  <text x="435" y="790" text-anchor="middle" class="box-title">PASS?</text>
+  <path d="M435 645 V685" class="line"/>
+
+  <rect x="55" y="700" width="165" height="140" rx="14" class="warning"/>
+  <text x="137" y="744" text-anchor="middle" class="box-title">REPAIR?</text>
+  <text x="137" y="778" text-anchor="middle" class="small">Safe + retries</text>
+  <text x="137" y="808" text-anchor="middle" class="small">remain</text>
+  <path d="M255 770 H220" class="line-red"/>
+  <text x="222" y="750" class="no">NO</text>
+  <path d="M137 700 V665 H435 V685" class="line-green"/>
+  <text x="165" y="655" class="yes">YES: FIX + RETRY</text>
+  <path d="M55 770 H20 V1335 H55" class="line-red"/>
+  <text x="25" y="1010" class="no">NO → FAIL</text>
+
+  <rect x="235" y="900" width="400" height="105" rx="16" class="action"/>
+  <text x="435" y="944" text-anchor="middle" class="box-title">TRAIN ON TRAIN SPLIT ONLY</text>
+  <text x="435" y="976" text-anchor="middle" class="small">Checkpoint + curves + GPU telemetry</text>
+  <path d="M435 855 V900" class="line-green"/>
+  <text x="455" y="885" class="yes">YES</text>
+
+  <polygon points="435,1045 615,1130 435,1215 255,1130" class="decision"/>
+  <text x="435" y="1118" text-anchor="middle" class="box-title">TRAINING</text>
+  <text x="435" y="1150" text-anchor="middle" class="box-title">COMPLETED?</text>
+  <path d="M435 1005 V1045" class="line"/>
+
+  <rect x="55" y="1055" width="165" height="150" rx="14" class="failure"/>
+  <text x="137" y="1094" text-anchor="middle" class="box-title">CLASSIFY</text>
+  <text x="137" y="1127" text-anchor="middle" class="small">OOM · NaN</text>
+  <text x="137" y="1157" text-anchor="middle" class="small">timeout · infra</text>
+  <text x="137" y="1187" text-anchor="middle" class="small">unknown</text>
+  <path d="M255 1130 H220" class="line-red"/>
+  <text x="222" y="1110" class="no">NO</text>
+
+  <polygon points="435,1260 600,1335 435,1410 270,1335" class="decision"/>
+  <text x="435" y="1323" text-anchor="middle" class="box-title">SAFE RECOVERY +</text>
+  <text x="435" y="1355" text-anchor="middle" class="box-title">RETRIES REMAIN?</text>
+  <path d="M137 1205 V1335 H270" class="line-red"/>
+  <path d="M435 1260 V1230 H700 V952 H635" class="line-green"/>
+  <text x="475" y="1220" class="yes">YES: APPLY RECIPE + RETRY</text>
+
+  <rect x="55" y="1285" width="165" height="100" rx="14" class="failure"/>
+  <text x="137" y="1327" text-anchor="middle" class="box-title">FAIL RUN</text>
+  <text x="137" y="1354" text-anchor="middle" class="small">Keep all evidence</text>
+  <text x="137" y="1378" text-anchor="middle" class="small">Choose next idea</text>
+  <path d="M270 1335 H220" class="line-red"/>
+  <text x="222" y="1315" class="no">NO</text>
+
+  <rect x="235" y="1465" width="400" height="115" rx="16" class="action"/>
+  <text x="435" y="1508" text-anchor="middle" class="box-title">OFFICIAL VALIDATION EVALUATOR</text>
+  <text x="435" y="1542" text-anchor="middle" class="small">CTR AUC + clicked-subset CVR AUC</text>
+  <path d="M435 1215 V1465" class="line-green"/>
+  <text x="455" y="1260" class="yes">YES</text>
+
+  <polygon points="1300,205 1510,300 1300,395 1090,300" class="decision"/>
+  <text x="1300" y="285" text-anchor="middle" class="box-title">OFFICIAL OUTPUT +</text>
+  <text x="1300" y="318" text-anchor="middle" class="box-title">SCHEMA VALID?</text>
+  <path d="M635 1522 H790 V300 H1090" class="line"/>
+
+  <rect x="890" y="245" width="160" height="110" rx="14" class="failure"/>
+  <text x="970" y="287" text-anchor="middle" class="box-title">REPAIR</text>
+  <text x="970" y="316" text-anchor="middle" class="small">Exact evaluator only</text>
+  <text x="970" y="342" text-anchor="middle" class="small">Retry cap; else fail</text>
+  <path d="M1090 300 H1050" class="line-red"/>
+  <text x="1055" y="280" class="no">NO</text>
+  <path d="M970 355 H850 V1630 H435 V1580" class="line-dash"/>
+
+  <rect x="1100" y="450" width="400" height="100" rx="16" class="process"/>
+  <text x="1300" y="490" text-anchor="middle" class="box-title">COMPUTE COMPARABLE RESULT</text>
+  <text x="1300" y="522" text-anchor="middle" class="small">Same validation split · parent + official B0</text>
+  <path d="M1300 395 V450" class="line-green"/>
+  <text x="1320" y="430" class="yes">YES</text>
+
+  <polygon points="1300,600 1535,700 1300,800 1065,700" class="decision"/>
+  <text x="1300" y="675" text-anchor="middle" class="box-title">WHICH PRE-REGISTERED</text>
+  <text x="1300" y="708" text-anchor="middle" class="box-title">OUTCOME OCCURRED?</text>
+  <text x="1300" y="742" text-anchor="middle" class="small">Use measured evidence, not narrative</text>
+  <path d="M1300 550 V600" class="line"/>
+
+  <rect x="890" y="860" width="230" height="130" rx="14" class="action"/>
+  <text x="1005" y="902" text-anchor="middle" class="box-title">CONFIRMED GAIN</text>
+  <text x="1005" y="936" text-anchor="middle" class="small">Composite &gt; ε</text>
+  <text x="1005" y="966" text-anchor="middle" class="small">Guardrails pass</text>
+  <path d="M1165 758 L1040 860" class="line-green"/>
+
+  <rect x="1175" y="860" width="250" height="130" rx="14" class="warning"/>
+  <text x="1300" y="902" text-anchor="middle" class="box-title">SMALL / UNCERTAIN</text>
+  <text x="1300" y="936" text-anchor="middle" class="small">Δ ≤ ε or within noise</text>
+  <text x="1300" y="966" text-anchor="middle" class="small">Confirm only if budgeted</text>
+  <path d="M1300 800 V860" class="line"/>
+
+  <rect x="1480" y="860" width="230" height="130" rx="14" class="warning"/>
+  <text x="1595" y="902" text-anchor="middle" class="box-title">CTR ↔ CVR TRADE-OFF</text>
+  <text x="1595" y="936" text-anchor="middle" class="small">Check composite</text>
+  <text x="1595" y="966" text-anchor="middle" class="small">and task guardrails</text>
+  <path d="M1435 758 L1560 860" class="line"/>
+
+  <rect x="1015" y="1045" width="285" height="135" rx="14" class="failure"/>
+  <text x="1157" y="1087" text-anchor="middle" class="box-title">REGRESSION</text>
+  <text x="1157" y="1121" text-anchor="middle" class="small">Both worse or cost rises</text>
+  <text x="1157" y="1152" text-anchor="middle" class="small">without measured benefit</text>
+  <path d="M1225 795 L1160 1045" class="line-red"/>
+
+  <rect x="1355" y="1045" width="285" height="135" rx="14" class="failure"/>
+  <text x="1497" y="1087" text-anchor="middle" class="box-title">OVER / UNDERFIT</text>
+  <text x="1497" y="1121" text-anchor="middle" class="small">Or negative task transfer</text>
+  <text x="1497" y="1152" text-anchor="middle" class="small">One causal follow-up only</text>
+  <path d="M1375 795 L1495 1045" class="line-red"/>
+
+  <polygon points="1300,1235 1510,1325 1300,1415 1090,1325" class="decision"/>
+  <text x="1300" y="1310" text-anchor="middle" class="box-title">PROMOTE CANDIDATE?</text>
+  <text x="1300" y="1342" text-anchor="middle" class="small">Official composite + guardrails</text>
+  <path d="M1005 990 V1195 H1210 L1240 1248" class="line-green"/>
+  <path d="M1300 990 V1235" class="line"/>
+  <path d="M1595 990 V1195 H1390 L1360 1248" class="line"/>
+  <path d="M1157 1180 V1325 H1090" class="line-red"/>
+  <path d="M1497 1180 V1325 H1510" class="line-red"/>
+
+  <rect x="940" y="1470" width="285" height="115" rx="14" class="failure"/>
+  <text x="1082" y="1513" text-anchor="middle" class="box-title">REJECT / BRANCH</text>
+  <text x="1082" y="1547" text-anchor="middle" class="small">Preserve negative evidence</text>
+  <path d="M1090 1325 H1082 V1470" class="line-red"/>
+  <text x="1050" y="1305" class="no">NO</text>
+
+  <rect x="1375" y="1470" width="285" height="115" rx="14" class="action"/>
+  <text x="1517" y="1513" text-anchor="middle" class="box-title">ACCEPT CANDIDATE</text>
+  <text x="1517" y="1547" text-anchor="middle" class="small">Update validation-best if eligible</text>
+  <path d="M1510 1325 H1517 V1470" class="line-green"/>
+  <text x="1535" y="1305" class="yes">YES</text>
+
+  <rect x="1080" y="1620" width="440" height="82" rx="14" class="memory"/>
+  <text x="1300" y="1653" text-anchor="middle" class="box-title">LOG RESULT + UPDATE FRONTIER</text>
+  <text x="1300" y="1682" text-anchor="middle" class="small">Every accepted, rejected, failed and blocked run remains visible</text>
+  <path d="M1082 1585 V1600 H1200 V1620" class="line-red"/>
+  <path d="M1517 1585 V1600 H1400 V1620" class="line-green"/>
+
+  <rect x="1940" y="205" width="450" height="110" rx="16" class="memory"/>
+  <text x="2165" y="248" text-anchor="middle" class="box-title">UPDATE FRONTIER + LEDGER</text>
+  <text x="2165" y="282" text-anchor="middle" class="small">Best · fallback · pending · rejected · failed</text>
+  <path d="M1520 1661 H1785 V260 H1940" class="line"/>
+
+  <polygon points="2165,370 2385,465 2165,560 1945,465" class="decision"/>
+  <text x="2165" y="447" text-anchor="middle" class="box-title">TERMINAL CONDITION?</text>
+  <text x="2165" y="480" text-anchor="middle" class="small">Converged · budget · no safe idea · stop</text>
+  <path d="M2165 315 V370" class="line"/>
+
+  <rect x="1810" y="615" width="310" height="110" rx="16" class="action"/>
+  <text x="1965" y="658" text-anchor="middle" class="box-title">SELECT NEXT HYPOTHESIS</text>
+  <text x="1965" y="692" text-anchor="middle" class="small">Highest evidence value per cost</text>
+  <path d="M2010 525 L1965 615" class="line-green"/>
+  <text x="1970" y="570" class="yes">NO</text>
+  <path d="M1810 670 H1760 V120 H435 V200" class="line-green"/>
+  <text x="1050" y="115" class="yes">LOOP — NEVER USE TEST FEEDBACK</text>
+
+  <rect x="2210" y="615" width="300" height="110" rx="16" class="action"/>
+  <text x="2360" y="658" text-anchor="middle" class="box-title">FREEZE VALIDATION-BEST</text>
+  <text x="2360" y="692" text-anchor="middle" class="small">Not the newest checkpoint</text>
+  <path d="M2320 525 L2360 615" class="line-green"/>
+  <text x="2370" y="570" class="yes">YES</text>
+
+  <polygon points="2165,790 2370,875 2165,960 1960,875" class="decision"/>
+  <text x="2165" y="861" text-anchor="middle" class="box-title">CLEAN REPLAY +</text>
+  <text x="2165" y="894" text-anchor="middle" class="box-title">SCHEMA CHECK PASS?</text>
+  <path d="M2360 725 V755 H2165 V790" class="line"/>
+
+  <rect x="1800" y="825" width="125" height="100" rx="14" class="warning"/>
+  <text x="1862" y="865" text-anchor="middle" class="box-title">REPAIR</text>
+  <text x="1862" y="897" text-anchor="middle" class="small">Package only</text>
+  <path d="M1960 875 H1925" class="line-red"/>
+  <text x="1928" y="855" class="no">NO</text>
+  <path d="M1862 825 V775 H2165 V790" class="line-dash"/>
+
+  <rect x="1965" y="1020" width="400" height="105" rx="16" class="action"/>
+  <text x="2165" y="1062" text-anchor="middle" class="box-title">GENERATE TEST PREDICTIONS</text>
+  <text x="2165" y="1095" text-anchor="middle" class="small">Frozen model · test features only</text>
+  <path d="M2165 960 V1020" class="line-green"/>
+  <text x="2185" y="995" class="yes">YES</text>
+
+  <rect x="1965" y="1185" width="400" height="110" rx="16" class="failure"/>
+  <text x="2165" y="1228" text-anchor="middle" class="box-title">HIDDEN EVALUATION — ONCE</text>
+  <text x="2165" y="1262" text-anchor="middle" class="small">Terminal result; no return to research</text>
+  <path d="M2165 1125 V1185" class="line-red"/>
+
+  <rect x="1965" y="1365" width="400" height="140" rx="16" class="action"/>
+  <text x="2165" y="1408" text-anchor="middle" class="box-title">FINAL JUDGE PACKAGE</text>
+  <text x="2165" y="1442" text-anchor="middle" class="small">Report · metrics · resources · limitations</text>
+  <text x="2165" y="1474" text-anchor="middle" class="small">Artifacts · replay · contributions · demo</text>
+  <path d="M2165 1295 V1365" class="line"/>
+
+  <rect x="1840" y="1580" width="650" height="105" rx="16" class="warning"/>
+  <text x="2165" y="1622" text-anchor="middle" class="box-title">FAIL-CLOSED RULE</text>
+  <text x="2165" y="1656" text-anchor="middle" class="small">Unknown, unsafe or exhausted recovery → preserve evidence and stop that branch</text>
+
+  <rect x="70" y="1745" width="2460" height="34" rx="10" fill="#ffe8e8" stroke="#c73030" stroke-width="2"/>
+  <text x="1300" y="1769" text-anchor="middle" class="label">THE HIDDEN-TEST RESULT HAS NO ARROW BACK TO TRAINING, PLANNING OR MODEL SELECTION.</text>
+</svg>

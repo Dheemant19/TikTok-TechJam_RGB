@@ -1,0 +1,92 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter,Segoe UI,Arial,sans-serif","fontSize":"15px","primaryColor":"#e8f1ff","primaryTextColor":"#13213c","primaryBorderColor":"#2762c6","lineColor":"#475569","clusterBkg":"#f8fafc","clusterBorder":"#94a3b8"},"flowchart":{"curve":"basis","nodeSpacing":25,"rankSpacing":42,"padding":10}}}%%
+flowchart TD
+  START(["Experiment candidate selected"])
+  PLAN["Append PLANNED contract before execution\nparent · hypothesis · evidence · diff scope\nmetrics · guardrails · budget · fallback"]
+  POLICY{"Policy, split, budget,\nand duplicate checks pass?"}
+  BLOCK["BLOCKED/SKIPPED\nrecord exact reason\nchoose another valid hypothesis"]
+  PATCH["Create isolated patch and immutable config"]
+  PREFLIGHT{"Preflight and smoke pass?"}
+  PFCLASS{"Recoverable?"}
+  REPAIR["Minimal bounded repair\nappend failure + diagnosis + diff"]
+  TRAIN["Train using TRAIN only\ncheckpoint + telemetry"]
+  TRAINOK{"Training completed?"}
+  FCLASS{"Failure class"}
+  OOM["OOM recipe\nsmaller microbatch → accumulation\nAMP/checkpointing; verify effective batch"]
+  NAN["NaN/divergence recipe\nrestore stable parent → labels/LR/precision\nnormalization/clipping checks"]
+  TIME["Timeout recipe\nprofile → cheaper proxy/eval cadence\nresume only within budget"]
+  INFRA["Transient infrastructure recipe\nbounded exponential retry\npreserve original logs"]
+  UNSAFE["FAILED\nunsafe or retry cap exhausted\npreserve state; branch or stop"]
+  EVAL["Run organizer evaluator on VALIDATION"]
+  EVALID{"Evaluator output and schema valid?"}
+  EFIX["Evaluator/schema recovery\nnever substitute an unofficial metric"]
+  METRICS["Compute official primary vector\nCTR AUC + clicked-subset CVR AUC\nand diagnostic vector"]
+  SIGNAL{"Observed outcome"}
+  BOTH["Composite improves > ε\nno validity/guardrail violation"]
+  TRADE["One task rises; one falls\nor task-loss conflict detected"]
+  TRADEOK{"Composite > ε and configured\ntask guardrails pass?"}
+  NOISE["Delta ≤ ε or uncertainty overlaps zero"]
+  OVER["Training improves while validation degrades\nor widening generalization gap"]
+  UNDER["Both training and validation weak/flat"]
+  REG["Confirmed regression vs parent"]
+  ACCEPT["ACCEPT candidate\nupdate frontier and validation-best\nonly if confirmation rule passes"]
+  INVEST["BRANCH with one causal follow-up\nloss balance/sharing/capacity/data hypothesis"]
+  CONFIRM{"Budget and confirmation\nattempts remain?"}
+  SEEDS["Run predeclared additional seed(s)\nor paired uncertainty check"]
+  REJECT["REJECT but retain artifacts\nnegative evidence prevents repetition"]
+  PATIENCE["Update improvement counter, resource ledger,\nmanual interventions, and next-hypothesis queue"]
+  STOP{"Terminal condition?\nN non-improving iterations · resource limit\nno safe hypothesis · explicit stop"}
+  NEXT["Select highest evidence value\nper risk, token, and GPU-hour"]
+  FREEZE["Freeze validation-best artifact\nnot the latest artifact"]
+  REPLAY{"Clean replay and schema checks pass?"}
+  PACKSAFE{"Safe packaging/environment-only\nrepair available?"}
+  FINALFIX["Repair packaging/reproducibility only\ndo not change model from test evidence"]
+  FINALBLOCK["FINALIZATION BLOCKED\npreserve validation-best and report\nno unverifiable submission claim"]
+  SUBMIT["Generate test predictions\nwithout test-label access"]
+  HIDDEN["One hidden-test evaluation\nterminal result; never feeds the loop"]
+  REPORT["Render final report, audit trail,\nlimitations, resources, and replay commands"]
+
+  START --> PLAN --> POLICY
+  POLICY -- "no" --> BLOCK --> NEXT
+  POLICY -- "yes" --> PATCH --> PREFLIGHT
+  PREFLIGHT -- "no" --> PFCLASS
+  PFCLASS -- "yes, retries remain" --> REPAIR --> PREFLIGHT
+  PFCLASS -- "no" --> UNSAFE --> PATIENCE
+  PREFLIGHT -- "yes" --> TRAIN --> TRAINOK
+  TRAINOK -- "no" --> FCLASS
+  FCLASS -- "OOM" --> OOM --> PREFLIGHT
+  FCLASS -- "NaN/divergence" --> NAN --> PREFLIGHT
+  FCLASS -- "timeout" --> TIME --> PREFLIGHT
+  FCLASS -- "transient" --> INFRA --> TRAIN
+  FCLASS -- "unsafe/unknown/exhausted" --> UNSAFE
+  TRAINOK -- "yes" --> EVAL --> EVALID
+  EVALID -- "no, recoverable" --> EFIX --> EVAL
+  EVALID -- "no, unsafe/exhausted" --> UNSAFE
+  EVALID -- "yes" --> METRICS --> SIGNAL
+  SIGNAL -- "confirmed joint/composite gain" --> BOTH --> ACCEPT
+  SIGNAL -- "CTR↔CVR trade-off" --> TRADE --> TRADEOK
+  TRADEOK -- "yes" --> CONFIRM
+  TRADEOK -- "no" --> INVEST
+  SIGNAL -- "small/uncertain change" --> NOISE --> CONFIRM
+  CONFIRM -- "yes" --> SEEDS --> METRICS
+  CONFIRM -- "no" --> REJECT
+  SIGNAL -- "overfit signature" --> OVER --> INVEST
+  SIGNAL -- "underfit signature" --> UNDER --> INVEST
+  SIGNAL -- "regression" --> REG --> REJECT
+  INVEST --> REJECT
+  ACCEPT --> PATIENCE
+  REJECT --> PATIENCE
+  PATIENCE --> STOP
+  STOP -- "no" --> NEXT --> START
+  STOP -- "yes" --> FREEZE --> REPLAY
+  REPLAY -- "no" --> PACKSAFE
+  PACKSAFE -- "yes" --> FINALFIX --> REPLAY
+  PACKSAFE -- "no" --> FINALBLOCK --> REPORT
+  REPLAY -- "yes" --> SUBMIT --> HIDDEN --> REPORT
+
+  classDef process fill:#ecfdf3,stroke:#16835b,color:#103b2d,stroke-width:1.5px;
+  classDef decision fill:#fff4e6,stroke:#c45d05,color:#492507,stroke-width:2px;
+  classDef failure fill:#ffe8e8,stroke:#c73030,color:#4b1010,stroke-width:1.5px;
+  classDef evidence fill:#e8f1ff,stroke:#2762c6,color:#13213c,stroke-width:1.5px;
+  class START,PLAN,PATCH,TRAIN,EVAL,METRICS,BOTH,ACCEPT,INVEST,CONFIRM,SEEDS,PATIENCE,NEXT,FREEZE,REPLAY,FINALFIX,SUBMIT,REPORT process;
+  class POLICY,PREFLIGHT,PFCLASS,TRAINOK,FCLASS,EVALID,SIGNAL,TRADEOK,STOP,PACKSAFE decision;
+  class BLOCK,REPAIR,OOM,NAN,TIME,INFRA,UNSAFE,EFIX,TRADE,NOISE,OVER,UNDER,REG,REJECT,FINALBLOCK,HIDDEN failure;

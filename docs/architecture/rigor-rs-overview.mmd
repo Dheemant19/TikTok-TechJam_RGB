@@ -1,0 +1,64 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter,Segoe UI,Arial,sans-serif","fontSize":"16px","primaryColor":"#e8f1ff","primaryTextColor":"#13213c","primaryBorderColor":"#2762c6","lineColor":"#475569","clusterBkg":"#f8fafc","clusterBorder":"#94a3b8"},"flowchart":{"curve":"basis","nodeSpacing":36,"rankSpacing":55,"padding":15}}}%%
+flowchart TB
+  subgraph PIPE["RIGOR-RS · integrity-gated autonomous ML research pipeline"]
+    direction LR
+    I["1 · INPUT CONTRACT\nUser intent + AliCCP data\nOrganizer splits, metrics, baseline,\nevaluator, schema, ε, N, budgets"]
+    K["2 · RESEARCH INTEGRITY KERNEL\nAuthority resolution + policy gate\nSplit-taint firewall + capability broker\nHashes, budgets, retries, token/GPU clock"]
+    B["3 · OFFICIAL BASELINE GATE\nPinned environment and seeds\nData/schema/leakage validation\nSmoke → full NISE baseline\nNo research until reproduced"]
+    D["4 · DETERMINISTIC DIAGNOSTICS\nEDA, imbalance, cardinality, shift\nUnseen IDs, curves, runtime, memory\nLeakage-safe transform artifacts"]
+    R["5 · RESEARCH AGENT\nRetrieve scoped prior evidence\nChoose one causal hypothesis\nPre-register outcomes and falsifiers\nBudgeted experiment contract"]
+    X["6 · CODE/RECOVERY AGENT + RUNNER\nIsolated minimal code patch\nPolicy/unit/schema/leakage/smoke tests\nTrain on TRAIN only\nOfficial evaluator on VALIDATION"]
+    C{"7 · OUTCOME CONTROLLER\nValid and reproducible?\nImproves parent/baseline > ε?\nNoise, task trade-off, over/underfit?\nRetry, reject, branch, retain, or stop"}
+    F["8 · ONE-WAY FINALIZER\nFreeze validation-best artifact\nClean replay + submission-schema check\nGenerate predictions from TEST FEATURES\nOrganizer hidden evaluation once\nRender judge package and demo"]
+    I --> K --> B --> D --> R --> X --> C
+    C -- "continue: next evidence-priced hypothesis" --> R
+    C -- "converged / budget / no safe branch" --> F
+  end
+
+  EVID["READ-ONLY EVIDENCE GATEWAY\nCurated papers + allowlisted repositories\nPinned commits, licenses, provenance\nCached; called only for novel questions"]
+  TV[("TEST LABEL VAULT\nlocked from all development components")]
+  EVID -. "optional evidence" .-> R
+  K -. "enforces denial" .-> TV
+  TV -. "organizer-only terminal access" .-> F
+
+  subgraph MEMORY["Inspectable scientific memory — typed stores, not a shared prose blob"]
+    direction LR
+    BUS["APPEND-ONLY EVENT + LINEAGE BUS\nEvery plan, action, metric, retry, decision,\nresource unit, and intervention is recorded"]
+    LEDGER[("RUN LEDGER\nSQLite locally / PostgreSQL for concurrency\nrequired YAML/JSON fields + frontier")]
+    OBJECTS[("ARTIFACT STORE\nlocal NVMe cache + optional S3/MinIO\ndata, checkpoints, predictions, plots, logs")]
+    GIT[("CODE PROVENANCE\nGit commit + immutable diff + config hash")]
+    CLAIMS[("SCOPED EVIDENCE GRAPH\nclaim + context + provenance + confidence\nsupports / contradicts / supersedes")]
+    REPORT["GENERATED VIEWS\nper-run report, final report, README,\nUI timeline, resource/recovery dashboard"]
+    BUS --> LEDGER
+    BUS --> OBJECTS
+    BUS --> GIT
+    BUS --> CLAIMS
+    LEDGER --> REPORT
+    OBJECTS --> REPORT
+    GIT --> REPORT
+    CLAIMS --> REPORT
+  end
+
+  B -. "baseline receipt" .-> BUS
+  D -. "profile + data lineage" .-> BUS
+  R -. "plan before execution" .-> BUS
+  X -. "diff + logs + artifacts" .-> BUS
+  C -. "decision + next hypothesis" .-> BUS
+  F -. "final manifest" .-> BUS
+  LEDGER -. "top-k comparable runs only" .-> R
+  CLAIMS -. "scoped evidence; conflicts preserved" .-> R
+
+  classDef input fill:#e8f1ff,stroke:#2762c6,color:#13213c,stroke-width:1.5px;
+  classDef guard fill:#fff7df,stroke:#b7791f,color:#3b2a0a,stroke-width:1.8px;
+  classDef agent fill:#f2eaff,stroke:#7c3aed,color:#28134d,stroke-width:1.8px;
+  classDef exec fill:#ecfdf3,stroke:#16835b,color:#103b2d,stroke-width:1.5px;
+  classDef decision fill:#fff4e6,stroke:#c45d05,color:#492507,stroke-width:2px;
+  classDef store fill:#eef2f7,stroke:#475569,color:#172033,stroke-width:1.5px;
+  classDef locked fill:#ffe8e8,stroke:#c73030,color:#4b1010,stroke-width:1.8px;
+  class I input;
+  class K,B guard;
+  class R,X agent;
+  class D,F,EVID,REPORT exec;
+  class C decision;
+  class BUS,LEDGER,OBJECTS,GIT,CLAIMS store;
+  class TV locked;
