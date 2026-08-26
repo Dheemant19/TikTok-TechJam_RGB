@@ -23,7 +23,7 @@ The goal is not to build a static recommender or a hyperparameter-search wrapper
 
 ### Data and evaluation integrity
 
-- **MUST** use only the challenge datasets for training: AliCCP and, if attempted, KuaiRand.
+- **MUST** use only the challenge datasets for training: KuaiRand and, if attempted, AliCCP.
 - **MUST NOT** use external training data, join external datasets, or pretrain on other data.
 - **MUST NOT** access, inspect, infer from, tune on, or otherwise use hidden-test labels during development.
 - **MUST** develop only with the training split and permitted validation feedback.
@@ -57,39 +57,19 @@ External open-source libraries, papers, public solutions, and otherwise permissi
 
 ## Challenge Scope
 
-### Required benchmark: AliCCP
-
-AliCCP is an Alibaba/Taobao e-commerce benchmark for the funnel:
-
-```text
-impression → click → conversion
-```
-
-Required metrics:
-
-- **CTR AUC** over all impressions, where click is positive.
-- **CVR AUC** over the clicked subset, where conversion is positive.
-
-Important implications:
-
-- CVR is conditional: $P(\text{conversion} \mid \text{click})$.
-- Conversion labels are sparse.
-- CVR observations create sample-selection bias because conversion is observed only after a click.
-- The agent may model CTCVR internally, but reported metrics remain CTR AUC on all impressions and CVR AUC on clicked impressions.
-- AliCCP determines **100% of the primary metric score**.
-- Official reference implementation: NISE repository specified by the organizers.
-
-### Bonus benchmark: KuaiRand
+### Required benchmark: KuaiRand
 
 KuaiRand is a short-video feed dataset with multiple feedback signals and randomized exposure data.
 
-Default metric task:
+Required metric task:
 
 - Click is the positive relevance label.
 - **NDCG@10**.
 - **Recall@50**.
 
-KuaiRand is optional. A strong result earns bonus credit, but skipping it must not reduce the AliCCP primary score. Do not spend AliCCP-critical time or resources on KuaiRand until AliCCP has a reliable end-to-end result.
+- KuaiRand determines **100% of the primary metric score**.
+- Ranking candidates, relevance labels, and query/user grouping must follow the organizer-provided evaluator exactly.
+- The official baseline is the organizer-referenced KuaiRand implementation and configuration; do not substitute a self-created starter model.
 
 Organizer-provided suggested split:
 
@@ -97,7 +77,22 @@ Organizer-provided suggested split:
 - First 50% of `log_standard_4_22_to_5_08_*`: validation.
 - Last 50% of `log_standard_4_22_to_5_08_*`: test.
 
-The randomized-exposure data enables counterfactual/off-policy evaluation research, but that is advanced optional work, not part of the primary score.
+The randomized-exposure data enables counterfactual/off-policy evaluation research, but that is advanced optional work unless the organizer's official primary task or evaluator requires it.
+
+### Bonus benchmark: AliCCP
+
+AliCCP is an Alibaba/Taobao e-commerce benchmark for the funnel:
+
+```text
+impression → click → conversion
+```
+
+Bonus metrics:
+
+- **CTR AUC** over all impressions, where click is positive.
+- **CVR AUC** over the clicked subset, where conversion is positive.
+
+AliCCP is optional. A strong result may be reported as bonus work, but skipping it must not reduce the KuaiRand primary score. Do not spend KuaiRand-critical time or resources on AliCCP until KuaiRand has a reliable end-to-end result. If attempted, use the organizer-specified NISE reference implementation and preserve the official funnel labels, splits, evaluator, and output schema.
 
 ---
 
@@ -122,7 +117,7 @@ delta(m) = score_agent(m) − score_official_baseline(m)
 score_dataset = mean(delta(m) for all dataset metrics)
 ```
 
-For AliCCP, this is the equal-weighted mean of CTR AUC delta and CVR AUC delta. Absolute improvement is used: do not substitute relative percentage improvement.
+For KuaiRand, this is the equal-weighted mean of NDCG@10 delta and Recall@50 delta. Absolute improvement is used: do not substitute relative percentage improvement.
 
 ### Convergence
 
@@ -168,12 +163,12 @@ For each iteration, use available evidence to determine the highest-leverage nex
 Inspect as applicable:
 
 - Sample counts by split and label prevalence.
-- CTR/CVR class imbalance and clicked-subset size.
+- Click prevalence, interactions per user, candidate-set size, and users with no relevant validation items.
 - Feature type, cardinality, sparsity, missingness, and unseen-ID behavior.
 - Train/validation distribution shift.
-- Model capacity, train-vs-validation gap, calibration, and convergence curves.
-- Per-task losses and task interference.
-- AUC confidence/stability across seeds where budget permits.
+- Model capacity, train-vs-validation gap, ranking-loss behavior, and convergence curves.
+- Per-signal losses and task interference when auxiliary feedback is used.
+- NDCG@10 and Recall@50 confidence/stability across seeds where budget permits.
 - Runtime, GPU memory, dataloader throughput, and failure traces.
 - Outcomes of prior experiments, including regressions.
 
@@ -213,7 +208,7 @@ Never loop endlessly. Apply retry limits and escalation rules. When no safe auto
 
 ---
 
-## High-Value AliCCP Research Directions
+## High-Value KuaiRand Research Directions
 
 These are candidate directions, not mandatory changes. Select them from diagnostics and prior outcomes.
 
@@ -223,26 +218,27 @@ These are candidate directions, not mandatory changes. Select them from diagnost
 - Feature cardinality thresholds, rare-category handling, and hashed representations where justified.
 - Embedding dimension and regularization choices proportional to feature cardinality.
 - Missing-value and unseen-category treatment consistent between train and validation.
-- Carefully validated feature crosses for meaningful user/item/category interactions.
-- Frequency or recency-derived features only when they respect split boundaries and avoid label leakage.
+- Carefully validated feature crosses for meaningful user/video/author/category interactions.
+- Watch-time, engagement, frequency, or recency-derived features only when they respect chronological split boundaries and avoid label leakage.
+- Candidate-generation and ranking features must be reproducible for validation and test without using future interactions.
 
 ### Model architectures
 
 Begin with stable, reproducible baselines, then test justified alternatives:
 
-- Logistic regression / factorization-machine-style sanity checks.
-- Wide & Deep, DeepFM, xDeepFM, DCN/DCNv2 for feature interactions.
-- ESMM for the impression → click → conversion funnel.
-- MMoE or PLE when multi-task sharing/interference diagnostics justify it.
-- Task towers, shared-bottom capacity, and expert/gate configuration chosen through measured ablations.
+- Popularity, logistic-regression, and matrix-factorization-style sanity checks.
+- Two-tower retrieval models with sampled negatives when candidate generation is in scope.
+- Wide & Deep, DeepFM, xDeepFM, or DCN/DCNv2 for ranking feature interactions.
+- Sequential recommenders when timestamped user history is available without crossing split boundaries.
+- MMoE or PLE only when auxiliary feedback signals improve the primary click-ranking metrics in measured ablations.
 
-### Multi-task objectives
+### Ranking objectives and sampling
 
-- CTR and CVR loss balancing.
-- CVR-on-clicked-subset alignment with the official metric.
-- CTCVR auxiliary objectives when they improve funnel consistency.
-- Negative transfer detection: one task rising while the other falls is evidence to investigate task sharing, not a metric to hide.
-- Label weighting or focal-style methods only with a documented class-imbalance rationale and metric validation.
+- Pointwise, pairwise, or listwise objectives selected according to measured alignment with NDCG@10 and Recall@50.
+- Negative-sampling distributions that reflect the official candidate set and do not leak validation or test interactions.
+- Hard-negative mining only from permitted training data and model-generated scores.
+- Auxiliary engagement objectives only when they improve the primary click-ranking metrics.
+- Negative-transfer detection: an auxiliary task rising while a primary metric falls is evidence to change task sharing, not a result to hide.
 
 ### Training and evaluation
 
@@ -250,15 +246,16 @@ Begin with stable, reproducible baselines, then test justified alternatives:
 - Early stopping based on the correct composite validation objective.
 - Seed stability and validation variance checks before treating a tiny difference as a discovery.
 - Efficient data loading and mixed precision where they preserve correctness.
-- Calibration analysis as a diagnostic; AUC ranking is primary, so do not optimize calibration at the expense of ranking without evidence.
+- Validate candidate coverage, duplicate handling, tie behavior, and per-user ranking construction against the official evaluator.
+- Analyze head-versus-tail users/items and ranking depth; optimize the official ranking metrics rather than proxy loss alone.
 
 ### Priority order
 
 1. Correct data, evaluator, baseline reproduction, and reliable training.
 2. High-information diagnostics and inexpensive ablations.
-3. Improvements that lift the equal-weighted CTR/CVR objective rather than one metric alone.
+3. Improvements that lift the equal-weighted NDCG@10/Recall@50 objective rather than one metric alone.
 4. More complex architectures only after simpler alternatives provide evidence.
-5. KuaiRand only after AliCCP is submission-ready.
+5. AliCCP only after KuaiRand is submission-ready.
 
 ---
 
@@ -299,7 +296,7 @@ Every iteration must be logged. Logs are central evidence for autonomy, robustne
 run_id: unique immutable identifier
 parent_run_id: baseline or previous experiment
 status: planned | running | succeeded | failed | rejected | accepted
-benchmark: aliccp | kuairand
+benchmark: kuairand | aliccp
 split_definition: exact dataset partition/version
 seed: integer or list
 hypothesis: what is being tested
@@ -310,10 +307,10 @@ commands: exact train/evaluate commands
 config_artifact: immutable config path or serialized config
 baseline_reference: organizer baseline identifier and observed result
 metrics:
-  ctr_auc: number | null
-  cvr_auc_clicked: number | null
   ndcg_at_10: number | null
   recall_at_50: number | null
+  ctr_auc: number | null
+  cvr_auc_clicked: number | null
   composite_validation_score: number | null
   delta_vs_parent: number | null
   delta_vs_official_baseline: number | null
@@ -391,7 +388,7 @@ Keep interfaces simple and file-backed. The agent must remain inspectable and ru
 - Maintain a stable, reproducible fallback checkpoint.
 - Design recovery paths before long autonomous runs.
 - Prefer simple, measured changes over ungrounded sophistication.
-- Optimize both CTR and CVR because AliCCP scoring weights them equally.
+- Optimize both NDCG@10 and Recall@50 because KuaiRand scoring weights them equally.
 - Quantify resource usage throughout the run.
 - Explain why an experiment was selected and why it was retained or rejected.
 - Keep the public repository clean, runnable, and complete.
@@ -406,7 +403,7 @@ Keep interfaces simple and file-backed. The agent must remain inspectable and ru
 - Do not change several unrelated factors without an ablation plan.
 - Do not claim model improvement without official-evaluator evidence.
 - Do not hard-code unresolved organizer details such as baseline scores, compute limits, $\varepsilon$, $N$, or output schema.
-- Do not spend primary-budget resources on the KuaiRand bonus task before AliCCP is robust.
+- Do not spend primary-budget resources on the AliCCP bonus task before KuaiRand is robust.
 - Do not let retries, hyperparameter sweeps, or LLM calls run without a budget cap.
 - Do not make the system dependent on undocumented local paths, secrets, UI clicks, or human memory.
 
@@ -416,19 +413,19 @@ Keep interfaces simple and file-backed. The agent must remain inspectable and ru
 
 Before submission, verify all of the following:
 
-- [ ] AliCCP pipeline runs end to end from documented setup.
-- [ ] Official AliCCP baseline was reproduced and documented.
+- [ ] KuaiRand pipeline runs end to end from documented setup.
+- [ ] Official KuaiRand baseline was reproduced and documented.
 - [ ] Final artifact is the validation-best checkpoint/prediction at convergence or budget exhaustion.
 - [ ] Predictions/checkpoint match the official submission schema.
 - [ ] Evaluation uses the organizer’s official metric implementation.
-- [ ] Results report CTR AUC, CVR AUC, and absolute delta versus the official baseline.
+- [ ] Results report NDCG@10, Recall@50, and absolute delta versus the official baseline.
 - [ ] Every iteration has hypothesis, code diff, metrics, and error/recovery log.
 - [ ] Manual interventions are counted and summarized.
 - [ ] Total LLM input/output tokens and GPU-hours are reported.
 - [ ] README contains project overview, installation, reproduction steps, limitations, and team contributions.
 - [ ] Devpost description lists the solution approach, development tools, APIs, libraries/frameworks, and datasets/assets.
 - [ ] Demo shows an end-to-end autonomous run or a faithful recorded run with logs, metrics, and final artifact.
-- [ ] KuaiRand artifacts/results are included only if the bonus benchmark was genuinely attempted.
+- [ ] AliCCP artifacts/results are included only if the bonus benchmark was genuinely attempted.
 
 ---
 
