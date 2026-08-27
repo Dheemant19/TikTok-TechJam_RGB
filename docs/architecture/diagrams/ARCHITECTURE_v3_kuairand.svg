@@ -1,0 +1,946 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="2400" height="2160" viewBox="0 0 2400 2160" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<title>RIGOR-RS Core Architecture v3 - KuaiRand-Pure</title>
+<defs>
+  <!-- Drop Shadows -->
+  <filter id="shadow" x="-3%" y="-3%" width="106%" height="108%" filterUnits="userSpaceOnUse">
+    <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.06"/>
+  </filter>
+  <filter id="cardShadow" x="-2%" y="-2%" width="104%" height="106%" filterUnits="userSpaceOnUse">
+    <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.04"/>
+  </filter>
+  <filter id="highlightShadow" x="-3%" y="-3%" width="106%" height="108%" filterUnits="userSpaceOnUse">
+    <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#2563eb" flood-opacity="0.12"/>
+  </filter>
+
+  <!-- Markers -->
+  <marker id="arrBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,1.5 L8,5 L0,8.5 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,1.5 L8,5 L0,8.5 z" fill="#16a34a"/>
+  </marker>
+  <marker id="arrPurple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,1.5 L8,5 L0,8.5 z" fill="#7c3aed"/>
+  </marker>
+  <marker id="arrAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,1.5 L8,5 L0,8.5 z" fill="#d97706"/>
+  </marker>
+  <marker id="arrRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,1.5 L8,5 L0,8.5 z" fill="#dc2626"/>
+  </marker>
+  <marker id="arrSlate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,1.5 L8,5 L0,8.5 z" fill="#64748b"/>
+  </marker>
+  <marker id="arrGold" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M0,1.5 L8,5 L0,8.5 z" fill="#ca8a04"/>
+  </marker>
+</defs>
+
+<!-- Background -->
+<rect x="0" y="0" width="2400" height="2160" fill="#f8fafc"/>
+
+<!-- ========================================================================= -->
+<!-- HEADER BAR -->
+<!-- ========================================================================= -->
+<g transform="translate(30, 20)">
+  <rect x="0" y="0" width="2340" height="95" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="30" y="40" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="23" fill="#0f172a">RIGOR-RS: Autonomous ML Research Architecture v3</text>
+  <text x="30" y="64" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#2563eb">TikTok TechJam 2026 Track #2 — KuaiRand-Pure Benchmark</text>
+  <text x="30" y="83" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#64748b">Integrity-Gated Research Loop  •  Research Knowledge MCP Gateway  •  Multi-Tier Filter-Only Proxy  •  Transactional Rollback  •  All Design Decisions [DD-1 to DD-9] Labeled</text>
+
+  <!-- Header Badges -->
+  <g transform="translate(1380, 28)">
+    <rect x="0" y="0" width="180" height="38" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+    <text x="90" y="24" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#1e40af">🎯 Within-User Ranking</text>
+
+    <rect x="195" y="0" width="165" height="38" rx="6" fill="#eff6ff" stroke="#93c5fd"/>
+    <text x="277" y="24" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#1e40af">🏷️ Label: long_view</text>
+
+    <rect x="375" y="0" width="230" height="38" rx="6" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="490" y="24" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#166534">📊 (GAUC + nDCG@5) / 2</text>
+
+    <rect x="620" y="0" width="310" height="38" rx="6" fill="#fef3c7" stroke="#fcd34d"/>
+    <text x="775" y="24" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#92400e">⚡ FM Baseline: 0.5946 (ε=0.002, N=3)</text>
+  </g>
+</g>
+
+<!-- ========================================================================= -->
+<!-- 1. DATA, ARTIFACT & PROVENANCE LAYER -->
+<!-- ========================================================================= -->
+<g id="layer1_data" transform="translate(30, 135)">
+  <rect x="0" y="0" width="2340" height="235" rx="10" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" filter="url(#shadow)"/>
+  <rect x="0" y="0" width="2340" height="32" rx="10" fill="#f1f5f9"/>
+  <rect x="0" y="20" width="2340" height="12" fill="#f1f5f9"/>
+  <text x="25" y="21" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#334155">🗄️  DATA, ARTIFACT &amp; PROVENANCE LAYER (KuaiRand-Pure Splits &amp; Scientific Memory)</text>
+
+  <!-- 1.1 Train Split -->
+  <g transform="translate(20, 44)">
+    <rect x="0" y="0" width="360" height="175" rx="7" fill="#f8fafc" stroke="#64748b" stroke-width="1.2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="360" height="24" rx="7" fill="#e2e8f0"/>
+    <rect x="0" y="16" width="360" height="8" fill="#e2e8f0"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#0f172a">Train Split [TRAIN_FEATURES/LABELS]</text>
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#334155"><tspan font-weight="bold">• File:</tspan> log_standard_4_08_to_4_21_pure.csv</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">  1.14M interactions (14-day history: 04/08–04/21)</text>
+    <text x="12" y="76" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Features:</tspan> user_id, video_id, static user/video features</text>
+    <text x="12" y="94" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Aux Signals:</tspan> is_click, is_like, is_follow, play_time_ms</text>
+    <text x="12" y="112" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Target:</tspan> long_view (binary 0/1)</text>
+    <text x="12" y="132" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#166534">🔒 Fit preprocessors on train only; zero leakage</text>
+    <text x="12" y="152" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#64748b">Split Taint: TRAIN_FEATURES, TRAIN_LABELS</text>
+  </g>
+
+  <!-- 1.2 Offline Item Co-Occurrence Store [DESIGN DECISION 1] -->
+  <g transform="translate(400, 44)">
+    <rect x="0" y="0" width="365" height="175" rx="7" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="365" height="24" rx="7" fill="#dcfce7"/>
+    <rect x="0" y="16" width="365" height="8" fill="#dcfce7"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#14532d">Offline Co-Occurrence Store [DD-1]</text>
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#15803d">⚡ [DD-1] Train-Only Co-Occurrence (Design-Decision §1)</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Session-bounded calculation from train interactions</text>
+    <text x="12" y="74" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Top-k neighbors &amp; transition weights</text>
+    <text x="12" y="90" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Immutable Parquet artifact keyed by video_id</text>
+    <text x="12" y="106" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Records dataset hash &amp; unseen-item fallback</text>
+    <text x="12" y="128" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#b91c1c">⚠️ Zero validation/test co-occurrence permitted</text>
+    <text x="12" y="150" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">Feature lookup or embedding initialization</text>
+  </g>
+
+  <!-- 1.3 Validation Split -->
+  <g transform="translate(785, 44)">
+    <rect x="0" y="0" width="365" height="175" rx="7" fill="#f8fafc" stroke="#64748b" stroke-width="1.2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="365" height="24" rx="7" fill="#e2e8f0"/>
+    <rect x="0" y="16" width="365" height="8" fill="#e2e8f0"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#0f172a">Validation Split (7-Day)</text>
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#334155"><tspan font-weight="bold">• File:</tspan> log_standard_4_22_to_5_08_pure.csv</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">  Date range: 20220422 to 20220428 (7 days)</text>
+    <text x="12" y="76" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Ground Truth:</tspan> long_view (0/1 binary label)</text>
+    <text x="12" y="94" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Per-User Groups:</tspan> Evaluates GAUC &amp; nDCG@5</text>
+    <text x="12" y="112" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Zero-positive users = 0.0 nDCG (included in mean)</text>
+    <text x="12" y="132" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#1e40af">🎯 Source of Truth for decisions &amp; ε=0.002</text>
+    <text x="12" y="152" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#64748b">Split Taint: VALIDATION_FEEDBACK</text>
+  </g>
+
+  <!-- 1.4 Append-Only Run Ledger & Checkpoints [DESIGN DECISION 6] -->
+  <g transform="translate(1170, 44)">
+    <rect x="0" y="0" width="380" height="175" rx="7" fill="#f8fafc" stroke="#64748b" stroke-width="1.2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="380" height="24" rx="7" fill="#e2e8f0"/>
+    <rect x="0" y="16" width="380" height="8" fill="#e2e8f0"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#0f172a">📊 Append-Only Ledger &amp; Memory [DD-6]</text>
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#334155">• SQLite Run Ledger (No history deletion!)</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">  Records contracts, diffs, metric receipts, failures</text>
+    <text x="12" y="76" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Hardware Meters:</tspan> LLM tokens, GPU-hrs, peak RAM</text>
+    <text x="12" y="94" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#1e40af">💾 Checkpoint Storage (Atomic sha256 writes)</text>
+    <text x="12" y="110" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">• Stores validation_best &amp; stable_fallback</text>
+    <text x="12" y="132" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#166534">⚡ [DD-6] Transactional Rollback parent reference</text>
+    <text x="12" y="152" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">Immutable DAG: Retains accepted and rejected runs</text>
+  </g>
+
+  <!-- 1.5 Sealed Test Split -->
+  <g transform="translate(1570, 44)">
+    <rect x="0" y="0" width="365" height="175" rx="7" fill="#fef2f2" stroke="#ef4444" stroke-width="1.2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="365" height="24" rx="7" fill="#fee2e2"/>
+    <rect x="0" y="16" width="365" height="8" fill="#fee2e2"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#991b1b">🔒 Sealed Test Split (10-Day) [LOCKED]</text>
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#b91c1c"><tspan font-weight="bold">• File:</tspan> log_standard_4_22_to_5_08_pure.csv</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">  23,875 test users (04/29–05/08, 10 days)</text>
+    <text x="12" y="76" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Mandatory row_id:</tspan> 0-indexed deterministic sequence</text>
+    <text x="12" y="94" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#b91c1c">❌ ZERO access, inspection, or tuning during dev</text>
+    <text x="12" y="112" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">• Used exactly 1x by Finalizer for submission export</text>
+    <text x="12" y="132" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#991b1b">🛑 Non-negotiable integrity invariant: 1-way terminal</text>
+    <text x="12" y="152" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#dc2626">Taint: TEST_FEATURES_ONLY, TEST_LABELS_LOCKED</text>
+  </g>
+
+  <!-- 1.6 Unbiased Random Exposure Log (Optional) -->
+  <g transform="translate(1955, 44)">
+    <rect x="0" y="0" width="365" height="175" rx="7" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.2" stroke-dasharray="4,2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="365" height="24" rx="7" fill="#fae8ff"/>
+    <rect x="0" y="16" width="365" height="8" fill="#fae8ff"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#6b21a8">Unbiased Random Log  [OPTIONAL]</text>
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#7e22ce"><tspan font-weight="bold">• File:</tspan> log_random_4_22_to_5_08_pure.csv</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">  1.18M rows of randomized exposure data</text>
+    <text x="12" y="76" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• Role:</tspan> Off-policy evaluation &amp; exposure debiasing</text>
+    <text x="12" y="94" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155"><tspan font-weight="bold">• IPS Diagnostics:</tspan> Inverse propensity score weights</text>
+    <text x="12" y="112" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">• Tests if ranking gains hold on unbiased traffic</text>
+    <text x="12" y="132" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#6b21a8">🔬 Advanced counterfactual validation stream</text>
+    <text x="12" y="152" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#9333ea">Optional: Secondary validation feedback only</text>
+  </g>
+</g>
+
+<!-- ========================================================================= -->
+<!-- 2. RESEARCH KNOWLEDGE MCP & LLM REASONING LAYER -->
+<!-- ========================================================================= -->
+<g id="layer2_llm_mcp" transform="translate(30, 430)">
+  <rect x="0" y="0" width="2340" height="470" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <rect x="0" y="0" width="2340" height="32" rx="10" fill="#dbeafe"/>
+  <rect x="0" y="20" width="2340" height="12" fill="#dbeafe"/>
+  <text x="25" y="21" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#1e40af">🧠  LLM REASONING &amp; RESEARCH KNOWLEDGE MCP LAYER</text>
+
+  <!-- 2A. MCP GATEWAY CONTAINER (LEFT) -->
+  <g transform="translate(20, 45)">
+    <rect x="0" y="0" width="1180" height="410" rx="8" fill="#ffffff" stroke="#c4b5fd" stroke-width="1.2" stroke-dasharray="5,2"/>
+    <rect x="0" y="0" width="1180" height="24" rx="8" fill="#f5f3ff"/>
+    <rect x="0" y="16" width="1180" height="8" fill="#f5f3ff"/>
+    <text x="15" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11.5" fill="#5b21b6">🌐  Research Knowledge MCP Gateway  [OPTIONAL / LITERATURE-TIER EVIDENCE]</text>
+
+    <!-- Subrow 1: Sources -->
+    <g transform="translate(15, 32)">
+      <!-- OpenAlex -->
+      <g transform="translate(0, 0)">
+        <rect x="0" y="0" width="270" height="88" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/>
+        <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10" fill="#92400e">OpenAlex / arXiv API (Primary)</text>
+        <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• RecSys concept &amp; keyword queries</text>
+        <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• Bounded external search (no scraping)</text>
+        <text x="10" y="60" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• Polite pool; citation/recency gate</text>
+        <text x="10" y="76" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#92400e">Replaceable provider interface</text>
+      </g>
+
+      <!-- GitHub Search [DESIGN DECISION 8] -->
+      <g transform="translate(285, 0)">
+        <rect x="0" y="0" width="275" height="88" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10" fill="#92400e">GitHub Search Adapter [DD-8]</text>
+        <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• ⚡ [DD-8] Official GitHub Search API</text>
+        <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• Rate limits: 30 search/m, 10 code/m</text>
+        <text x="10" y="60" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• Pinned commit SHA, license &amp; file hash</text>
+        <text x="10" y="76" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#92400e">Untrusted code: Isolated execution</text>
+      </g>
+
+      <!-- Top-25 Seed Corpus [DESIGN DECISION 3] -->
+      <g transform="translate(575, 0)">
+        <rect x="0" y="0" width="280" height="88" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10" fill="#1e40af">Top-25 Seed Corpus [DD-3]</text>
+        <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#1e3a8a">• ⚡ [DD-3] Curated offline seed corpus</text>
+        <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#1e3a8a">• Non-exclusive (avoids closed bias)</text>
+        <text x="10" y="60" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#1e3a8a">• Hybrid search: sqlite-vec + BM25</text>
+        <text x="10" y="76" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#1e40af">Matches exact terms: GAUC, nDCG, BPR</text>
+      </g>
+
+      <!-- Papers with Code [DESIGN DECISION 9] -->
+      <g transform="translate(870, 0)">
+        <rect x="0" y="0" width="280" height="88" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3,2"/>
+        <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10" fill="#92400e">Papers-with-Code [DD-9 / OPT]</text>
+        <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• ⚡ [DD-9] Paper → repo direct lookup</text>
+        <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• Optional legacy fallback adapter</text>
+        <text x="10" y="60" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#374151">• Non-blocking if API redirects</text>
+        <text x="10" y="76" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#92400e">OpenAlex is primary discovery</text>
+      </g>
+    </g>
+
+    <!-- Subrow 2: Processing & Serving -->
+    <g transform="translate(15, 128)">
+      <!-- Sanitizer -->
+      <g transform="translate(0, 0)">
+        <rect x="0" y="0" width="365" height="120" rx="5" fill="#fee2e2" stroke="#ef4444" stroke-width="1"/>
+        <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10" fill="#991b1b">Prompt-Injection Sanitizer &amp; License Gate</text>
+        <text x="10" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#7f1d1d">• Strips prompt-injection patterns in abstracts/code</text>
+        <text x="10" y="50" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#7f1d1d">• Retraction filtering: Skips retracted works</text>
+        <text x="10" y="66" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#7f1d1d">• License gate: Enforces open license (MIT, Apache)</text>
+        <text x="10" y="82" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#7f1d1d">• Content Hasher: sha256 addressing for cache keys</text>
+        <text x="10" y="104" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8" fill="#b91c1c">Security: External text cannot grant agent capabilities</text>
+      </g>
+
+      <!-- Knowledge Store [DESIGN DECISION 3] -->
+      <g transform="translate(380, 0)">
+        <rect x="0" y="0" width="385" height="120" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.5"/>
+        <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10" fill="#0f172a">Knowledge Base (SQLite + sqlite-vec) [DD-3]</text>
+        <text x="10" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Papers table (metadata, abstract, license, trust_tier)</text>
+        <text x="10" y="50" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Code Implementations table (repo_url, commit, stars)</text>
+        <text x="10" y="66" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Citation Edges table (powers citation expansion)</text>
+        <text x="10" y="82" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#1e40af">⚡ [DD-3] Hybrid Index: sqlite-vec + BM25 keyword</text>
+        <text x="10" y="104" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Authority: Literature tier (Rank 6, below measured runs)</text>
+      </g>
+
+      <!-- Canonical Cache & Call Caps [DESIGN DECISION 2] -->
+      <g transform="translate(780, 0)">
+        <rect x="0" y="0" width="370" height="120" rx="5" fill="#cffafe" stroke="#0891b2" stroke-width="1.5"/>
+        <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10" fill="#155e75">Query Router &amp; Call Caps [DD-2]</text>
+        <text x="10" y="34" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#0e7490">⚡ [DD-2] Canonical Cache Key:</text>
+        <text x="10" y="48" font-family="Menlo,Consolas,monospace" font-size="8" fill="#0f766e">  provider:norm_query:filters:cutoff:limit</text>
+        <text x="10" y="66" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#155e75">⚡ [DD-2] Triple Caps: API requests / docs / tokens</text>
+        <text x="10" y="82" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#155e75">• Prevents cross-query contamination &amp; token overrun</text>
+        <text x="10" y="104" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#0e7490">Rate Limiter: Exponential backoff on 429 / outages</text>
+      </g>
+    </g>
+
+    <!-- Subrow 3: MCP Tools Banner -->
+    <g transform="translate(15, 258)">
+      <rect x="0" y="0" width="1150" height="135" rx="6" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1"/>
+      <text x="15" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10.5" fill="#4c1d95">Read-Only MCP Tool Surface (Exposed to Scientist &amp; Coder)</text>
+      
+      <g transform="translate(15, 28)">
+        <rect x="0" y="0" width="355" height="92" rx="4" fill="#ffffff" stroke="#c4b5fd"/>
+        <text x="8" y="16" font-family="Menlo,Consolas,monospace" font-weight="bold" font-size="9" fill="#4c1d95">search_evidence(query, filters)</text>
+        <text x="8" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#374151">• Hybrid BM25 + embedding search</text>
+        <text x="8" y="48" font-family="Menlo,Consolas,monospace" font-weight="bold" font-size="9" fill="#4c1d95">get_paper(paper_id)</text>
+        <text x="8" y="64" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#374151">• Metadata, abstract &amp; fulltext</text>
+        <text x="8" y="80" font-family="Helvetica,Arial,sans-serif" font-size="7.5" fill="#6b21a8">Returns: sanitized paper card</text>
+      </g>
+
+      <g transform="translate(385, 28)">
+        <rect x="0" y="0" width="355" height="92" rx="4" fill="#ffffff" stroke="#c4b5fd"/>
+        <text x="8" y="16" font-family="Menlo,Consolas,monospace" font-weight="bold" font-size="9" fill="#4c1d95">search_code(query, min_stars)</text>
+        <text x="8" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#374151">• Code search on GitHub (license-gated)</text>
+        <text x="8" y="48" font-family="Menlo,Consolas,monospace" font-weight="bold" font-size="9" fill="#4c1d95">get_code_for_paper(paper_id)</text>
+        <text x="8" y="64" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#374151">• Pinned repo commit SHA + file tree</text>
+        <text x="8" y="80" font-family="Helvetica,Arial,sans-serif" font-size="7.5" fill="#6b21a8">Returns: untrusted reference code</text>
+      </g>
+
+      <g transform="translate(755, 28)">
+        <rect x="0" y="0" width="380" height="92" rx="4" fill="#ffffff" stroke="#c4b5fd"/>
+        <text x="8" y="16" font-family="Menlo,Consolas,monospace" font-weight="bold" font-size="9" fill="#4c1d95">get_research_card(hypothesis)</text>
+        <text x="8" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#374151">• Synthesizes literature evidence card</text>
+        <text x="8" y="48" font-family="Menlo,Consolas,monospace" font-weight="bold" font-size="9" fill="#4c1d95">expand_citations(work_id)</text>
+        <text x="8" y="64" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#374151">• Citation graph traversal for priors</text>
+        <text x="8" y="80" font-family="Helvetica,Arial,sans-serif" font-size="7.5" fill="#6b21a8">Returns: structured claim graph</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- 2B. RESEARCH AGENT ('THE SCIENTIST') -->
+  <g id="card_scientist" transform="translate(1240, 45)">
+    <rect x="0" y="0" width="530" height="410" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.8" filter="url(#highlightShadow)"/>
+    <rect x="0" y="0" width="530" height="26" rx="8" fill="#dbeafe"/>
+    <rect x="0" y="18" width="530" height="8" fill="#dbeafe"/>
+    <text x="15" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="12" fill="#1e40af">1. Research Agent ('The Scientist')</text>
+
+    <!-- Inputs Box -->
+    <g transform="translate(15, 34)">
+      <rect x="0" y="0" width="500" height="52" rx="4" fill="#eff6ff" stroke="#bfdbfe"/>
+      <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#1e3a8a">INPUTS (Context Compiler Digest):</text>
+      <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#1e40af">• Diagnostics Profile (within-user variance, sequence lengths, drift)</text>
+      <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#1e40af">• Run Ledger History &amp; Scoped Claims • Remaining Budget</text>
+    </g>
+
+    <!-- Priorities Box -->
+    <g transform="translate(15, 94)">
+      <rect x="0" y="0" width="500" height="142" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#0f172a">HIGH-HEADROOM RESEARCH PRIORITIES:</text>
+      <text x="10" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155"><tspan font-weight="bold" fill="#166534">1. Ranking Loss:</tspan> Pairwise BPR / Listwise Plackett-Luce (Objective alignment)</text>
+      <text x="10" y="50" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155"><tspan font-weight="bold" fill="#166534">2. Sequence Modeling:</tspan> DIN / SIM / SASRec user interest extractors</text>
+      <text x="10" y="66" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155"><tspan font-weight="bold" fill="#166534">3. Multi-Task Learning (MTL):</tspan> MMoE / PLE using is_click, is_like, play_time</text>
+      <text x="10" y="82" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155"><tspan font-weight="bold" fill="#166534">4. Censored Watch Time:</tspan> CWM duration survival loss for play_time_ms</text>
+      <text x="10" y="102" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#b91c1c">⚠️ Dead Ends Pruned: No static 13 CWM features, no capacity scaling</text>
+      <text x="10" y="122" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Queries MCP evidence gateway before committing causal hypothesis</text>
+    </g>
+
+    <!-- Contract Box -->
+    <g transform="translate(15, 244)">
+      <rect x="0" y="0" width="500" height="152" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#14532d">OUTPUT: Pre-Registered Counterfactual Contract</text>
+      <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• 1 primary causal hypothesis &amp; exact code/config scope</text>
+      <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Predicted metric movement: ΔGAUC &amp; ΔnDCG@5 vs FM baseline</text>
+      <text x="10" y="64" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#166534">Pre-Declared Outcome Handlers (No Hindsight Bias):</text>
+      <text x="10" y="78" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">  - Success (ΔPrimary &gt; 0.002) → Retain &amp; update validation_best</text>
+      <text x="10" y="92" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">  - Tradeoff (GAUC↑ nDCG↓) → Multi-task sensor investigation</text>
+      <text x="10" y="106" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">  - Overfit / Underfit → Dedicated regularization / capacity branch</text>
+      <text x="10" y="120" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">  - Regression → Reject &amp; switch causal branch</text>
+      <text x="10" y="138" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#14532d">Guardrails: ε=0.002 convergence threshold, fallback = stable_fallback</text>
+    </g>
+  </g>
+
+  <!-- 2C. CODE & RECOVERY AGENT ('THE CODER') -->
+  <g id="card_coder" transform="translate(1800, 45)">
+    <rect x="0" y="0" width="520" height="410" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.8" filter="url(#highlightShadow)"/>
+    <rect x="0" y="0" width="520" height="26" rx="8" fill="#dbeafe"/>
+    <rect x="0" y="18" width="520" height="8" fill="#dbeafe"/>
+    <text x="15" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="12" fill="#1e40af">2. Code &amp; Recovery Agent ('The Coder')</text>
+
+    <!-- Inputs Box -->
+    <g transform="translate(15, 34)">
+      <rect x="0" y="0" width="490" height="52" rx="4" fill="#eff6ff" stroke="#bfdbfe"/>
+      <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#1e3a8a">INPUTS:</text>
+      <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#1e40af">• Approved Pre-Registered Contract</text>
+      <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#1e40af">• Pinned MCP Reference Code + Repository Source Tree</text>
+    </g>
+
+    <!-- Responsibilities Box -->
+    <g transform="translate(15, 94)">
+      <rect x="0" y="0" width="490" height="142" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#0f172a">RESPONSIBILITIES &amp; SCOPE GUARDS:</text>
+      <text x="10" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Applies minimal code patch in isolated Git worktree</text>
+      <text x="10" y="48" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Writes targeted unit &amp; contract verification tests</text>
+      <text x="10" y="66" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#b91c1c">🔒 Strict Immutability Guard (Diff Sentinel):</text>
+      <text x="10" y="80" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  ❌ evaluate.py is LOCKED (Source of truth, immutable)</text>
+      <text x="10" y="94" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  ❌ Split boundaries &amp; labels are IMMUTABLE</text>
+      <text x="10" y="108" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  ❌ Prior ledger run history is APPEND-ONLY</text>
+      <text x="10" y="126" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#166534">Semantic Bug Fixing: Fixes syntax, shapes &amp; device errors locally</text>
+    </g>
+
+    <!-- Output Box -->
+    <g transform="translate(15, 244)">
+      <rect x="0" y="0" width="490" height="152" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="10" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#14532d">OUTPUT: Isolated Git Diff Patch &amp; Tests</text>
+      <text x="10" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Minimal atomic patch file (diff.patch)</text>
+      <text x="10" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Pinned configuration artifact with sha256 hash</text>
+      <text x="10" y="64" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#166534">Isolated Worktree Execution:</text>
+      <text x="10" y="78" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  - Branch branched from parent_run_id</text>
+      <text x="10" y="92" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  - Zero pollution of main repository</text>
+      <text x="10" y="106" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  - Verified by preflight unit tests</text>
+      <text x="10" y="124" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#1e40af">Semantic Recovery Escalation:</text>
+      <text x="10" y="138" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  Escalation target when deterministic parameter recovery is exhausted</text>
+    </g>
+  </g>
+</g>
+
+<!-- ========================================================================= -->
+<!-- 3. DETERMINISTIC INTEGRITY KERNEL & EXECUTION ENGINE -->
+<!-- ========================================================================= -->
+<g id="layer3_kernel" transform="translate(30, 960)">
+  <rect x="0" y="0" width="2340" height="570" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2" filter="url(#shadow)"/>
+  <rect x="0" y="0" width="2340" height="32" rx="10" fill="#dcfce7"/>
+  <rect x="0" y="20" width="2340" height="12" fill="#dcfce7"/>
+  <text x="25" y="21" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#166534">⚙️  DETERMINISTIC INTEGRITY KERNEL &amp; EXECUTION ENGINE (Zero LLM Tokens — Ordinary Safe Code)</text>
+
+  <!-- 3.1 Data Profiler -->
+  <g transform="translate(20, 45)">
+    <rect x="0" y="0" width="370" height="245" rx="7" fill="#ffffff" stroke="#22c55e" stroke-width="1.2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="370" height="24" rx="7" fill="#dcfce7"/>
+    <rect x="0" y="16" width="370" height="8" fill="#dcfce7"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#14532d">Data Profiler &amp; Diagnostics</text>
+    
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#166534">IN: Raw Training Tables &amp; Split Logs</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Interaction counts &amp; user candidate list lengths</text>
+    <text x="12" y="74" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Within-user long_view variance:</text>
+    <text x="12" y="90" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">  - 27.1% all-negative users (nDCG=0.0 fixed)</text>
+    <text x="12" y="104" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">  - 9.2% all-positive users (nDCG=1.0 fixed)</text>
+    <text x="12" y="118" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">  - 63.7% discriminative users (evaluates GAUC)</text>
+    <text x="12" y="136" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Historical sequence lengths (DIN/SIM readiness)</text>
+    <text x="12" y="152" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Watch-time right-censoring distributions</text>
+    <text x="12" y="168" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Cardinality, sparsity &amp; unseen-ID rate</text>
+    <text x="12" y="190" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#14532d">OUT: Compact Diagnostic Profile Digest</text>
+    <text x="12" y="206" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#15803d">• Sent to Context Compiler for Scientist</text>
+    <text x="12" y="226" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Zero raw interaction rows in prompts (token efficient)</text>
+  </g>
+
+  <!-- 3.2 Phase-Boundary Guard [DESIGN DECISION 7] -->
+  <g transform="translate(20, 300)">
+    <rect x="0" y="0" width="370" height="255" rx="7" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5" stroke-dasharray="4,2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="370" height="24" rx="7" fill="#fae8ff"/>
+    <rect x="0" y="16" width="370" height="8" fill="#fae8ff"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#6b21a8">Phase-Boundary Checks [DD-7 / OPT]</text>
+    
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#7e22ce">⚡ [DD-7] Typed Contracts (Design-Decision §7):</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Schema &amp; column type assertions</text>
+    <text x="12" y="74" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Key uniqueness &amp; row_id continuous indexing</text>
+    <text x="12" y="90" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Expected cardinality &amp; permitted row changes</text>
+    <text x="12" y="106" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Join expansion ratio assertions</text>
+    <text x="12" y="122" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Split taint &amp; temporal boundary verification</text>
+    <text x="12" y="138" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Missingness, NaN &amp; finite-value assertions</text>
+    <text x="12" y="154" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Transform code &amp; artifact sha256 checksums</text>
+    <text x="12" y="178" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#b91c1c">⚠️ Fail-Closed Policy:</text>
+    <text x="12" y="194" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">• Safety violation → Fail closed &amp; log incident</text>
+    <text x="12" y="210" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">• Feature drift → Diagnostic telemetry only</text>
+    <text x="12" y="234" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#7e22ce">Prevents silent data leakage between splits</text>
+  </g>
+
+  <!-- 3.3 Multi-Tier Pruner [DESIGN DECISIONS 4 & 5] -->
+  <g id="card_pruner" transform="translate(410, 45)">
+    <rect x="0" y="0" width="445" height="510" rx="7" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="445" height="24" rx="7" fill="#fef9c3"/>
+    <rect x="0" y="16" width="445" height="8" fill="#fef9c3"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#854d0e">Multi-Tier Pruner &amp; Proxy Gate [DD-4 &amp; DD-5]</text>
+    
+    <g transform="translate(12, 34)">
+      <text x="0" y="14" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#713f12">⚡ [DD-5] 4 Absolute Validation Gates (Not Bottom Ranking):</text>
+      
+      <!-- Tier 1 -->
+      <g transform="translate(0, 22)">
+        <rect x="0" y="0" width="420" height="52" rx="4" fill="#ffffff" stroke="#fde047"/>
+        <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#0f172a">Tier 1: Static, Schema &amp; Leakage Check (Zero GPU Cost)</text>
+        <text x="8" y="30" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">• AST diff guard, evaluator immutability, type assertions</text>
+        <text x="8" y="44" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#166534">Pass → Advance to Tier 2  |  Fail → Return to Coder</text>
+      </g>
+
+      <!-- Tier 2 -->
+      <g transform="translate(0, 80)">
+        <rect x="0" y="0" width="420" height="52" rx="4" fill="#ffffff" stroke="#fde047"/>
+        <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#0f172a">Tier 2: Tiny Mechanical Smoke Run (100 Batches)</text>
+        <text x="8" y="30" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">• Verifies tensor shapes, forward/backward pass, loss finite</text>
+        <text x="8" y="44" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#166534">Pass → Advance to Tier 3  |  Fail → Fast recovery</text>
+      </g>
+
+      <!-- Tier 3 (Proxy) [DESIGN DECISION 4] -->
+      <g transform="translate(0, 138)">
+        <rect x="0" y="0" width="420" height="96" rx="4" fill="#ffffff" stroke="#ca8a04" stroke-width="1.5"/>
+        <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#854d0e">Tier 3 (Proxy): Subsample Run [DD-4 Filter-Only]</text>
+        <text x="8" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Evaluates convergence &amp; regression on fixed subsample</text>
+        <text x="8" y="46" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#b91c1c">⚡ [DD-4] Strict Filter-Only Rules (Design-Decision §4):</text>
+        <text x="8" y="60" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#991b1b">  - May REJECT: Crashes, OOMs, NaN loss, severe regression</text>
+        <text x="8" y="74" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#b91c1c">  - MUST NOT promote final model or advance N=3 counter</text>
+        <text x="8" y="88" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#475569">  - Rejected proxy runs logged as proxy/non_comparable</text>
+      </g>
+
+      <!-- Tier 4 -->
+      <g transform="translate(0, 240)">
+        <rect x="0" y="0" width="420" height="52" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+        <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#14532d">Tier 4: Full Train Split &amp; Official Validation Promotion</text>
+        <text x="8" y="30" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Promoted to Training &amp; Inference Engine</text>
+        <text x="8" y="44" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Evaluated by official evaluate.py on 7-day validation split</text>
+      </g>
+    </g>
+
+    <g transform="translate(12, 355)">
+      <rect x="0" y="0" width="420" height="135" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#0f172a">PRUNING POLICIES &amp; LOCAL BASELINES:</text>
+      <text x="8" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Official baseline (FM) executed on each proxy tier as local reference</text>
+      <text x="8" y="52" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Absolute gating prevents discarding promising noisy architectures</text>
+      <text x="8" y="70" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Fast-rejection saves &gt;80% of GPU compute on non-viable code</text>
+      <text x="8" y="92" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Auditable: Every proxy decision written to SQLite Run Ledger</text>
+      <text x="8" y="112" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Zero leakage across tier boundaries</text>
+    </g>
+  </g>
+
+  <!-- 3.4 Training & Inference Engine -->
+  <g id="card_trainer" transform="translate(875, 45)">
+    <rect x="0" y="0" width="455" height="510" rx="7" fill="#ffffff" stroke="#16a34a" stroke-width="1.8" filter="url(#highlightShadow)"/>
+    <rect x="0" y="0" width="455" height="26" rx="7" fill="#dcfce7"/>
+    <rect x="0" y="18" width="455" height="8" fill="#dcfce7"/>
+    <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11.5" fill="#14532d">Training &amp; Inference Engine  (Deterministic Runtime)</text>
+    
+    <g transform="translate(12, 36)">
+      <rect x="0" y="0" width="430" height="52" rx="4" fill="#f0fdf4" stroke="#bbf7d0"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#14532d">INPUTS (Fully Taint-Checked):</text>
+      <text x="8" y="30" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Approved Git Diff Patch (isolated worktree) + Config</text>
+      <text x="8" y="44" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Full Train Split (1.14M rows) + Frozen Train Transforms</text>
+    </g>
+
+    <g transform="translate(12, 96)">
+      <rect x="0" y="0" width="430" height="162" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#0f172a">EXECUTION PROTOCOL &amp; SEED CONTROL:</text>
+      <text x="8" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Pinned random seeds (Baseline std σ = 0.0008 across 5 seeds)</text>
+      <text x="8" y="46" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Atomic checkpoint writes with sha256 checksums</text>
+      <text x="8" y="60" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Telemetry streaming: loss, learning rate, GPU RAM, throughput</text>
+      <text x="8" y="78" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#166534">Multi-Task Auxiliary Signal Dynamics:</text>
+      <text x="8" y="94" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">• Tracks per-signal losses for auxiliary tasks (click, like, play_time)</text>
+      <text x="8" y="108" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">• Measures gradient conflict against primary long_view ranking</text>
+      <text x="8" y="126" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#1e40af">Metamorphic Assurance Checks:</text>
+      <text x="8" y="140" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#475569">• Invariant: Row order permutation does NOT change GAUC/nDCG</text>
+      <text x="8" y="154" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#475569">• Invariant: Shuffled labels drop metrics to chance (~0.475)</text>
+    </g>
+
+    <g transform="translate(12, 266)">
+      <rect x="0" y="0" width="430" height="110" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#14532d">OUTPUTS:</text>
+      <text x="8" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Checkpoint artifact (checkpoint.pt) → Checkpoint Store</text>
+      <text x="8" y="48" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Validation Predictions (scores array) → Official Evaluator</text>
+      <text x="8" y="68" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#166534">Crash &amp; OOM Interception:</text>
+      <text x="8" y="84" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">• Trapped by Auto-Recovery Controller without crashing agent loop</text>
+      <text x="8" y="98" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">• Exact stacktrace &amp; memory telemetry preserved in log</text>
+    </g>
+
+    <g transform="translate(12, 384)">
+      <rect x="0" y="0" width="430" height="105" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#0f172a">COMPUTE &amp; REPRODUCIBILITY GUARANTEES:</text>
+      <text x="8" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• CPU Single-Core FM Baseline runtime: ~40 seconds</text>
+      <text x="8" y="50" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• GPU batch throughput: &gt;50k interactions/sec</text>
+      <text x="8" y="70" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Completely reproducible from seeds &amp; pinned environment</text>
+      <text x="8" y="88" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">All run outputs verified against baseline ledger</text>
+    </g>
+  </g>
+
+  <!-- 3.5 Auto-Recovery & Transactional Rollback [DESIGN DECISION 6] -->
+  <g id="card_recovery" transform="translate(1350, 45)">
+    <rect x="0" y="0" width="455" height="245" rx="7" fill="#fef2f2" stroke="#ef4444" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="455" height="24" rx="7" fill="#fee2e2"/>
+    <rect x="0" y="16" width="455" height="8" fill="#fee2e2"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#991b1b">Auto-Recovery &amp; Rollback [DD-6]</text>
+    
+    <text x="12" y="42" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#7f1d1d">IN: Crashes, CUDA OOM, NaN Loss, Timeouts</text>
+    <text x="12" y="58" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#1e40af">⚡ Bounded OOM Mitigation Ladder (Design-Decision §6):</text>
+    <text x="12" y="72" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">  1. Halve micro-batch size (e.g. 2048 → 1024 → 512)</text>
+    <text x="12" y="84" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">  2. Enable Mixed Precision (AMP fp16 / bf16)</text>
+    <text x="12" y="96" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">  3. Enable Gradient Accumulation &amp; Checkpointing</text>
+    
+    <text x="12" y="116" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#991b1b">🔄 ⚡ [DD-6] Transactional Rollback (Non-Deleted History):</text>
+    <text x="12" y="130" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">• Do NOT erase failed experiments from Run Ledger</text>
+    <text x="12" y="142" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">• Reset Git worktree &amp; point next run to stable_fallback</text>
+    <text x="12" y="154" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#334155">• Remove failed branch from active exploration frontier</text>
+    
+    <text x="12" y="174" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#b91c1c">Semantic Recovery Escalation:</text>
+    <text x="12" y="188" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#475569">• Parameter retry cap exhausted → Escalate to Code Agent</text>
+    <text x="12" y="206" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#991b1b">Zero silent failures; exact error diagnosis recorded in receipt</text>
+    <text x="12" y="226" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Max retries = 3 before branch pruning</text>
+  </g>
+
+  <!-- 3.6 Official Evaluator (evaluate.py) -->
+  <g id="card_evaluator" transform="translate(1350, 300)">
+    <rect x="0" y="0" width="455" height="255" rx="7" fill="#ffffff" stroke="#16a34a" stroke-width="1.8" filter="url(#highlightShadow)"/>
+    <rect x="0" y="0" width="455" height="24" rx="7" fill="#dcfce7"/>
+    <rect x="0" y="16" width="455" height="8" fill="#dcfce7"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11.5" fill="#14532d">Official KuaiRand Evaluator (evaluate.py)</text>
+    
+    <g transform="translate(12, 34)">
+      <rect x="0" y="0" width="430" height="42" rx="4" fill="#f0fdf4" stroke="#bbf7d0"/>
+      <text x="8" y="14" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#14532d">SOURCE OF TRUTH INTERFACE (LOCKED):</text>
+      <text x="8" y="28" font-family="Menlo,Consolas,monospace" font-size="8" fill="#166534">evaluate(user_ids, labels, scores)</text>
+    </g>
+
+    <g transform="translate(12, 84)">
+      <text x="0" y="14" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#0f172a">OFFICIAL SCORING ALGORITHM &amp; FORMULATION:</text>
+      <text x="0" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155"><tspan font-weight="bold">• GAUC:</tspan> Per-user AUC, positive-count weighted (63.7% active users)</text>
+      <text x="0" y="48" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155"><tspan font-weight="bold">• nDCG@5:</tspan> Gain 2^rel − 1; all-negative users score 0.0 (in mean)</text>
+      <text x="0" y="66" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#14532d">• Primary Score = (GAUC + nDCG@5) / 2</text>
+      <text x="0" y="82" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">  (Oracle Ceiling = 0.8645 due to 27.1% all-negative users)</text>
+      <text x="0" y="104" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#166534">OUTPUT: Signed Metric Receipt (GAUC, nDCG@5, Primary, Hashes)</text>
+      <text x="0" y="122" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Checksum of evaluate.py verified before each run</text>
+      <text x="0" y="140" font-family="Helvetica,Arial,sans-serif" font-size="8" fill="#64748b">Zero test set contamination during validation cycles</text>
+    </g>
+  </g>
+
+  <!-- 3.7 Convergence & Budget Watchdog -->
+  <g id="card_watchdog" transform="translate(1825, 45)">
+    <rect x="0" y="0" width="495" height="510" rx="7" fill="#ffffff" stroke="#16a34a" stroke-width="1.8" filter="url(#highlightShadow)"/>
+    <rect x="0" y="0" width="495" height="26" rx="7" fill="#dcfce7"/>
+    <rect x="0" y="18" width="495" height="8" fill="#dcfce7"/>
+    <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11.5" fill="#14532d">Convergence &amp; Budget Watchdog  (Decision Hub)</text>
+    
+    <g transform="translate(12, 36)">
+      <rect x="0" y="0" width="470" height="52" rx="4" fill="#f0fdf4" stroke="#bbf7d0"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#14532d">INPUTS:</text>
+      <text x="8" y="30" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Signed Metric Receipt (GAUC, nDCG@5, Primary Score)</text>
+      <text x="8" y="44" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d">• Telemetry Meters: Tokens, GPU-hours, Wall time</text>
+    </g>
+
+    <g transform="translate(12, 96)">
+      <rect x="0" y="0" width="470" height="152" rx="4" fill="#fefce8" stroke="#fde047"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#92400e">ORGANIZER CONVERGENCE RULES (baseline_scores.json):</text>
+      <text x="8" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Reference FM Baseline: GAUC 0.6610, nDCG@5 0.5282 → <tspan font-weight="bold">0.5946</tspan></text>
+      <text x="8" y="50" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Standard Deviation: σ = 0.0008</text>
+      <text x="8" y="68" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#b45309">⚡ Convergence Criterion: ε = 0.002 (≈2.5σ), Patience N = 3</text>
+      <text x="8" y="86" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Primary delta = (ΔGAUC + ΔnDCG@5) / 2</text>
+      <text x="8" y="102" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Stop condition: ΔPrimary &lt; 0.002 for 3 consecutive rounds</text>
+      <text x="8" y="116" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  OR Total GPU-hours / Token Budget exhausted</text>
+      <text x="8" y="136" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#166534">Validation-best checkpoint selected at convergence</text>
+    </g>
+
+    <g transform="translate(12, 256)">
+      <rect x="0" y="0" width="470" height="120" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#14532d">OUTCOME ROUTING DECISION:</text>
+      <text x="8" y="34" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#1e40af">Route A: Iteration Loop (If not converged)</text>
+      <text x="8" y="48" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  Updates Run Ledger &amp; sends receipt to Scientist (Step 9)</text>
+      <text x="8" y="68" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#d97706">Route B: Finalize Trigger (Converged / Budget Reached)</text>
+      <text x="8" y="84" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">  Locks frontier &amp; activates 1-way Finalizer Engine (Step 10)</text>
+      <text x="8" y="104" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#166534">Zero human intervention required to decide stop</text>
+    </g>
+
+    <g transform="translate(12, 384)">
+      <rect x="0" y="0" width="470" height="105" rx="4" fill="#ffffff" stroke="#e2e8f0"/>
+      <text x="8" y="16" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#0f172a">LEDGER UPDATE &amp; RESOURCE METRIC ACCOUNTING:</text>
+      <text x="8" y="32" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Appends run record, parameters, diff &amp; metric receipt</text>
+      <text x="8" y="48" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">• Increments cumulative LLM token &amp; GPU counters</text>
+      <text x="8" y="68" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#64748b">Generates machine-readable results.json &amp; report.md</text>
+      <text x="8" y="86" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#64748b">Audit-ready trace for technical review</text>
+    </g>
+  </g>
+</g>
+
+<!-- ========================================================================= -->
+<!-- 4. FINALIZATION & PACKAGING LAYER -->
+<!-- ========================================================================= -->
+<g id="layer4_finalizer" transform="translate(30, 1580)">
+  <rect x="0" y="0" width="2340" height="195" rx="10" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.2" filter="url(#shadow)"/>
+  <rect x="0" y="0" width="2340" height="30" rx="10" fill="#fef3c7"/>
+  <rect x="0" y="18" width="2340" height="12" fill="#fef3c7"/>
+  <text x="25" y="20" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#92400e">🏆  FINALIZATION &amp; PACKAGING LAYER (One-Way Irreversible Boundary)</text>
+
+  <!-- 4.1 Finalizer Engine -->
+  <g id="card_finalizer" transform="translate(20, 40)">
+    <rect x="0" y="0" width="1090" height="142" rx="7" fill="#ffffff" stroke="#d97706" stroke-width="1.2" filter="url(#cardShadow)"/>
+    <rect x="0" y="0" width="1090" height="24" rx="7" fill="#fef3c7"/>
+    <rect x="0" y="16" width="1090" height="8" fill="#fef3c7"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11" fill="#78350f">Finalizer &amp; Packaging Engine (Terminal 1-Way Gate)</text>
+    
+    <g transform="translate(12, 32)">
+      <text x="0" y="14" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#78350f">IN: Confirmed Validation-Best Model Checkpoint + Sealed Test Split Features</text>
+      <text x="0" y="30" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Activated strictly after convergence (ε=0.002, N=3) or budget limit reached</text>
+      <text x="0" y="46" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Replays clean environment &amp; applies frozen train-fitted preprocessing to test split</text>
+      <text x="0" y="62" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Generates final predictions for all 23,875 test users (04/29–05/08)</text>
+      <text x="0" y="78" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#b91c1c">🔒 Sealed Test Boundary: Exactly ONE forward inference pass; zero test label reading</text>
+      <text x="0" y="96" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#166534">Submission Validation: python3 submit.py --check --split test submission.csv</text>
+      <text x="0" y="112" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#475569">Verifies: row_id integrity, user_id/video_id alignment, no NaNs/Infs, exact row count</text>
+    </g>
+  </g>
+
+  <!-- 4.2 Final Submission Artifact -->
+  <g id="card_submission" transform="translate(1140, 40)">
+    <rect x="0" y="0" width="1180" height="142" rx="7" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.8" filter="url(#highlightShadow)"/>
+    <rect x="0" y="0" width="1180" height="24" rx="7" fill="#fef08a"/>
+    <rect x="0" y="16" width="1180" height="8" fill="#fef08a"/>
+    <text x="12" y="17" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="11.5" fill="#713f12">🏆 FINAL SUBMISSION ARTIFACT &amp; AUDIT PACKAGE</text>
+    
+    <g transform="translate(15, 32)">
+      <text x="0" y="14" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#713f12">📄 predictions.csv (Submission Format Contract):</text>
+      <text x="0" y="30" font-family="Menlo,Consolas,monospace" font-size="9" fill="#854d0e">  row_id,user_id,video_id,score  (0-indexed deterministic sequence)</text>
+      <text x="0" y="48" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Cryptographic Manifest: Dataset sha256, git commit, config hash, environment receipt</text>
+      <text x="0" y="64" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Complete SQLite Run Ledger: All experiment contracts, metrics, diff patches &amp; recovery events</text>
+      <text x="0" y="80" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#334155">• Resource Accounting: Cumulative LLM tokens, GPU hours, wall-clock seconds, manual_interventions=0</text>
+      <text x="0" y="98" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#166534">✅ Clean-Machine Reproducibility: Fully executable on clean environment without interventions</text>
+      <text x="0" y="112" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#713f12">Submitted once to organizer terminal evaluation; final artifact selection is irreversible</text>
+    </g>
+  </g>
+</g>
+
+<!-- ========================================================================= -->
+<!-- 5. ARCHITECTURE LEGEND & DESIGN DECISIONS INDEX -->
+<!-- ========================================================================= -->
+<g id="layer5_legend" transform="translate(30, 1800)">
+  <rect x="0" y="0" width="2340" height="330" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="25" y="22" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="12" fill="#0f172a">Diagram Legend &amp; Design Decisions Index (Mapped to Design-Decision.md)</text>
+
+  <!-- Color Codes -->
+  <g transform="translate(25, 34)">
+    <rect x="0" y="0" width="16" height="16" rx="3" fill="#eff6ff" stroke="#2563eb" stroke-width="1.2"/>
+    <text x="22" y="12" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#1e40af">LLM Reasoning Layer</text>
+
+    <rect x="220" y="0" width="16" height="16" rx="3" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.2"/>
+    <text x="242" y="12" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#5b21b6">Research Knowledge MCP [OPTIONAL]</text>
+
+    <rect x="530" y="0" width="16" height="16" rx="3" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+    <text x="552" y="12" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#166534">Deterministic Kernel &amp; Execution</text>
+
+    <rect x="830" y="0" width="16" height="16" rx="3" fill="#fefce8" stroke="#ca8a04" stroke-width="1.2"/>
+    <text x="852" y="12" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#854d0e">Multi-Tier Pruner &amp; Proxy Gate [OPTIONAL]</text>
+
+    <rect x="1200" y="0" width="16" height="16" rx="3" fill="#fef2f2" stroke="#ef4444" stroke-width="1.2"/>
+    <text x="1222" y="12" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#991b1b">Security Boundary / Sealed Test / Rollback</text>
+
+    <rect x="1560" y="0" width="16" height="16" rx="3" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+    <text x="1582" y="12" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#713f12">Final Submission Artifact</text>
+
+    <rect x="1800" y="0" width="16" height="16" rx="3" fill="#ffffff" stroke="#64748b" stroke-width="1.2" stroke-dasharray="3,2"/>
+    <text x="1822" y="12" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9.5" fill="#475569">[OPTIONAL] Module</text>
+  </g>
+
+  <!-- Design Decisions Key Banner (Row 2) -->
+  <g transform="translate(25, 62)">
+    <rect x="0" y="0" width="2290" height="60" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+    <text x="15" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10.5" fill="#14532d">⚡ DESIGN DECISIONS MAPPING INDEX (from Design-Decision.md):</text>
+    
+    <g transform="translate(15, 26)">
+      <text x="0" y="12" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d"><tspan font-weight="bold" fill="#14532d">[DD-1]</tspan> Offline Co-Occurrence (Layer 1.2)  •  <tspan font-weight="bold" fill="#14532d">[DD-2]</tspan> Query-Hash Cache &amp; Caps (Layer 2A.2)  •  <tspan font-weight="bold" fill="#14532d">[DD-3]</tspan> Top-25 Local Vector Store (Layer 2A.1 &amp; 2A.2)</text>
+      <text x="0" y="26" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d"><tspan font-weight="bold" fill="#14532d">[DD-4]</tspan> Filter-Only Proxy (Layer 3.3)  •  <tspan font-weight="bold" fill="#14532d">[DD-5]</tspan> Multi-Tier Pruning (Layer 3.3)  •  <tspan font-weight="bold" fill="#14532d">[DD-6]</tspan> Transactional Rollback (Layer 3.5 &amp; 1.4)  •  <tspan font-weight="bold" fill="#14532d">[DD-7]</tspan> Phase-Boundary Checks (Layer 3.2)</text>
+    </g>
+
+    <g transform="translate(1420, 26)">
+      <text x="0" y="12" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d"><tspan font-weight="bold" fill="#14532d">[DD-8]</tspan> Local GitHub MCP Adapter (Layer 2A.1)</text>
+      <text x="0" y="26" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#15803d"><tspan font-weight="bold" fill="#14532d">[DD-9]</tspan> Papers with Code Adapter (Layer 2A.1)</text>
+    </g>
+  </g>
+
+  <!-- Numbered Flow Steps Grid with background pills (Row 3) -->
+  <g transform="translate(25, 134)">
+    <text x="0" y="14" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="10.5" fill="#0f172a">Numbered Autonomous Research Flow Sequence:</text>
+    
+    <!-- Col 1 -->
+    <g transform="translate(0, 24)">
+      <g transform="translate(0, 0)">
+        <rect x="0" y="0" width="740" height="48" rx="5" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#2563eb">Step 1: Diagnostics Profile Digest</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Train data profiled → within-user variance (27.1% neg, 63.7% active) &amp; seq lengths to Scientist</text>
+      </g>
+
+      <g transform="translate(0, 56)">
+        <rect x="0" y="0" width="740" height="48" rx="5" fill="#f5f3ff" stroke="#e9d5ff"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#7c3aed">Step 2: MCP Evidence Query [OPTIONAL - DD-8, DD-3]</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Scientist queries hybrid store / OpenAlex / GitHub for grounded literature &amp; reference code</text>
+      </g>
+
+      <g transform="translate(0, 112)">
+        <rect x="0" y="0" width="740" height="48" rx="5" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#2563eb">Step 3: Pre-Registered Contract</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Scientist issues contract with 1 primary hypothesis, metric bounds &amp; pre-declared handlers</text>
+      </g>
+    </g>
+
+    <!-- Col 2 -->
+    <g transform="translate(760, 24)">
+      <g transform="translate(0, 0)">
+        <rect x="0" y="0" width="740" height="48" rx="5" fill="#f8fafc" stroke="#e2e8f0"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#2563eb">Step 4: Isolated Code Diff Patch</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Coder applies minimal patch in isolated Git worktree; AST diff guard ensures evaluator locked</text>
+      </g>
+
+      <g transform="translate(0, 56)">
+        <rect x="0" y="0" width="740" height="48" rx="5" fill="#fefce8" stroke="#fef08a"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#ca8a04">Step 5: Multi-Tier Pruner [OPTIONAL - DD-4, DD-5]</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Tier 1 Static → Tier 2 Smoke → Tier 3 Proxy filter-only check (fast rejection of non-viable code)</text>
+      </g>
+
+      <g transform="translate(0, 112)">
+        <rect x="0" y="0" width="740" height="48" rx="5" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#166534">Step 6: Full Train Split Execution</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Isolated worktree training on 1.14M rows; pinned seed control; atomic checkpoint storage</text>
+      </g>
+    </g>
+
+    <!-- Col 3 -->
+    <g transform="translate(1520, 24)">
+      <g transform="translate(0, 0)">
+        <rect x="0" y="0" width="765" height="48" rx="5" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#166534">Step 7: Official Validation Evaluation</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Predictions evaluated strictly by evaluate.py on 7-day validation split (GAUC &amp; nDCG@5)</text>
+      </g>
+
+      <g transform="translate(0, 56)">
+        <rect x="0" y="0" width="765" height="48" rx="5" fill="#f0fdf4" stroke="#bbf7d0"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#166534">Step 8: Metric Receipt &amp; Telemetry</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Signed receipt sent to Watchdog; Run Ledger updated; checkpoint saved; token meters counted</text>
+      </g>
+
+      <g transform="translate(0, 112)">
+        <rect x="0" y="0" width="765" height="48" rx="5" fill="#fffbeb" stroke="#fcd34d"/>
+        <text x="12" y="18" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#d97706">Step 9 / Step 10 &amp; 11: Iteration or Finalization</text>
+        <text x="12" y="34" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Step 9 (If not converged): Next loop  |  Step 10 &amp; 11 (Converged / Budget limit): Export package</text>
+      </g>
+    </g>
+  </g>
+</g>
+
+<!-- ========================================================================= -->
+<!-- 6. DEDICATED ORTHOGONAL CONNECTOR PATHS -->
+<!-- ========================================================================= -->
+<g id="orthogonal_connectors">
+  <!-- Edge 1: Train Split -> Data Profiler (Left Margin Route, avoids cutting through MCP Gateway) -->
+  <path d="M230,355 L230,390 L40,390 L40,985 L200,985 L200,1005" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrSlate)"/>
+  <g transform="translate(60, 380)">
+    <rect x="0" y="0" width="130" height="20" rx="4" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="65" y="14" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Read Train Split</text>
+  </g>
+
+  <!-- Edge 1b: Train Split -> Offline Co-Occurrence Store -->
+  <path d="M410,265 L430,265" fill="none" stroke="#16a34a" stroke-width="1.8" marker-end="url(#arrGreen)"/>
+
+  <!-- Edge 1c: Co-occurrence Store -> Training Engine (Routed through central corridor) -->
+  <path d="M580,355 L580,395 L1220,395 L1220,985 L950,985 L950,1005" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-dasharray="4,2" marker-end="url(#arrGreen)"/>
+  <g transform="translate(680, 385)">
+    <rect x="0" y="0" width="180" height="20" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="90" y="14" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#14532d">Immutable Co-Occurrence Parquet</text>
+  </g>
+
+  <!-- Edge 1d: Data Profiler -> Research Agent (Step 1: Diagnostics Profile Digest) -->
+  <path d="M300,1005 L300,935 L1350,935 L1350,885" fill="none" stroke="#2563eb" stroke-width="2.2" marker-end="url(#arrBlue)"/>
+  <g transform="translate(580, 924)">
+    <rect x="0" y="0" width="220" height="22" rx="4" fill="#eff6ff" stroke="#93c5fd"/>
+    <text x="110" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#1e40af">Step 1: Diagnostics Profile Digest</text>
+  </g>
+
+  <!-- Edge 2: Research Agent <-> MCP Gateway (Step 2: MCP Tool Calls) -->
+  <!-- Routed in Channel 1 (top of cards) -->
+  <path d="M1100,475 L1100,415 L1300,415 L1300,475" fill="none" stroke="#7c3aed" stroke-width="2" marker-start="url(#arrPurple)" marker-end="url(#arrPurple)"/>
+  <g transform="translate(1140, 404)">
+    <rect x="0" y="0" width="120" height="22" rx="4" fill="#f5f3ff" stroke="#c4b5fd"/>
+    <text x="60" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#5b21b6">Step 2: MCP Tools</text>
+  </g>
+
+  <!-- Edge 3: Research Agent -> Code Agent (Step 3: Approved Pre-Registered Contract) -->
+  <!-- Routed in Channel 1 (top of cards) -->
+  <path d="M1650,475 L1650,415 L1900,415 L1900,475" fill="none" stroke="#2563eb" stroke-width="2.2" marker-end="url(#arrBlue)"/>
+  <g transform="translate(1720, 404)">
+    <rect x="0" y="0" width="110" height="22" rx="4" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="55" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#1e40af">Step 3: Contract</text>
+  </g>
+
+  <!-- Edge 4: Code Agent -> Multi-Tier Pruner (Step 4: Isolated Git Diff Patch) -->
+  <path d="M1950,885 L1950,925 L650,925 L650,1005" fill="none" stroke="#2563eb" stroke-width="2.2" marker-end="url(#arrBlue)"/>
+  <g transform="translate(1420, 914)">
+    <rect x="0" y="0" width="200" height="22" rx="4" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="100" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#1e40af">Step 4: Isolated Git Diff Patch</text>
+  </g>
+
+  <!-- Edge 5: Multi-Tier Pruner -> Training Engine (Step 5: Passed Filter Gate / Promoted) -->
+  <!-- Routed in Channel 2 (top of cards) -->
+  <path d="M800,1005 L800,945 L920,945 L920,1005" fill="none" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrGreen)"/>
+  <g transform="translate(805, 934)">
+    <rect x="0" y="0" width="110" height="22" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="55" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#14532d">Step 5: Promoted</text>
+  </g>
+
+  <!-- Edge 5b: Multi-Tier Pruner -> Run Ledger (Fast Rejection) -->
+  <path d="M520,1005 L520,945 L1230,945 L1230,385 L1290,385 L1290,355" fill="none" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,2" marker-end="url(#arrRed)"/>
+  <g transform="translate(900, 385)">
+    <rect x="0" y="0" width="220" height="20" rx="4" fill="#fef2f2" stroke="#fca5a5"/>
+    <text x="110" y="14" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#991b1b">Fast Rejected (proxy/non_comparable)</text>
+  </g>
+
+  <!-- Edge 6: Training Engine -> Official Evaluator (Step 6: Validation Predictions) -->
+  <!-- Routed in Channel 3 (bottom of cards) -->
+  <path d="M1200,1515 L1200,1545 L1450,1545 L1450,1515" fill="none" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrGreen)"/>
+  <g transform="translate(1260, 1534)">
+    <rect x="0" y="0" width="130" height="22" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="65" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#14532d">Val Predictions</text>
+  </g>
+
+  <!-- Edge 6b: Validation Split -> Official Evaluator (Ground Truth long_view) -->
+  <path d="M970,355 L970,380 L1250,380 L1250,1245 L1450,1245 L1450,1300" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrSlate)"/>
+  <g transform="translate(1140, 380)">
+    <rect x="0" y="0" width="150" height="20" rx="4" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="75" y="14" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Ground Truth (long_view)</text>
+  </g>
+
+  <!-- Edge 7: Official Evaluator -> Convergence Watchdog (Step 8: Signed Metric Receipt) -->
+  <!-- Routed in Channel 3 (bottom of cards) -->
+  <path d="M1650,1515 L1650,1545 L1900,1545 L1900,1515" fill="none" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrGreen)"/>
+  <g transform="translate(1710, 1534)">
+    <rect x="0" y="0" width="140" height="22" rx="4" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="70" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#14532d">Step 8: Signed Receipt</text>
+  </g>
+
+  <!-- Edge 7b: Watchdog -> Run Ledger & Checkpoint Store (Log Receipt, Diff & Checkpoints) -->
+  <path d="M2050,1005 L2050,950 L2360,950 L2360,380 L1450,380 L1450,355" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrSlate)"/>
+  <g transform="translate(1680, 380)">
+    <rect x="0" y="0" width="160" height="20" rx="4" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="80" y="14" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8.5" fill="#334155">Log Receipt &amp; Checkpoint</text>
+  </g>
+
+  <!-- Edge 8: Watchdog -> Research Agent (Step 9: Iteration Loop - If not converged) -->
+  <path d="M1900,1005 L1900,940 L1600,940 L1600,885" fill="none" stroke="#2563eb" stroke-width="2.2" marker-end="url(#arrBlue)"/>
+  <g transform="translate(1700, 929)">
+    <rect x="0" y="0" width="210" height="22" rx="4" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="105" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#1e40af">Step 9: Next Loop (If Δ &gt; 0, N &lt; 3)</text>
+  </g>
+
+  <!-- Edge 9: Watchdog -> Finalizer Engine (Step 10: Converged / Budget Trigger) -->
+  <path d="M2050,1555 L2050,1570 L800,1570 L800,1620" fill="none" stroke="#d97706" stroke-width="2.2" marker-end="url(#arrAmber)"/>
+  <g transform="translate(1300, 1558)">
+    <rect x="0" y="0" width="280" height="22" rx="4" fill="#fffbeb" stroke="#fcd34d"/>
+    <text x="140" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#92400e">Step 10: Converged (ε=0.002, N=3) / Budget Reached</text>
+  </g>
+
+  <!-- Edge 10: Finalizer Engine -> Final Submission Artifact (Step 11: Generate Package) -->
+  <path d="M1110,1680 L1155,1680" fill="none" stroke="#ca8a04" stroke-width="2.2" marker-end="url(#arrGold)"/>
+  <g transform="translate(1085, 1640)">
+    <rect x="0" y="0" width="95" height="20" rx="4" fill="#fef9c3" stroke="#fde047"/>
+    <text x="47" y="14" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#713f12">Step 11: Export</text>
+  </g>
+
+  <!-- Edge 10b: Sealed Test Split -> Finalizer Engine (1x Final Test Pass) -->
+  <path d="M1750,355 L1750,370 L2375,370 L2375,1575 L550,1575 L550,1620" fill="none" stroke="#dc2626" stroke-width="1.8" marker-end="url(#arrRed)"/>
+  <g transform="translate(1790, 1563)">
+    <rect x="0" y="0" width="240" height="22" rx="4" fill="#fef2f2" stroke="#fca5a5"/>
+    <text x="120" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="9" fill="#991b1b">Test Features Only (1x Final Inference Pass)</text>
+  </g>
+
+  <!-- Edge 11: Auto-Recovery Feedback Loops -->
+  <!-- 11a: Training Engine Crash -> Recovery Controller -->
+  <!-- Routed in Channel 2 (top of cards) -->
+  <path d="M1250,1005 L1250,950 L1400,950 L1400,1005" fill="none" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="4,2" marker-end="url(#arrRed)"/>
+  <g transform="translate(1260, 939)">
+    <rect x="0" y="0" width="130" height="22" rx="4" fill="#fef2f2" stroke="#fca5a5"/>
+    <text x="65" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#991b1b">Crash/OOM/NaN</text>
+  </g>
+
+  <!-- 11b: Recovery Controller -> Training Engine (OOM Ladder Retry) -->
+  <!-- Routed in Channel 3 (bottom of cards) -->
+  <path d="M1400,1515 L1400,1555 L1150,1555 L1150,1515" fill="none" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="4,2" marker-end="url(#arrRed)"/>
+  <g transform="translate(1210, 1544)">
+    <rect x="0" y="0" width="140" height="22" rx="4" fill="#fef2f2" stroke="#fca5a5"/>
+    <text x="70" y="15" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#991b1b">Tune Microbatch/AMP</text>
+  </g>
+
+  <!-- 11c: Recovery Controller -> Code Agent (Semantic Bug Escalation) -->
+  <path d="M1575,1005 L1575,915 L2100,915 L2100,885" fill="none" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="4,2" marker-end="url(#arrRed)"/>
+  <g transform="translate(1960, 904)">
+    <rect x="0" y="0" width="160" height="20" rx="4" fill="#fef2f2" stroke="#fca5a5"/>
+    <text x="80" y="14" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="8.5" fill="#991b1b">Semantic Escalation</text>
+  </g>
+</g>
+
+</svg>
