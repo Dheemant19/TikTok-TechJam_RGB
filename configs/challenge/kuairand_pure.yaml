@@ -1,0 +1,29 @@
+schema_version: 1
+benchmark: kuairand_pure
+
+# The runtime resolves this variable from the root .env file or process environment.
+dataset:
+  directory: "${KUAIRAND_DATA_DIR}"
+  randomized_exposure_file: log_random_4_22_to_5_08_pure.csv
+
+# These files are authoritative. Metrics, splits, labels, baseline values, and
+# submission fields must be read from them instead of copied into this YAML.
+official_files:
+  data_loader: kuairand-starter-kit/data.py
+  evaluator: kuairand-starter-kit/evaluate.py
+  submission_checker: kuairand-starter-kit/submit.py
+  baseline: kuairand-starter-kit/baseline.py
+  baseline_scores: kuairand-starter-kit/baseline_scores.json
+
+integrity:
+  derive_contract_from_official_files: true
+  hash_official_files_at_session_start: true
+  reject_changed_official_files: true
+  allow_test_labels_during_development: false
+  allow_test_score_command: false
+  sanity_shuffle_tolerance: 0.02
+
+finalization:
+  require_explicit_confirmation: true
+  allow_only_one_test_prediction_pass: true
+  submission_check_split: test

@@ -1,0 +1,27 @@
+schema_version: 1
+challenge_config: configs/challenge/kuairand_pure.yaml
+
+# Development reproduction scores validation only. Test scoring is forbidden.
+score_split: valid
+run_harness_checks:
+  random: true
+  item_popularity: true
+  label_shuffle: true
+
+# Team recommendation, not an organizer-defined reproduction policy:
+# IDs 0–4 are chosen because the official random reference uses those five seeds.
+# The organizer reports FM test primary σ=0.0008 over five unspecified seeds.
+seed_policy:
+  seeds: [0, 1, 2, 3, 4]
+acceptance:
+  # 0.002 is the official convergence epsilon, repurposed here as a conservative
+  # reproduction tolerance; it equals 2.5 × the published FM test-primary σ.
+  absolute_primary_tolerance: 0.002
+  maximum_standard_deviations: 2.5
+
+# FM settings and reference metrics are loaded from baseline_scores.json.
+derive_model_config_from_official_scores: true
+register_as:
+  - B0
+  - validation_best
+  - stable_fallback

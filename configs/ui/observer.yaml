@@ -1,0 +1,35 @@
+schema_version: 1
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  api_prefix: /api/v1
+  static_assets_directory: ui/dist
+
+frontend:
+  project_name: RIGOR-RS
+  logo_asset: null
+  default_challenge_config: configs/challenge/kuairand_pure.yaml
+  default_budget_config: configs/budgets/competition.yaml
+
+sse:
+  heartbeat_seconds: 15
+  maximum_replay_events_per_response: 1000
+  reload_snapshot_on_sequence_gap: true
+
+fixture_mode:
+  enabled: false
+  redacted_event_fixture: null
+  label: Interface demo data
+
+security:
+  loopback_only: true
+  expose_raw_data: false
+  expose_checkpoints: false
+  expose_secrets: false
+  expose_validation_labels: false
+  expose_test_labels: false
+
+responsive_controls:
+  allow_start_on_narrow_screens: false
+  allow_package_on_narrow_screens: false

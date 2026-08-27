@@ -1,0 +1,32 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+ui/.env
+ui/.env.*
+!ui/.env.example
+
+# Python/runtime state
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Generated research state and large artifacts
+state/
+runs/
+artifacts/
+worktrees/
+
+# Raw challenge data stays local
+KuaiRand-Pure/data/
+data/manifests/*.parquet
+data/manifests/*.npy
+data/manifests/*.npz
+
+# Frontend dependencies and build output
+ui/node_modules/
+ui/dist/
+ui/playwright-report/
+ui/test-results/

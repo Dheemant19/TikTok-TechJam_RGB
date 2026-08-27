@@ -1,0 +1,37 @@
+schema_version: 1
+experiment_id: null
+parent_run_id: null
+hypothesis: null
+observed_evidence_ids: []
+primary_change: null
+
+files:
+  allowed: []
+  prohibited:
+    - kuairand-starter-kit/evaluate.py
+    - kuairand-starter-kit/data.py
+    - kuairand-starter-kit/baseline_scores.json
+    - runs/
+    - state/
+
+predicted_metric_direction:
+  gauc: null
+  ndcg_at_5: null
+falsifiers: []
+
+outcome_branches:
+  success: null
+  ambiguous: null
+  regression: null
+
+comparator_run_id: null
+minimum_primary_improvement: null
+guardrails: []
+
+budget:
+  wall_seconds: null
+  gpu_hours: null
+  bedrock_input_tokens: null
+  bedrock_output_tokens: null
+recovery_attempt_limit: null
+fallback_run_id: null

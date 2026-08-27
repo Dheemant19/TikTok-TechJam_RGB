@@ -1,0 +1,45 @@
+schema_version: 1
+
+# Tighter team recommendation for a complete local demo and a bounded research loop.
+# Bedrock calls plan and patch code; model training uses the local machine, not Bedrock.
+bedrock:
+  pricing_region: ap-southeast-2
+  service_tier_env: BEDROCK_SERVICE_TIER
+  credit_limit_usd: 100
+  allocation_usd:
+    research_agent: 25
+    code_recovery_agent: 55
+    reserve: 20
+  stop_before_credit_limit: true
+
+# Supports B0 plus up to nine novel experiments, enough to apply the organizer's
+# three-consecutive-non-improvement convergence rule without an open-ended loop.
+limits:
+  total_wall_seconds: 43200
+  total_gpu_hours: 4
+  bedrock_input_tokens: 6000000
+  bedrock_output_tokens: 1200000
+  maximum_experiments: 10
+  per_run_timeout_seconds: 5400
+  recovery_attempts_per_run: 2
+
+mcp:
+  per_session:
+    outbound_provider_requests: 60
+    returned_documents: 120
+    response_characters: 300000
+  per_experiment:
+    outbound_provider_requests: 6
+    returned_documents: 12
+    response_characters: 30000
+
+# Proxy results filter unsafe/expensive candidates; they never update the
+# validation-best model or convergence counter.
+proxy_tier:
+  maximum_rows: 100000
+  maximum_users: 5000
+  maximum_wall_seconds: 600
+  maximum_gpu_hours: 0.15
+
+resource_sampling:
+  interval_seconds: 5

@@ -1,0 +1,45 @@
+schema_version: 1
+provider: aws_bedrock
+region_env: AWS_REGION
+service_tier_env: BEDROCK_SERVICE_TIER
+
+# Authentication values live only in the repository-root .env file.
+authentication:
+  mode_env: BEDROCK_AUTH_MODE
+  supported_modes:
+    - api_key
+    - aws_profile
+    - default_chain
+  api_key:
+    bearer_token_env: AWS_BEARER_TOKEN_BEDROCK
+  aws_profile:
+    profile_env: AWS_PROFILE
+  default_chain:
+    use_standard_aws_credential_chain: true
+  reject_multiple_active_methods: true
+
+research_agent:
+  model_id_env: BEDROCK_RESEARCH_MODEL_ID
+  temperature: 0
+  maximum_output_tokens: 2048
+  timeout_seconds: 180
+  transient_retry_limit: 2
+
+code_recovery_agent:
+  model_id_env: BEDROCK_CODE_MODEL_ID
+  temperature: 0
+  maximum_output_tokens: 6144
+  timeout_seconds: 300
+  transient_retry_limit: 2
+
+structured_output:
+  require_pydantic_validation: true
+  reject_unknown_fields: true
+
+context_limits:
+  maximum_profile_characters: 24000
+  maximum_run_records: 8
+  maximum_mcp_evidence_records: 6
+  maximum_evidence_characters: 30000
+  maximum_patch_characters: 60000
+  maximum_traceback_characters: 20000

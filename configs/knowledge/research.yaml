@@ -1,0 +1,78 @@
+schema_version: 1
+
+storage:
+  database: state/knowledge.sqlite3
+  journal_mode: WAL
+  vector_backend: auto
+  numpy_fallback_when_sqlite_vec_unavailable: true
+
+curated_source:
+  file: data/research/curated_papers.json
+  expected_paper_count: 25
+  preserve_curated_notes: true
+
+embedding:
+  provider: fastembed
+  model: sentence-transformers/all-MiniLM-L6-v2
+  # Hugging Face commit verified on 2026-08-27; file hashes are captured on download.
+  revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41
+  dimensions: 384
+  model_manifest: state/models/manifest.json
+  # Permit the one-time local download of this exact revision.
+  allow_initial_download: true
+
+providers:
+  openalex:
+    enabled: true
+    api_key_env: OPENALEX_API_KEY
+    contact_email_env: OPENALEX_MAILTO
+    timeout_seconds: 20
+    requests_per_second: 5
+    retry_limit: 3
+  github:
+    enabled: false
+    token_env: GITHUB_TOKEN
+    timeout_seconds: 20
+    requests_per_second: 2
+    retry_limit: 3
+  papers_with_code:
+    enabled: false
+    endpoint_env: PAPERS_WITH_CODE_API_URL
+
+transport:
+  stdio:
+    enabled: true
+  streamable_http:
+    enabled: false
+    host: 127.0.0.1
+    port: 8765
+
+retrieval:
+  reciprocal_rank_constant: 60
+  cache_ttl_seconds: 604800
+  maximum_search_results: 8
+  maximum_code_results: 5
+  maximum_citation_results: 10
+  maximum_research_card_evidence: 6
+
+sanitizer:
+  maximum_field_characters: 20000
+  quarantine_high_risk_records: true
+  remove_hidden_unicode: true
+  remove_hidden_html: true
+  store_fulltext_only_when_license_permits: true
+
+ingestion:
+  queue_lease_seconds: 300
+  scheduled_priority_areas:
+    - ranking_loss
+    - sequential_history
+    - multi_task_learning
+    - watch_time_censoring
+    - temporal_dynamics
+    - unbiased_validation
+  reject_retracted_works: true
+  # At most 100 automatically discovered records; the 25 curated records remain separate.
+  maximum_automatic_documents: 100
+
+budget_config: configs/budgets/competition.yaml
