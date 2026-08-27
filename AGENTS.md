@@ -57,27 +57,58 @@ External open-source libraries, papers, public solutions, and otherwise permissi
 
 ## Challenge Scope
 
-### Required benchmark: KuaiRand
+### Required benchmark: KuaiRand-Pure
 
-KuaiRand is a short-video feed dataset with multiple feedback signals and randomized exposure data.
+KuaiRand-Pure is a short-video feed dataset with multiple user feedback signals, user/video features, and randomized exposure data.
 
-Required metric task:
+Required task and evaluation contract:
 
-- Click is the positive relevance label.
-- **NDCG@10**.
-- **Recall@50**.
+- **Task**: **Within-user ranking (`用户内排序`)** — Each user's candidate videos in the evaluation set are ranked; no full-corpus retrieval.
+- **Positive relevance label**: **`long_view`** (raw binary column, 0/1).
+- **Official evaluation metrics**:
+  - **`GAUC`**: Group AUC computed per user, weighted by positive count; only evaluates users with $0 < \text{positives} < \text{exposures}$ (63.7% of test users).
+  - **`nDCG@5`**: Discounted cumulative gain ($2^{\text{rel}} - 1$); users with zero positive items receive 0.0 and are included in the average (27.1% of test users are all-negative, 9.2% are all-positive).
+- **Primary metric score**: Equal-weighted mean of GAUC and nDCG@5:
+  $$\text{score\_primary} = \frac{\text{GAUC} + \text{nDCG@5}}{2}$$
+  $$\Delta(\text{primary}) = \text{score\_agent}(\text{primary}) - \text{score\_official\_baseline}(\text{primary})$$
+- KuaiRand-Pure determines **100% of the primary metric score**.
+- Ranking candidates, relevance labels, and evaluation grouping must follow the organizer-provided `evaluate.py` script exactly.
+- The official baseline is the organizer-provided Factorization Machine (`FM`); do not substitute a self-created starter model.
 
-- KuaiRand determines **100% of the primary metric score**.
-- Ranking candidates, relevance labels, and query/user grouping must follow the organizer-provided evaluator exactly.
-- The official baseline is the organizer-referenced KuaiRand implementation and configuration; do not substitute a self-created starter model.
+Official dataset splits:
 
-Organizer-provided suggested split:
+- **Train**: `20220408`–`20220421` (from `log_standard_4_08_to_4_21_pure.csv`, ~1.14M rows).
+- **Validation**: `20220422`–`20220428` (from `log_standard_4_22_to_5_08_pure.csv`, 7 days).
+- **Test**: `20220429`–`20220508` (from `log_standard_4_22_to_5_08_pure.csv`, 10 days).
+- **Unbiased evaluation log (advanced)**: `log_random_4_22_to_5_08_pure.csv` (1.18M rows of randomized exposure data).
 
-- `log_standard_4_08_to_4_21_*`: train.
-- First 50% of `log_standard_4_22_to_5_08_*`: validation.
-- Last 50% of `log_standard_4_22_to_5_08_*`: test.
+Official baseline ladder & headroom reference (Test set):
 
-The randomized-exposure data enables counterfactual/off-policy evaluation research, but that is advanced optional work unless the organizer's official primary task or evaluator requires it.
+| Model / Benchmark | GAUC | nDCG@5 | Primary Score | Notes |
+|---|---|---|---|---|
+| Random (Lower Bound) | 0.4996 | 0.4511 | 0.4753 | Evaluation harness sanity check |
+| Item Popularity (Trivial) | 0.6308 | 0.5121 | 0.5715 | Popularity prior |
+| **FM (Official Baseline to Beat)** | **0.6610** | **0.5282** | **0.5946** | Target baseline ($\sigma = 0.0008$) |
+| **Oracle Ceiling** | **1.0000** | **0.7289** | **0.8645** | Maximum achievable score (due to 27.1% all-negative users) |
+
+*Note: The FM baseline has already captured 30.7% of the total available headroom between Random and Oracle. True remaining headroom is 0.270.*
+
+Submission format contract:
+
+- File format: CSV with header `row_id,user_id,video_id,score`.
+- `row_id`: 0-indexed integer corresponding to deterministic evaluation row order.
+- `row_id` is mandatory because `(user_id, video_id)` is **not unique** (3.06% duplicate pairs in test set, repeated up to 12 times).
+- Validation and formatting verification: `python3 submit.py --check --split test submission.csv`.
+
+Official starter kit reference files:
+
+- [`kuairand-starter-kit/README.md`](file:///Users/arushiverma/Desktop/TikTok-TechJam_RGB/kuairand-starter-kit/README.md): Official problem specification, rules, and starter kit instructions.
+- [`kuairand-starter-kit/evaluate.py`](file:///Users/arushiverma/Desktop/TikTok-TechJam_RGB/kuairand-starter-kit/evaluate.py): Official evaluation script (`GAUC` and `nDCG@5`). Source of truth.
+- [`kuairand-starter-kit/baseline.py`](file:///Users/arushiverma/Desktop/TikTok-TechJam_RGB/kuairand-starter-kit/baseline.py): Official Factorization Machine (`FM`), item popularity, and random baselines.
+- [`kuairand-starter-kit/data.py`](file:///Users/arushiverma/Desktop/TikTok-TechJam_RGB/kuairand-starter-kit/data.py): Deterministic data loader and split partitioning logic.
+- [`kuairand-starter-kit/baseline_scores.json`](file:///Users/arushiverma/Desktop/TikTok-TechJam_RGB/kuairand-starter-kit/baseline_scores.json): Baseline scores, seed standard deviations ($\sigma = 0.0008$), and convergence thresholds ($\varepsilon = 0.002, N = 3$).
+- [`kuairand-starter-kit/submit.py`](file:///Users/arushiverma/Desktop/TikTok-TechJam_RGB/kuairand-starter-kit/submit.py): Submission generator and `--check` / `--score` validator.
+- [`kuairand-starter-kit/ablation_features.py`](file:///Users/arushiverma/Desktop/TikTok-TechJam_RGB/kuairand-starter-kit/ablation_features.py): Feature ablation script verifying the lack of gain from adding static features.
 
 ### Bonus benchmark: AliCCP
 
@@ -110,25 +141,25 @@ Judging weights:
 
 ### Primary metric calculation
 
-For each metric $m$:
+For each dataset metric $m$:
 
 ```text
 delta(m) = score_agent(m) − score_official_baseline(m)
 score_dataset = mean(delta(m) for all dataset metrics)
 ```
 
-For KuaiRand, this is the equal-weighted mean of NDCG@10 delta and Recall@50 delta. Absolute improvement is used: do not substitute relative percentage improvement.
+For KuaiRand-Pure, this is the equal-weighted mean of GAUC delta and nDCG@5 delta vs FM baseline (0.5946). Absolute improvement is used: do not substitute relative percentage improvement.
 
 ### Convergence
 
-The scored result is the **converged** result, not the highest temporary metric. A run converges when validation score fails to improve by more than organizer-defined $\varepsilon$ for organizer-defined $N$ consecutive iterations, or the fixed compute/wall-clock budget is reached. Use the validation-best artifact at that point.
+The scored result is the **converged** result, not the highest temporary metric. A run converges when validation score fails to improve by more than organizer-defined $\varepsilon = 0.002$ for organizer-defined $N = 3$ consecutive iterations, or the fixed compute/wall-clock budget is reached. Use the validation-best artifact at that point.
 
-The following are organizer-controlled configuration, not assumptions to hard-code:
+The following are organizer-controlled configuration, loaded from `kuairand-starter-kit/baseline_scores.json`:
 
-- Baseline scores.
-- Exact scoring/evaluation script.
-- Submission schema.
-- $\varepsilon$ and $N$.
+- Baseline scores: FM (Valid: GAUC 0.6621, nDCG@5 0.5289, Primary 0.5955; Test: GAUC 0.6610, nDCG@5 0.5282, Primary 0.5946).
+- Exact scoring script: `kuairand-starter-kit/evaluate.py`.
+- Submission schema: `row_id,user_id,video_id,score`.
+- Convergence parameters: $\varepsilon = 0.002$ ($\approx 2.5\sigma$), $N = 3$.
 - Compute and wall-clock limits.
 
 ---
@@ -162,13 +193,14 @@ For each iteration, use available evidence to determine the highest-leverage nex
 
 Inspect as applicable:
 
-- Sample counts by split and label prevalence.
-- Click prevalence, interactions per user, candidate-set size, and users with no relevant validation items.
+- Sample counts by split and `long_view` label prevalence.
+- Zero-positive users (27.1% all-negative in test where nDCG is fixed at 0) and all-positive users (9.2% in test where nDCG is 1).
+- Interactions per user and historical sequence lengths in train logs.
 - Feature type, cardinality, sparsity, missingness, and unseen-ID behavior.
 - Train/validation distribution shift.
 - Model capacity, train-vs-validation gap, ranking-loss behavior, and convergence curves.
-- Per-signal losses and task interference when auxiliary feedback is used.
-- NDCG@10 and Recall@50 confidence/stability across seeds where budget permits.
+- Per-signal losses and task interference when auxiliary feedback (`is_click`, `is_like`, `is_follow`, `play_time_ms`) is used.
+- GAUC and nDCG@5 confidence/stability across seeds (FM baseline $\sigma = 0.0008$).
 - Runtime, GPU memory, dataloader throughput, and failure traces.
 - Outcomes of prior experiments, including regressions.
 
@@ -182,7 +214,7 @@ A valid iteration:
 2. Names the intended pipeline change.
 3. Applies a code diff in an isolated experiment workspace or revision.
 4. Runs a preflight/smoke check when the change is structurally risky.
-5. Trains and evaluates with the official evaluator.
+5. Trains and evaluates with the official evaluator (`kuairand-starter-kit/evaluate.py`).
 6. Records metrics, resources, artifacts, and errors.
 7. Compares results with the selected parent experiment and official baseline.
 8. Decides retain, reject, or investigate further.
@@ -210,52 +242,46 @@ Never loop endlessly. Apply retry limits and escalation rules. When no safe auto
 
 ## High-Value KuaiRand Research Directions
 
-These are candidate directions, not mandatory changes. Select them from diagnostics and prior outcomes.
+### ⚠️ Organizer-Tested Dead Ends (DO NOT REPEAT)
 
-### Features and representation
+These directions were empirically tested by the organizers and showed **zero measurable benefit**:
 
-- Correct handling of high-cardinality categorical IDs with embeddings.
-- Feature cardinality thresholds, rare-category handling, and hashed representations where justified.
-- Embedding dimension and regularization choices proportional to feature cardinality.
-- Missing-value and unseen-category treatment consistent between train and validation.
-- Carefully validated feature crosses for meaningful user/video/author/category interactions.
-- Watch-time, engagement, frequency, or recency-derived features only when they respect chronological split boundaries and avoid label leakage.
-- Candidate-generation and ranking features must be reproducible for validation and test without using future interactions.
+| Tested Hypothesis | Result | Why It Failed |
+|---|---|---|
+| **Adding all 13 CWM static features** (`+music_id`, `+video_type`, `+upload_type` + 6 user coarse buckets) | Primary **0.5940** vs 5-domain **0.5950** (flat / slight degradation) | `user_id × video_id` interaction in FM already captures almost all signal. Coarse user buckets are redundant with `user_id`, and 1.14M rows cannot support noisy capacity. |
+| **Scaling model capacity** ($k = 8 / 16 / 32$) | Primary **0.5895 / 0.5902 / 0.5887** (flat) | Capacity is not the bottleneck on 1.14M training interactions. |
+| **Pure user-side 1st-order bias features** | 0 contribution to score | Ranking is evaluated strictly **within-user**. Any feature constant within a user does not change relative item ranking order. User features only work through **interactions with item features**. |
 
-### Model architectures
+### 🚀 High-Headroom Research Priorities
 
-Begin with stable, reproducible baselines, then test justified alternatives:
+Prioritize exploration in areas where actual headroom remains:
 
-- Popularity, logistic-regression, and matrix-factorization-style sanity checks.
-- Two-tower retrieval models with sampled negatives when candidate generation is in scope.
-- Wide & Deep, DeepFM, xDeepFM, or DCN/DCNv2 for ranking feature interactions.
-- Sequential recommenders when timestamped user history is available without crossing split boundaries.
-- MMoE or PLE only when auxiliary feedback signals improve the primary click-ranking metrics in measured ablations.
-
-### Ranking objectives and sampling
-
-- Pointwise, pairwise, or listwise objectives selected according to measured alignment with NDCG@10 and Recall@50.
-- Negative-sampling distributions that reflect the official candidate set and do not leak validation or test interactions.
-- Hard-negative mining only from permitted training data and model-generated scores.
-- Auxiliary engagement objectives only when they improve the primary click-ranking metrics.
-- Negative-transfer detection: an auxiliary task rising while a primary metric falls is evidence to change task sharing, not a result to hide.
-
-### Training and evaluation
-
-- Learning-rate schedules, warmup, optimizer, weight decay, dropout, gradient clipping, and batch size.
-- Early stopping based on the correct composite validation objective.
-- Seed stability and validation variance checks before treating a tiny difference as a discovery.
-- Efficient data loading and mixed precision where they preserve correctness.
-- Validate candidate coverage, duplicate handling, tie behavior, and per-user ranking construction against the official evaluator.
-- Analyze head-versus-tail users/items and ranking depth; optimize the official ranking metrics rather than proxy loss alone.
+1. **Ranking Loss Function Alignment (Top Priority)**:
+   - Current baseline uses pointwise BCE logloss, but evaluation metrics are **ranking-based (GAUC & nDCG@5)**.
+   - Test Pairwise objectives (BPR, Margin Ranking) and Listwise objectives (Plackett-Luce / Softmax ranking over each user's candidate exposures).
+2. **Sequential User History Modeling**:
+   - KuaiRand users have hundreds of chronological interactions in the training split.
+   - Apply user behavior sequence modeling (DIN, SIM, SASRec, transformer-based interest extractors).
+3. **Multi-Task Learning (MTL) with Auxiliary Signals**:
+   - Train multi-task architectures (MMoE, PLE, SharedBottom) leveraging auxiliary labels in logs: `is_click`, `is_like`, `is_follow`, `is_comment`, `is_forward`, and `play_time_ms` to assist the primary `long_view` objective.
+4. **Watch-Time & Censored Regression Modeling**:
+   - Video watch time (`play_time_ms`) is subject to right-censoring (videos finish before total interest is observed).
+   - Apply censored regression and duration modeling (e.g., CWM survival loss).
+5. **Feature Interaction Architectures**:
+   - Explicit feature interaction models (DeepFM, DCNv2, xDeepFM, AutoInt) after ranking loss and sequence modeling.
+6. **Temporal Dynamics & Distribution Drift**:
+   - Model `hourmin`, `date`, and recency dynamics between train (`0408-0421`) and test (`0429-0508`).
+7. **Unbiased Off-Policy Validation (Advanced)**:
+   - Validate on `log_random_4_22_to_5_08_pure.csv` (1.18M random exposure rows) to detect and correct exposure bias.
 
 ### Priority order
 
-1. Correct data, evaluator, baseline reproduction, and reliable training.
-2. High-information diagnostics and inexpensive ablations.
-3. Improvements that lift the equal-weighted NDCG@10/Recall@50 objective rather than one metric alone.
-4. More complex architectures only after simpler alternatives provide evidence.
-5. AliCCP only after KuaiRand is submission-ready.
+1. Correct data loading, `evaluate.py` harness alignment, FM baseline reproduction (`0.5946`), and deterministic training.
+2. High-information diagnostics (within-user label variance, sequence lengths, task correlations).
+3. Loss function alignment (pairwise/listwise) and sequential history modeling.
+4. Multi-task gating (PLE/MMoE) and censored watch-time modeling.
+5. Deeper architectures and counterfactual debiasing only after measured gains.
+6. AliCCP only after KuaiRand-Pure is submission-ready.
 
 ---
 
@@ -269,7 +295,7 @@ The agent should optimize improvement per unit of risk and resource consumption.
 - Use a fixed baseline and a clear parent experiment for every comparison.
 - Penalize complexity that has no measured benefit.
 - Avoid broad blind grid searches, unbounded agent loops, and expensive architecture churn.
-- Treat small improvements within seed noise as unconfirmed until validated.
+- Treat small improvements within seed noise ($\sigma = 0.0008$) as unconfirmed until validated.
 - Maintain an experiment frontier: current best candidate, stable fallback, rejected branches, and pending follow-ups.
 - Preserve reproducible artifacts for any candidate that could become final.
 
@@ -307,11 +333,11 @@ commands: exact train/evaluate commands
 config_artifact: immutable config path or serialized config
 baseline_reference: organizer baseline identifier and observed result
 metrics:
-  ndcg_at_10: number | null
-  recall_at_50: number | null
+  gauc: number | null
+  ndcg_at_5: number | null
   ctr_auc: number | null
   cvr_auc_clicked: number | null
-  composite_validation_score: number | null
+  composite_validation_score: number | null # (gauc + ndcg_at_5) / 2
   delta_vs_parent: number | null
   delta_vs_official_baseline: number | null
 resources:
@@ -340,7 +366,7 @@ manual_intervention_count: integer
 - **MUST** write the plan before executing a run and finalize the result after it ends.
 - **MUST** preserve both successful and failed run records.
 - **MUST** include the actual code diff, not a prose approximation.
-- **MUST** log metrics from the official evaluation procedure.
+- **MUST** log metrics from the official evaluation procedure (`evaluate.py`).
 - **MUST** record cumulative and per-run LLM tokens and GPU-hours.
 - **MUST** count a human edit, decision, command correction, manual restart, or manual recovery as an intervention.
 - **MUST NOT** rewrite experiment history to remove regressions or failures.
@@ -388,7 +414,7 @@ Keep interfaces simple and file-backed. The agent must remain inspectable and ru
 - Maintain a stable, reproducible fallback checkpoint.
 - Design recovery paths before long autonomous runs.
 - Prefer simple, measured changes over ungrounded sophistication.
-- Optimize both NDCG@10 and Recall@50 because KuaiRand scoring weights them equally.
+- Optimize both GAUC and nDCG@5 because KuaiRand scoring weights them equally.
 - Quantify resource usage throughout the run.
 - Explain why an experiment was selected and why it was retained or rejected.
 - Keep the public repository clean, runnable, and complete.
@@ -413,12 +439,12 @@ Keep interfaces simple and file-backed. The agent must remain inspectable and ru
 
 Before submission, verify all of the following:
 
-- [ ] KuaiRand pipeline runs end to end from documented setup.
-- [ ] Official KuaiRand baseline was reproduced and documented.
+- [ ] KuaiRand-Pure pipeline runs end to end from documented setup.
+- [ ] Official KuaiRand FM baseline (0.5946 primary) was reproduced and documented.
 - [ ] Final artifact is the validation-best checkpoint/prediction at convergence or budget exhaustion.
-- [ ] Predictions/checkpoint match the official submission schema.
-- [ ] Evaluation uses the organizer’s official metric implementation.
-- [ ] Results report NDCG@10, Recall@50, and absolute delta versus the official baseline.
+- [ ] Predictions match the official CSV submission schema (`row_id,user_id,video_id,score`) and pass `submit.py --check`.
+- [ ] Evaluation uses the organizer’s official metric implementation (`evaluate.py`).
+- [ ] Results report GAUC, nDCG@5, and absolute delta versus the official baseline.
 - [ ] Every iteration has hypothesis, code diff, metrics, and error/recovery log.
 - [ ] Manual interventions are counted and summarized.
 - [ ] Total LLM input/output tokens and GPU-hours are reported.
