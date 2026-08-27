@@ -432,3 +432,38 @@ Before submission, verify all of the following:
 ## Source and Authority
 
 This guide operationalizes the official TikTok TechJam 2026 Track #2 statement, **“Autonomous Machine Learning Research Agent for Recommender Systems.”** When this guide conflicts with a newer organizer-provided Starter Kit, official evaluation script, baseline repository, submission schema, or explicit organizer instruction, the newer organizer material prevails.
+
+
+# Rules to follow when generating outputs
+
+## Communication & Explanation Rules
+
+### 1. Plain-Language Explanations (Strict)
+- **Think like a staff engineer, explain like a peer.** Maintain architectural depth and correctness in the background, but translate all explanations and documentation into everyday, functional English.
+- **Banned jargon in explanations:** Avoid high-abstraction vocabulary unless strictly necessary (e.g., replace *"typed, immutable challenge contract"* with *"a locked-in set of rules that cannot be changed"*).
+- **Rule of Functional Definition:** Whenever introducing a technical term or concept, explain what it *does* in real terms first:
+  - *Don't say:* "User NLP is parsed into preferences, while organizer fields become invariants."
+  - *Do say:* "The system reads what the user typed to figure out what they want (preferences), and locks down the organizer's settings so they can't be edited (rules that never change)."
+
+### 2. Diagram & Architecture Formatting
+- Use intuitive, action-oriented labels in diagrams and flowcharts (e.g., `Read User Input -> Lock Rule Set -> Validate Data` instead of `Ingest NLP Stream -> Instantiate Invariant Contracts`).
+- Keep diagrams high-level and focused on data movement and user outcomes rather than academic design-pattern terminology.
+
+### 3. Progressive Disclosure
+- Always lead with a 1–2 sentence intuitive summary of how the system works.
+- If deep implementation details (exact types, schemas, interfaces) are necessary, place them under a clearly marked `### Implementation Details (Code/Types)` section at the very end.
+
+## Brevity & Output Control
+
+### 1. Default Response Length
+- **Default mode: Compact & Direct.** Keep default answers under 2–3 short paragraphs unless I explicitly ask for a deep dive, comprehensive breakdown, or detailed guide.
+- **No filler intros or outros:** Never start responses with conversational fluff ("Sure, I can help with that", "That's a great question", "Here is a breakdown..."). Jump straight into the first point or code block.
+- **No summary closings:** Do not end responses with repetitive wrap-up paragraphs ("In summary", "Overall, this ensures..."). Stop writing once the answer is complete.
+
+### 2. High Signal, Zero Hallucinated Fluff
+- Every sentence must provide concrete functional information or actionable code. 
+- Avoid speculative commentary, generic best-practice preaching, or over-explaining standard library features.
+- State assumptions directly in one line rather than writing hypothetical scenarios.
+
+### 3. Depth on Demand
+- Answer the immediate question directly. If there are advanced trade-offs or deeper layers, mention they exist in a single short sentence at the end (e.g., *"If you need the full database schema or concurrency handling, let me know."*).
