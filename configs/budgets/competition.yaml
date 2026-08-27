@@ -23,15 +23,19 @@ limits:
   per_run_timeout_seconds: 5400
   recovery_attempts_per_run: 2
 
+# OpenAlex/GitHub calls are free APIs (no Bedrock $ cost); these bound local
+# compute/memory and keep raw tool responses reasonable. The context compiler
+# (configs/agents/bedrock.yaml maximum_evidence_characters/maximum_mcp_evidence_records)
+# separately bounds what actually reaches Bedrock, so these can be generous.
 mcp:
   per_session:
-    outbound_provider_requests: 60
-    returned_documents: 120
-    response_characters: 300000
+    outbound_provider_requests: 400
+    returned_documents: 600
+    response_characters: 1500000
   per_experiment:
-    outbound_provider_requests: 6
-    returned_documents: 12
-    response_characters: 30000
+    outbound_provider_requests: 40
+    returned_documents: 60
+    response_characters: 150000
 
 # Proxy results filter unsafe/expensive candidates; they never update the
 # validation-best model or convergence counter.

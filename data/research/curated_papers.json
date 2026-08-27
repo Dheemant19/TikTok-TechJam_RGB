@@ -2,479 +2,821 @@
   "schema_version": 1,
   "papers": [
     {
-      "paper_id": "replace-paper-01",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1205.2618",
+      "title": "BPR: Bayesian Personalized Ranking from Implicit Feedback",
       "authors": [],
-      "year": null,
+      "year": 2009,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "ranking_loss_alignment"
+      ],
+      "relevance_notes": "Foundational pairwise ranking loss - optimizes 'user prefers A over B' directly instead of pointwise classification. Direct alternative to pointwise BCE on long_view, matching v3's top research priority.",
+      "keywords": [
+        "BPR",
+        "pairwise ranking",
+        "implicit feedback",
+        "GAUC",
+        "nDCG@5"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1205.2618",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1205.2618",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/Jeong-Junhwan/bpr",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-02",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:2012.06731",
+      "title": "PiRank: Scalable Learning To Rank via Differentiable Sorting",
       "authors": [],
-      "year": null,
+      "year": 2021,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "ranking_loss_alignment"
+      ],
+      "relevance_notes": "Makes NDCG itself differentiable via a relaxed/soft sort, optimizing something closer to nDCG@5 directly rather than a surrogate like BPR. Good second step once pairwise loss is validated.",
+      "keywords": [
+        "PiRank",
+        "differentiable sorting",
+        "listwise ranking",
+        "nDCG@5"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "2012.06731",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/2012.06731",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/ermongroup/pirank",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-03",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1812.00073",
+      "title": "TF-Ranking: A Scalable TensorFlow Library for Learning-to-Rank",
       "authors": [],
-      "year": null,
+      "year": 2019,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "ranking_loss_alignment"
+      ],
+      "relevance_notes": "Library implementing pointwise/pairwise/listwise losses (including LambdaLoss) in one place, with the paper's own results showing listwise > pairwise > pointwise. Lets the agent try several listwise objectives cheaply without writing each from scratch.",
+      "keywords": [
+        "TF-Ranking",
+        "ListNet",
+        "ApproxNDCG",
+        "LambdaLoss",
+        "listwise ranking"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1812.00073",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1812.00073",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/tensorflow/ranking",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-04",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1706.06978",
+      "title": "Deep Interest Network for Click-Through Rate Prediction",
       "authors": [],
-      "year": null,
+      "year": 2018,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "sequential_user_modeling"
+      ],
+      "relevance_notes": "Attention mechanism weighs a user's past interactions differently depending on the current candidate item. KuaiRand-Pure gives each user hundreds of chronological interactions - DIN is the standard first step to use that history instead of discarding it.",
+      "keywords": [
+        "DIN",
+        "attention",
+        "CTR",
+        "user history"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1706.06978",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1706.06978",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/zhougr1993/DeepInterestNetwork",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-05",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1809.03672",
+      "title": "Deep Interest Evolution Network for Click-Through Rate Prediction",
       "authors": [],
-      "year": null,
+      "year": 2019,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "sequential_user_modeling"
+      ],
+      "relevance_notes": "Adds a two-layer GRU to model how a user's interest evolves over time, not just which past items are relevant. Natural next step past DIN if plain attention underfits.",
+      "keywords": [
+        "DIEN",
+        "GRU",
+        "interest evolution",
+        "sequential modeling"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1809.03672",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1809.03672",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/mouna99/dien",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-06",
-      "title": "REPLACE_ME",
+      "paper_id": "sasrec-icdm2018",
+      "title": "Self-Attentive Sequential Recommendation",
       "authors": [],
-      "year": null,
+      "year": 2018,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "sequential_user_modeling"
+      ],
+      "relevance_notes": "Transformer-style self-attention over a user's interaction sequence, no recurrence required. Fast, well-established sequential baseline - good first thing to try before something heavier like BERT4Rec.",
+      "keywords": [
+        "SASRec",
+        "self-attention",
+        "transformer",
+        "sequential recommendation"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1808.09781",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1808.09781",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/kang205/SASRec",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-07",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1904.06690",
+      "title": "BERT4Rec: Sequential Recommendation with Bidirectional Encoder Representations from Transformer",
       "authors": [],
-      "year": null,
+      "year": 2019,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "sequential_user_modeling"
+      ],
+      "relevance_notes": "Bidirectional Transformer trained with a masked-item objective. Usually stronger than SASRec but heavier to train - good once ranking loss and a lighter sequential model are validated and there is spare GPU-hour budget (Feasibility criterion).",
+      "keywords": [
+        "BERT4Rec",
+        "bidirectional transformer",
+        "masked item prediction",
+        "sequential recommendation"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1904.06690",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1904.06690",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/FeiSun/BERT4Rec",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-08",
-      "title": "REPLACE_ME",
+      "paper_id": "mmoe-kdd2018",
+      "title": "Modeling Task Relationships in Multi-task Learning with Multi-gate Mixture-of-Experts",
       "authors": [],
-      "year": null,
+      "year": 2018,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "multi_task_learning"
+      ],
+      "relevance_notes": "Shared expert sub-networks with a per-task gating network deciding how much to draw from each expert. Standard architecture for using the other KuaiRand feedback signals to help predict long_view.",
+      "keywords": [
+        "MMoE",
+        "mixture of experts",
+        "multi-task learning",
+        "seesaw problem"
+      ],
       "identifiers": {
-        "doi": null,
+        "doi": "10.1145/3219819.3220007",
         "arxiv_id": null,
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://dl.acm.org/doi/10.1145/3219819.3220007",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/drawbridge/keras-mmoe",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-09",
-      "title": "REPLACE_ME",
+      "paper_id": "ple-recsys2020",
+      "title": "Progressive Layered Extraction (PLE): A Novel Multi-Task Learning Model for Personalized Recommendations",
       "authors": [],
-      "year": null,
+      "year": 2020,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "multi_task_learning"
+      ],
+      "relevance_notes": "Adds task-private experts on top of MMoE's shared experts, specifically designed to reduce the seesaw effect between conflicting tasks. The challenge's own primer (docx Appendix A.3) names this seesaw problem explicitly - this paper targets it directly.",
+      "keywords": [
+        "PLE",
+        "seesaw problem",
+        "multi-task learning",
+        "task-private experts"
+      ],
       "identifiers": {
-        "doi": null,
+        "doi": "10.1145/3383313.3412236",
         "arxiv_id": null,
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://dl.acm.org/doi/10.1145/3383313.3412236",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/QunBB/RecSys",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-10",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1804.07931",
+      "title": "Entire Space Multi-Task Model: An Effective Approach for Estimating Post-Click Conversion Rate",
       "authors": [],
-      "year": null,
+      "year": 2018,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "multi_task_learning"
+      ],
+      "relevance_notes": "Jointly models the full impression-to-conversion funnel to fix sample-selection bias (training only on clicked data but needing to score all impressions). KuaiRand has no purchase label, but the docx's own primer (A.2) notes the same bias structure reappears on post-click signals like long_view.",
+      "keywords": [
+        "ESMM",
+        "sample selection bias",
+        "post-click",
+        "multi-task learning"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1804.07931",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1804.07931",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/dai08srhg/ESMM",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-11",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1810.04650",
+      "title": "Multi-Task Learning as Multi-Objective Optimization",
       "authors": [],
-      "year": null,
+      "year": 2018,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "multi_task_learning"
+      ],
+      "relevance_notes": "Treats multi-task training as finding a Pareto-optimal point across tasks' gradients instead of hand-picking fixed loss weights. Useful as a diagnostic tool to confirm an auxiliary signal is actually helping (not fighting) long_view before committing to a full MMoE/PLE architecture.",
+      "keywords": [
+        "multi-task learning",
+        "Pareto optimization",
+        "gradient conflict",
+        "task interference"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1810.04650",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1810.04650",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/isl-org/MultiObjectiveOptimization",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-12",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1703.04247",
+      "title": "DeepFM: A Factorization-Machine based Neural Network for CTR Prediction",
       "authors": [],
-      "year": null,
+      "year": 2017,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "feature_interaction_architectures"
+      ],
+      "relevance_notes": "Combines a Factorization Machine with a deep MLP sharing embeddings, no manual feature-crossing needed. The official organizer baseline is already an FM, so DeepFM is the minimal, most direct upgrade path.",
+      "keywords": [
+        "DeepFM",
+        "factorization machine",
+        "feature crossing",
+        "CTR"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1703.04247",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1703.04247",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/shenweichen/DeepCTR",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-13",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1803.05170",
+      "title": "xDeepFM: Combining Explicit and Implicit Feature Interactions for Recommender Systems",
       "authors": [],
-      "year": null,
+      "year": 2018,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "feature_interaction_architectures"
+      ],
+      "relevance_notes": "Adds a Compressed Interaction Network that learns feature crosses at the vector level rather than the bit level. Well-cited middle ground between DeepFM and heavier crossing architectures.",
+      "keywords": [
+        "xDeepFM",
+        "Compressed Interaction Network",
+        "feature crossing"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1803.05170",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1803.05170",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/Leavingseason/xDeepFM",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-14",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:1810.11921",
+      "title": "AutoInt: Automatic Feature Interaction Learning via Self-Attentive Neural Networks",
       "authors": [],
-      "year": null,
+      "year": 2019,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "feature_interaction_architectures"
+      ],
+      "relevance_notes": "Multi-head self-attention over feature embeddings learns which combinations matter, instead of hand-designed crosses. Different interaction mechanism than DeepFM/xDeepFM - useful as a contrast experiment.",
+      "keywords": [
+        "AutoInt",
+        "self-attention",
+        "feature interaction"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1810.11921",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1810.11921",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/shichence/AutoInt",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-15",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:2406.07932",
+      "title": "Counteracting Duration Bias in Video Recommendation via Counterfactual Watch Time",
       "authors": [],
-      "year": null,
+      "year": 2024,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "watch_time_censored_regression"
+      ],
+      "relevance_notes": "Reframes watch time as value delivered, using counterfactual reasoning to separate genuine interest from the fact that longer videos mechanically allow longer watch times. Directly targets the duration confound in play_time_ms, from a Kuaishou-adjacent research line.",
+      "keywords": [
+        "CWM",
+        "counterfactual watch time",
+        "duration bias",
+        "play_time_ms"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "2406.07932",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/2406.07932",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/hyz20/CWM",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-16",
-      "title": "REPLACE_ME",
+      "paper_id": "d2co-recsys2023",
+      "title": "Uncovering User Interest from Biased and Noised Watch Time in Video Recommendation",
       "authors": [],
-      "year": null,
+      "year": 2023,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "watch_time_censored_regression"
+      ],
+      "relevance_notes": "Companion/earlier method from the same authors as CWM, correcting watch-time labels for duration bias and noise. Simpler correction to try before CWM's full counterfactual framework.",
+      "keywords": [
+        "D2Co",
+        "watch time debiasing",
+        "play_time_ms"
+      ],
       "identifiers": {
-        "doi": null,
+        "doi": "10.1145/3604915.3608797",
         "arxiv_id": null,
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://dl.acm.org/doi/10.1145/3604915.3608797",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/hyz20/D2Co",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-17",
-      "title": "REPLACE_ME",
+      "paper_id": "pycox-jmlr2019",
+      "title": "Time-to-Event Prediction with Neural Networks and Cox Regression",
       "authors": [],
-      "year": null,
+      "year": 2019,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "watch_time_censored_regression"
+      ],
+      "relevance_notes": "General-purpose survival-analysis toolkit for right-censored outcomes. play_time_ms is right-censored (the video can still be playing when the log cuts off) - gives the agent off-the-shelf, well-tested tooling instead of building censored-regression handling from scratch.",
+      "keywords": [
+        "survival analysis",
+        "Cox regression",
+        "right-censored",
+        "pycox"
+      ],
       "identifiers": {
         "doi": null,
         "arxiv_id": null,
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://jmlr.org/papers/v20/18-424.html",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/havakv/pycox",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-18",
-      "title": "REPLACE_ME",
+      "paper_id": "tisasrec-wsdm2020",
+      "title": "Time Interval Aware Self-Attention for Sequential Recommendation",
       "authors": [],
-      "year": null,
+      "year": 2020,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "temporal_drift_modeling"
+      ],
+      "relevance_notes": "Extends SASRec by encoding the actual time gaps between interactions, not just their order. Minimal add-on to the sequential-modeling work that also covers recency/temporal dynamics - good combined experiment.",
+      "keywords": [
+        "TiSASRec",
+        "time interval",
+        "self-attention",
+        "recency"
+      ],
       "identifiers": {
-        "doi": null,
+        "doi": "10.1145/3336191.3371786",
         "arxiv_id": null,
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://dl.acm.org/doi/10.1145/3336191.3371786",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/JiachengLi1995/TiSASRec",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-19",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:2108.06625",
+      "title": "Continuous-Time Sequential Recommendation with Temporal Graph Collaborative Transformer",
       "authors": [],
-      "year": null,
+      "year": 2021,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "temporal_drift_modeling"
+      ],
+      "relevance_notes": "Models interactions as a continuous-time graph so it can predict at any future timestamp, not just 'next item'. Directly tests generalization across KuaiRand-Pure's train (Apr 8-21) / test (Apr 29-May 8) gap. Heavier implementation lift than TiSASRec - lower priority within this area.",
+      "keywords": [
+        "TGSRec",
+        "temporal graph",
+        "continuous time",
+        "distribution shift"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "2108.06625",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/2108.06625",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/DyGRec/TGSRec",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-20",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:2208.08696",
+      "title": "KuaiRand: An Unbiased Sequential Recommendation Dataset with Randomly Exposed Videos",
       "authors": [],
-      "year": null,
+      "year": 2022,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "off_policy_validation"
+      ],
+      "relevance_notes": "The paper KuaiRand-Pure itself comes from - explains exactly how the randomized-exposure log was collected and what it is valid for. Non-negotiable include.",
+      "keywords": [
+        "KuaiRand",
+        "randomized exposure",
+        "off-policy evaluation",
+        "dataset"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "2208.08696",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/2208.08696",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/chongminggao/KuaiRand",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-21",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:2202.10842",
+      "title": "KuaiRec: A Fully-observed Dataset and Insights for Evaluating Recommender Systems",
       "authors": [],
-      "year": null,
+      "year": 2022,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "off_policy_validation"
+      ],
+      "relevance_notes": "Companion near-fully-observed dataset from the same lab studying how exposure bias distorts offline evaluation. Directly useful for sanity-checking whether KuaiRand-Pure's validation metric is distorted by exposure bias.",
+      "keywords": [
+        "KuaiRec",
+        "exposure bias",
+        "fully observed",
+        "offline evaluation"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "2202.10842",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/2202.10842",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/chongminggao/KuaiRec",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-22",
-      "title": "REPLACE_ME",
+      "paper_id": "arxiv:2202.01562",
+      "title": "Doubly Robust Off-Policy Evaluation for Ranking Policies under the Cascade Behavior Model",
       "authors": [],
-      "year": null,
+      "year": 2022,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "off_policy_validation"
+      ],
+      "relevance_notes": "Statistically corrected estimator for how a new ranking policy would perform, using only logged data from the old policy. The actual technique for turning KuaiRand's randomized-exposure log into a trustworthy off-policy validation signal, not just a source describing the data.",
+      "keywords": [
+        "doubly robust",
+        "off-policy evaluation",
+        "cascade model",
+        "ranking"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "2202.01562",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/2202.01562",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/aiueola/wsdm2022-cascade-dr",
+          "commit": null,
+          "license": null
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-23",
-      "title": "REPLACE_ME",
-      "authors": [],
-      "year": null,
-      "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "paper_id": "arxiv:2204.00752",
+      "title": "Modeling Dynamic User Preference via Dictionary Learning for Sequential Recommendation",
+      "authors": [
+        "Chao Chen",
+        "Dongsheng Li",
+        "Junchi Yan",
+        "Xiaokang Yang"
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Knowledge and Data Engineering",
+      "priority_areas": [
+        "temporal_drift_modeling"
+      ],
+      "relevance_notes": "Models preference drift from timestamped interaction sequences, complementing TiSASRec time intervals and TGSRec temporal graphs. It is a bounded temporal experiment for the train-to-validation date shift; its TensorFlow 1.x reference code is evidence only, not a dependency to import.",
+      "keywords": [
+        "dynamic preference",
+        "temporal drift",
+        "sequential recommendation",
+        "recency",
+        "user history"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "2204.00752",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/2204.00752",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/cchao0116/S2PNM-TKDE2021",
+          "commit": null,
+          "license": "MIT"
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-24",
-      "title": "REPLACE_ME",
-      "authors": [],
-      "year": null,
-      "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "paper_id": "arxiv:1804.05938",
+      "title": "Unbiased Learning to Rank with Unbiased Propensity Estimation",
+      "authors": [
+        "Qingyao Ai",
+        "Keping Bi",
+        "Cheng Luo",
+        "Jiafeng Guo",
+        "W. Bruce Croft"
+      ],
+      "year": 2018,
+      "venue": "SIGIR 2018",
+      "priority_areas": [
+        "off_policy_validation"
+      ],
+      "relevance_notes": "Introduces dual learning of a ranker and exposure propensities from biased logged feedback. It complements the existing doubly robust evaluator: use it only as an advanced, train-only debiasing branch after direct validation gains are established; never use test labels.",
+      "keywords": [
+        "dual learning algorithm",
+        "DLA",
+        "propensity estimation",
+        "inverse propensity weighting",
+        "unbiased learning to rank"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1804.05938",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1804.05938",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/QingyaoAi/Unbiased-Learning-to-Rank-with-Unbiased-Propensity-Estimation",
+          "commit": null,
+          "license": "Apache-2.0"
+        }
+      ]
     },
     {
-      "paper_id": "replace-paper-25",
-      "title": "REPLACE_ME",
-      "authors": [],
-      "year": null,
+      "paper_id": "arxiv:1905.09433",
+      "title": "FiBiNET: Combining Feature Importance and Bilinear feature Interaction for Click-Through Rate Prediction",
+      "authors": [
+        "Tongwen Huang",
+        "Zhiqi Zhang",
+        "Junlin Zhang"
+      ],
+      "year": 2019,
       "venue": null,
-      "priority_areas": [],
-      "relevance_notes": "REPLACE_ME",
-      "keywords": [],
+      "priority_areas": [
+        "feature_interaction_architectures"
+      ],
+      "relevance_notes": "Uses squeeze-excitation feature importance and bilinear interactions, a distinct interaction mechanism from DeepFM, xDeepFM, and AutoInt. Test only after ranking-loss or history experiments; it must not be combined with adding organizer-tested static features or with an unrelated capacity increase.",
+      "keywords": [
+        "FiBiNET",
+        "bilinear interaction",
+        "feature importance",
+        "squeeze-excitation",
+        "factorization machine"
+      ],
       "identifiers": {
         "doi": null,
-        "arxiv_id": null,
+        "arxiv_id": "1905.09433",
         "openalex_id": null
       },
-      "paper_url": null,
+      "paper_url": "https://arxiv.org/abs/1905.09433",
       "abstract": null,
       "license": null,
-      "github_repositories": []
+      "github_repositories": [
+        {
+          "url": "https://github.com/bruce-willis/FiBiNET",
+          "commit": null,
+          "license": null
+        }
+      ]
     }
   ]
 }

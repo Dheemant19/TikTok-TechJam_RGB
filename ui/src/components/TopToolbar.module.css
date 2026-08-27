@@ -1,0 +1,124 @@
+.toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-5);
+  background: var(--toolbar-material);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--color-border);
+  z-index: 25;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .toolbar {
+    backdrop-filter: none;
+    background: var(--color-surface);
+  }
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-1);
+  flex: 1;
+  overflow-x: auto;
+}
+
+.navLink {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+}
+
+.navLink:hover {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.navLinkActive {
+  color: var(--color-action);
+  background: color-mix(in srgb, var(--color-action) 10%, transparent);
+}
+
+.menuButton {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.navPopover {
+  background: var(--inspector-material);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.navLinkDrawer {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 0.9375rem;
+  color: var(--color-text);
+  min-height: var(--hit-target-min);
+  display: flex;
+  align-items: center;
+}
+
+.navLinkDrawer:hover {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.controls {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.controlButton,
+.controlButtonPrimary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  min-height: 2.25rem;
+}
+
+.controlButton {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  color: var(--color-text);
+}
+
+.controlButtonPrimary {
+  background: var(--color-action);
+  color: white;
+}
+
+.controlButton:disabled,
+.controlButtonPrimary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

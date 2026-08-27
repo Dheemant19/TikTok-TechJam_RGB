@@ -14,8 +14,8 @@ curated_source:
 embedding:
   provider: fastembed
   model: sentence-transformers/all-MiniLM-L6-v2
-  # Hugging Face commit verified on 2026-08-27; file hashes are captured on download.
-  revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41
+  # FastEmbed's pinned Qdrant ONNX repository revision for this model.
+  revision: 5f1b8cd78bc4fb444dd171e59b18f3a3af89a079
   dimensions: 384
   model_manifest: state/models/manifest.json
   # Permit the one-time local download of this exact revision.
@@ -30,7 +30,7 @@ providers:
     requests_per_second: 5
     retry_limit: 3
   github:
-    enabled: false
+    enabled: true
     token_env: GITHUB_TOKEN
     timeout_seconds: 20
     requests_per_second: 2

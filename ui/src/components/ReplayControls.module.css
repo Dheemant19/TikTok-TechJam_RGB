@@ -1,0 +1,41 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.badge {
+  background: var(--color-warning);
+  color: #1d1d1f;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+}
+
+.slider {
+  flex: 1;
+  accent-color: var(--color-action);
+}
+
+.speedGroup {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.speedButton {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.speedButton[data-active] {
+  background: color-mix(in srgb, var(--color-action) 12%, transparent);
+  color: var(--color-action);
+}

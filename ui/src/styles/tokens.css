@@ -1,0 +1,93 @@
+:root {
+  color-scheme: light;
+
+  /*
+   * Light, legible workflow canvas — n8n-style clarity, not a dark theater.
+   * White surfaces, calm neutral borders, one committed amber accent that
+   * means "this is active / this is signal" everywhere it appears. Red is a
+   * real alarm state (failed/blocked), not decoration.
+   */
+  --color-bg: #eef0f3;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-border: rgba(23, 26, 31, 0.12);
+  --color-text: #171a1f;
+  --color-text-secondary: #565d68;
+  --color-text-tertiary: #838a96;
+
+  /* Amber accent — the one signal color, darkened enough to stay legible as text on white. */
+  --color-action: #a15c00;
+  --color-action-pressed: #7f4900;
+  --color-action-dim: rgba(245, 166, 35, 0.14);
+  --color-success: #a15c00;
+  --color-warning: #a15c00;
+  --color-danger: #b3271b;
+  --color-focus-ring: #a15c00;
+
+  --toolbar-material: rgba(255, 255, 255, 0.82);
+  --inspector-material: rgba(255, 255, 255, 0.94);
+  --scrim: rgba(23, 26, 31, 0.32);
+
+  /* rem-based spacing tokens: text-scaling never breaks layout. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+
+  --font-system:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+
+  --shadow-sm: 0 1px 2px rgba(23, 26, 31, 0.06), 0 1px 1px rgba(23, 26, 31, 0.04);
+  --shadow-md: 0 4px 16px rgba(23, 26, 31, 0.1), 0 1px 3px rgba(23, 26, 31, 0.06);
+  --shadow-lg: 0 16px 48px rgba(23, 26, 31, 0.16), 0 2px 6px rgba(23, 26, 31, 0.08);
+
+  --hit-target-min: 2.75rem; /* 44px */
+  --header-height: 6.25rem; /* top toolbar (3.5rem) + session bar (2.75rem) */
+
+  /* 3D scene tokens (hex values — consumed by scene3d as THREE.Color). */
+  --scene-bg: #eef0f3;
+  --scene-amber: #f5a623;
+  --scene-amber-text: #a15c00;
+  --scene-neutral: #9aa1ad;
+  --scene-neutral-text: #6b7280;
+  --scene-alarm: #ef4444;
+}
+
+
+/* Status colors: shape + icon + text carry meaning together, color is
+   secondary. Only two hues exist in the whole system: amber (signal) and a
+   desaturated alarm red (real failure states) — everything else is neutral. */
+:root {
+  --status-waiting: var(--color-text-tertiary);
+  --status-ready: var(--color-text-secondary);
+  --status-running: var(--color-action);
+  --status-paused: var(--color-text-tertiary);
+  --status-succeeded: var(--color-action);
+  --status-failed: var(--color-danger);
+  --status-rejected: var(--color-text-secondary);
+  --status-skipped: var(--color-text-tertiary);
+  --status-blocked: var(--color-danger);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --toolbar-material: var(--color-surface);
+    --inspector-material: var(--color-surface);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --color-border: currentColor;
+    --toolbar-material: var(--color-surface);
+    --inspector-material: var(--color-surface);
+  }
+}

@@ -1,0 +1,219 @@
+.page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: calc(var(--header-height) + var(--space-6)) var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.page h1 {
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--space-4);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.card h2 {
+  font-size: 1rem;
+  margin: 0 0 var(--space-3);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
+.clickableRow:hover {
+  background: color-mix(in srgb, var(--color-action) 4%, transparent);
+}
+
+.detailPanel {
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--color-action) 4%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: color-mix(in srgb, var(--status-succeeded) 16%, transparent);
+  color: var(--status-succeeded);
+}
+
+.badge-info {
+  background: color-mix(in srgb, var(--color-action) 14%, transparent);
+  color: var(--color-action);
+}
+
+.badge-neutral {
+  background: color-mix(in srgb, var(--color-text-secondary) 14%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.badge-danger {
+  background: color-mix(in srgb, var(--status-failed) 16%, transparent);
+  color: var(--status-failed);
+}
+
+.filterBar {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.filterButton,
+.filterActive {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.8125rem;
+  min-height: var(--hit-target-min);
+}
+
+.filterActive {
+  background: var(--color-action);
+  color: white;
+  border-color: var(--color-action);
+}
+
+.evidenceCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.evidenceHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.evidenceTier {
+  font-weight: 600;
+}
+
+.evidenceRelation {
+  margin-left: auto;
+}
+
+.evidenceMeta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  font-size: 0.75rem;
+}
+
+.evidenceMeta dt {
+  color: var(--color-text-secondary);
+}
+
+.evidenceLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-action);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.evidenceCode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.8125rem;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-4);
+  font-size: 0.875rem;
+}
+
+.statGrid dt {
+  color: var(--color-text-secondary);
+}
+
+.statGrid dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.hash {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.finalizedNotice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.checklist p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.log {
+  background: color-mix(in srgb, var(--color-text) 4%, transparent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}

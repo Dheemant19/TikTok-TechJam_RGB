@@ -43,3 +43,10 @@ context_limits:
   maximum_evidence_characters: 30000
   maximum_patch_characters: 60000
   maximum_traceback_characters: 20000
+  # Cumulative cap, per experiment, on reference code the Code Agent reads from a
+  # checked-out worktree (Plan_Workflow.md #9) while porting an idea from a pinned
+  # get_code_for_paper/search_code repository. MCP never returns file contents itself
+  # (see Plan_MCP.md #2.4/#3.3); this bounds the agent's own selective on-disk reads
+  # (grep-then-read specific files/functions) so one greedy read of a large repository
+  # cannot dominate the experiment's token budget.
+  maximum_reference_code_characters: 40000
