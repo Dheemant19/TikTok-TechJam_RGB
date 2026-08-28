@@ -95,7 +95,7 @@ The pipeline renders as a workshop of physical, colorful index cards on a light,
 - **Blue** (`#60a5fa → #3b82f6`, glow `rgba(59,130,246,.32)`) — Decide & Package lane, hexagon badge.
 
 ### Neutral
-- **Surface 0** (`#f4f6fa`): page and canvas background.
+- **Surface 0** (`#f4f6fa`): page and canvas background. **Revision (2026-08-28):** layered under the dot grid, two very faint radial washes (`rgba(59,130,246,.07)` top-left, `rgba(139,92,246,.06)` bottom-right — the same primary blue and research violet already in the lane palette) keep the background from reading as flat white, without darkening it or introducing a new hue.
 - **Surface 1** (`#ffffff`): every card, the toolbar (at 78% opacity with a 14px blur), the inspector.
 - **Surface 2** (`#f8fafc`): fact-card background inside the inspector's Summary tab.
 - **Border / Border Strong** (`rgba(15,23,42,.06)` / `rgba(15,23,42,.14)`): card borders and dividers.
@@ -128,9 +128,9 @@ The pipeline renders as a workshop of physical, colorful index cards on a light,
 
 ## Layout
 
-Full-viewport pannable/zoomable canvas (pointer-drag to pan on empty background, wheel to zoom, clamped 0.55×–1.4×) beneath a fixed 68px translucent toolbar. Five lanes at fixed x-offsets (`50, 340, 630, 920, 1210`), each a vertical stack of 224×128px cards on a 178px row rhythm, vertically centered against the tallest lane (4 nodes). Node positions are draggable and session-local; the canvas transform (`translate(pan) scale(zoom)`) is the single source of truth for where the pipeline renders.
+Full-viewport pannable/zoomable canvas (pointer-drag to pan on empty background, wheel to zoom, clamped 0.55×–1.4×) beneath a fixed 68px translucent toolbar. Five lanes at fixed x-offsets (`50, 340, 630, 920, 1210`), each a vertical stack of 224×128px cards on a 178px row rhythm, vertically centered against the tallest lane (4 nodes). Node positions are draggable and session-local; the canvas transform (`translate(pan) scale(zoom)`) is the single source of truth for where the pipeline renders. **Revision (2026-08-28):** the canvas centers its content bounding box in the viewport on mount, and the wheel-zoom anchors to the pointer position (not the transform's local origin) — an initial version anchored zoom at the top-left corner, so zooming out visibly dragged the pipeline toward that corner instead of staying put.
 
-This project's own additions beyond the handoff: a 148px autonomy-timeline strip below the canvas on wide viewports, and a route toolbar (six destinations) sharing the same 68px bar as the handoff's brand mark and Run/Reset controls (the latter shown only on the Live Workflow route). Below 720px width, the canvas is replaced entirely by a keyboard-navigable list (grouped by lane, same live status), the timeline is dropped, and the Run/Reset/Environment controls are hidden from the toolbar.
+This project's own additions beyond the handoff: a route toolbar (six destinations) sharing the same 68px bar as the handoff's brand mark and Run/Reset controls (the latter shown only on the Live Workflow route). Below 720px width, the canvas is replaced entirely by a keyboard-navigable list (grouped by lane, same live status), and the Run/Reset/Environment controls are hidden from the toolbar. **Revision (2026-08-28):** the autonomy log moved off the Live Workflow route entirely, into its own page (`/autonomy`) reached via a dedicated header button (clock icon, distinct from the six route pills); it is no longer a bottom strip on the canvas. The five non-canvas routes (Data Profile, Experiments, Research Library, Resources, Final Package, and now Autonomy Log) share one container convention: `maxWidth: 1200px`, `margin: 0 auto` — centered, filling most of a laptop-width viewport rather than sitting flush left in a narrow column.
 
 ## Elevation & Depth
 

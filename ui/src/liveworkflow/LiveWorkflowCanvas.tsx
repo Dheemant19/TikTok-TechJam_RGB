@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { NODES } from "../data/nodeRegistry";
-import { computeInitialPositions, Vec2 } from "./laneData";
+import { computeInitialPositions, contentBounds, Vec2 } from "./laneData";
 import { NodeCard } from "./NodeCard";
 import { EdgesLayer } from "./EdgesLayer";
 import { InspectorPanel } from "./InspectorPanel";
@@ -39,6 +39,22 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
   const dragInfo = useRef<DragInfo | null>(null);
   const panInfo = useRef<PanInfo | null>(null);
   const suppressClick = useRef(false);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef(pan);
+  const zoomRef = useRef(zoom);
+  panRef.current = pan;
+  zoomRef.current = zoom;
+
+  // Center the pipeline in the viewport on first mount, instead of leaving it
+  // anchored to the top-left corner (the transform's local origin).
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const bounds = contentBounds(positions);
+    setPan({ x: rect.width / 2 - bounds.centerX, y: rect.height / 2 - bounds.centerY });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDragMove = (e: PointerEvent) => {
     const info = dragInfo.current;
@@ -82,11 +98,6 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
     window.addEventListener("pointermove", handlePanMove);
     window.addEventListener("pointerup", handlePanUp);
   };
-  const onCanvasWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setZoom((z) => Math.min(1.4, Math.max(0.55, z - e.deltaY * 0.001)));
-  };
-
   useEffect(
     () => () => {
       window.removeEventListener("pointermove", handleDragMove);
@@ -98,6 +109,31 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
     []
   );
 
+  // React attaches JSX onWheel as a passive listener, so preventDefault() would
+  // silently fail there; a native listener with {passive:false} is required to
+  // actually stop the page from scrolling while zooming the canvas.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomNow = zoomRef.current;
+      const newZoom = Math.min(1.4, Math.max(0.55, zoomNow - e.deltaY * 0.001));
+      const rect = el.getBoundingClientRect();
+      // Zoom toward the cursor: keep the content point under the pointer fixed
+      // on screen, so zooming out settles toward wherever you're looking
+      // instead of drifting the pipeline toward the top-left corner.
+      const pointerX = e.clientX - rect.left;
+      const pointerY = e.clientY - rect.top;
+      const localX = (pointerX - panRef.current.x) / zoomNow;
+      const localY = (pointerY - panRef.current.y) / zoomNow;
+      setPan({ x: pointerX - localX * newZoom, y: pointerY - localY * newZoom });
+      setZoom(newZoom);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   const handleOpen = (id: string, rect: DOMRect) => {
     if (suppressClick.current) return;
     openNode(id, { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
@@ -106,9 +142,9 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
   return (
     <div style={{ position: "relative", flex: 1, minWidth: 0, overflow: "hidden" }}>
       <div
+        ref={canvasRef}
         style={{ position: "absolute", inset: 0, cursor: "grab" }}
         onPointerDown={onCanvasPointerDown}
-        onWheel={onCanvasWheel}
       >
         <div style={{ position: "absolute", left: 0, top: 0, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <EdgesLayer positions={positions} nodeStatus={nodeStatus} nodeElapsed={nodeElapsed} reducedMotion={reducedMotion} />

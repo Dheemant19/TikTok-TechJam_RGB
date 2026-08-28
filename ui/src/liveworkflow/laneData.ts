@@ -38,6 +38,25 @@ export interface Vec2 {
   y: number;
 }
 
+export interface Bounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  centerX: number;
+  centerY: number;
+}
+
+export function contentBounds(positions: Record<string, Vec2>): Bounds {
+  const xs = Object.values(positions).map((p) => p.x);
+  const ys = Object.values(positions).map((p) => p.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs) + NODE_W;
+  const maxY = Math.max(...ys) + NODE_H;
+  return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2 };
+}
+
 export function computeInitialPositions(): Record<string, Vec2> {
   const laneCursor: Record<number, number> = {};
   const pos: Record<string, Vec2> = {};

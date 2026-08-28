@@ -78,7 +78,32 @@ export function TopToolbar() {
         ))}
       </nav>
 
-      {onLiveWorkflow && !isNarrow && <RunControls isNarrow={isNarrow} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        {!isNarrow && (
+          <NavLink
+            to="/autonomy"
+            style={({ isActive }) => ({
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "9px 14px",
+              borderRadius: 12,
+              border: "1px solid rgba(15,23,42,.08)",
+              background: isActive ? "var(--primary-tint, #eff6ff)" : "#fff",
+              color: isActive ? "#2563eb" : "#475569",
+              fontWeight: 700,
+              fontSize: 13,
+            })}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 3" />
+            </svg>
+            Autonomy Log
+          </NavLink>
+        )}
+        {onLiveWorkflow && !isNarrow && <RunControls isNarrow={isNarrow} />}
+      </div>
     </header>
   );
 }

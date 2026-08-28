@@ -2,13 +2,22 @@ import { DEMO_RESEARCH } from "../data/demoFixture";
 
 export function ResearchLibrary() {
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 780 }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
       <h1 style={{ fontSize: 18, marginBottom: "var(--space-1)" }}>Research Library</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
         Evidence retrieved by the Research Knowledge MCP — curated seed papers plus bounded API enrichment.
       </p>
 
-      <ol style={{ listStyle: "none", margin: "var(--space-5) 0 0", padding: 0, display: "grid", gap: "var(--space-3)" }}>
+      <ol
+        style={{
+          listStyle: "none",
+          margin: "var(--space-5) 0 0",
+          padding: 0,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+          gap: "var(--space-4)",
+        }}
+      >
         {DEMO_RESEARCH.map((doc) => (
           <li
             key={doc.id}

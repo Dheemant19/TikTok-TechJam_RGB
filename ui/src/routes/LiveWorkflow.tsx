@@ -1,5 +1,4 @@
 import { LiveWorkflowCanvas } from "../liveworkflow/LiveWorkflowCanvas";
-import { AutonomyTimeline } from "../components/AutonomyTimeline";
 import { DemoBanner } from "../components/DemoBanner";
 import { StageListFallback } from "../components/StageListFallback";
 import { useReducedMotion } from "../hooks/useReducedMotion";
@@ -19,7 +18,6 @@ export function LiveWorkflow() {
           <LiveWorkflowCanvas reducedMotion={reducedMotion} isNarrow={false} />
         )}
       </div>
-      {!isNarrow && <AutonomyTimeline />}
     </div>
   );
 }

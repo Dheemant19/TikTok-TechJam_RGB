@@ -13,7 +13,7 @@ export function Resources() {
   const inputShare = r.llmInputTokens / totalTokens;
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 780 }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
       <h1 style={{ fontSize: 18, marginBottom: "var(--space-1)" }}>Resources</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
         Cumulative usage since the first agent action, tracked alongside the metric score, not as a footnote.

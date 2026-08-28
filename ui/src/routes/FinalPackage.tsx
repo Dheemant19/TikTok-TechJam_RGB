@@ -6,7 +6,7 @@ export function FinalPackage() {
   const ready = confirmText === sessionId;
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 680 }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
       <h1 style={{ fontSize: 18, marginBottom: "var(--space-1)" }}>Final Package</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
         Packaging freezes the research frontier. This has not run yet in this session.

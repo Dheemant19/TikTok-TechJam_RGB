@@ -16,7 +16,7 @@ export function DataProfile() {
   const maxRows = Math.max(...SPLITS.map((s) => s.rows));
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 920 }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
       <h1 style={{ fontSize: 18, marginBottom: "var(--space-1)" }}>Data Profile</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
         Frozen train-only transform · row counts and label prevalence by split
