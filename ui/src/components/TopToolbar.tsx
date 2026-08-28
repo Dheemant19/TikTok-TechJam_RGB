@@ -1,145 +1,164 @@
-import { useState } from "react";
-import { NavLink } from "react-router-dom";
-import { Menu, Pause, Play, Square, PackageCheck } from "lucide-react";
-import * as Popover from "@radix-ui/react-popover";
-import { useSnapshot, useSessionControl } from "@/api/queries";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { PackageDialog } from "./PackageDialog";
-import { useMediaQuery } from "@/hooks/useMediaQuery";
-import styles from "./TopToolbar.module.css";
+import { NavLink, useLocation } from "react-router-dom";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useRunStore } from "../liveworkflow/runStore";
 
 const DESTINATIONS = [
   { to: "/", label: "Live Workflow" },
   { to: "/data-profile", label: "Data Profile" },
   { to: "/experiments", label: "Experiments" },
-  { to: "/research-library", label: "Research Library" },
+  { to: "/research", label: "Research Library" },
   { to: "/resources", label: "Resources" },
-  { to: "/final-package", label: "Final Package" },
+  { to: "/package", label: "Final Package" },
 ];
 
-interface TopToolbarProps {
-  sessionId: string | null;
-}
-
-export function TopToolbar({ sessionId }: TopToolbarProps) {
-  const { data: snapshot } = useSnapshot(sessionId);
-  const controls = useSessionControl(sessionId ?? "");
-  const isNarrow = useMediaQuery("(max-width: 640px)");
-  const isTablet = useMediaQuery("(max-width: 900px)");
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [packageOpen, setPackageOpen] = useState(false);
-
-  const allowed = new Set(snapshot?.allowed_actions ?? []);
-  // Only start/package are disabled on narrow screens to avoid accidental
-  // taps; pause/resume/cancel remain available (Plan_UI.md #6.6).
-  const packageDisabledOnNarrow = isNarrow;
+export function TopToolbar() {
+  const isNarrow = useMediaQuery("(max-width: 720px)");
+  const location = useLocation();
+  const onLiveWorkflow = location.pathname === "/";
 
   return (
-    <header className={styles.toolbar}>
-      <div className={styles.brand}>RIGOR-RS</div>
-
-      {isTablet ? (
-        <Popover.Root>
-          <Popover.Trigger asChild>
-            <button type="button" className={`pressable ${styles.menuButton}`} aria-label="Open navigation">
-              <Menu size={20} aria-hidden="true" />
-            </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content className={styles.navPopover} align="start" sideOffset={8}>
-              <nav aria-label="Destinations">
-                {DESTINATIONS.map((destination) => (
-                  <NavLink
-                    key={destination.to}
-                    to={destination.to}
-                    end={destination.to === "/"}
-                    className={({ isActive }) => `${styles.navLinkDrawer} ${isActive ? styles.navLinkActive : ""}`}
-                  >
-                    {destination.label}
-                  </NavLink>
-                ))}
-              </nav>
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
-      ) : (
-        <nav className={styles.nav} aria-label="Destinations">
-          {DESTINATIONS.map((destination) => (
-            <NavLink
-              key={destination.to}
-              to={destination.to}
-              end={destination.to === "/"}
-              className={({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ""}`}
-            >
-              {destination.label}
-            </NavLink>
-          ))}
-        </nav>
-      )}
-
-      <div className={styles.controls}>
-        {sessionId && allowed.has("pause") && (
-          <button
-            type="button"
-            className={`pressable ${styles.controlButton}`}
-            onClick={() => snapshot && controls.pause.mutate(snapshot.latest_sequence)}
-          >
-            <Pause size={16} aria-hidden="true" />
-            Pause
-          </button>
-        )}
-        {sessionId && allowed.has("resume") && (
-          <button
-            type="button"
-            className={`pressable ${styles.controlButton}`}
-            onClick={() => snapshot && controls.resume.mutate(snapshot.latest_sequence)}
-          >
-            <Play size={16} aria-hidden="true" />
-            Resume
-          </button>
-        )}
-        {sessionId && allowed.has("cancel") && (
-          <button
-            type="button"
-            className={`pressable ${styles.controlButton}`}
-            onClick={() => setCancelOpen(true)}
-          >
-            <Square size={16} aria-hidden="true" />
-            Cancel
-          </button>
-        )}
-        {sessionId && allowed.has("package") && (
-          <button
-            type="button"
-            className={`pressable ${styles.controlButtonPrimary}`}
-            disabled={packageDisabledOnNarrow}
-            onClick={() => setPackageOpen(true)}
-          >
-            <PackageCheck size={16} aria-hidden="true" />
-            Build Final Package
-          </button>
+    <header
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-4)",
+        height: 68,
+        padding: `0 ${isNarrow ? "16px" : "22px"}`,
+        background: "rgba(255,255,255,.78)",
+        backdropFilter: "blur(14px)",
+        borderBottom: "1px solid rgba(15,23,42,.07)",
+        zIndex: 50,
+        flexShrink: 0,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <div
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            background: "linear-gradient(135deg,#60a5fa,#3b82f6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 6px 16px -4px rgba(59,130,246,.6)",
+          }}
+        >
+          <span style={{ color: "#fff", fontWeight: 800, fontSize: 15 }}>R</span>
+        </div>
+        {!isNarrow && (
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: "#0f172a", letterSpacing: "-.01em" }}>RIGOR-RS</div>
+            <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>Workflow Observer</div>
+          </div>
         )}
       </div>
 
-      {sessionId && (
-        <>
-          <ConfirmDialog
-            open={cancelOpen}
-            onOpenChange={setCancelOpen}
-            title="Cancel this run?"
-            description="History is preserved and the stable fallback checkpoint remains available. This does not delete any evidence."
-            confirmLabel="Cancel run"
-            danger
-            onConfirm={() => snapshot && controls.cancel.mutate(snapshot.latest_sequence)}
-          />
-          <PackageDialog
-            open={packageOpen}
-            onOpenChange={setPackageOpen}
-            sessionId={sessionId}
-            onConfirm={(confirmation) => controls.packageSubmission.mutate(confirmation)}
-          />
-        </>
-      )}
+      <nav style={{ display: "flex", gap: 4, flex: 1, minWidth: 0, overflowX: "auto", scrollbarWidth: "none" }}>
+        {DESTINATIONS.map((d) => (
+          <NavLink
+            key={d.to}
+            to={d.to}
+            end={d.to === "/"}
+            style={({ isActive }) => ({
+              padding: "8px 12px",
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700,
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+              color: isActive ? "#fff" : "#475569",
+              background: isActive ? "#3b82f6" : "transparent",
+              transition: "background .15s ease",
+            })}
+          >
+            {isNarrow ? d.label.split(" ")[0] : d.label}
+          </NavLink>
+        ))}
+      </nav>
+
+      {onLiveWorkflow && !isNarrow && <RunControls isNarrow={isNarrow} />}
     </header>
+  );
+}
+
+function RunControls({ isNarrow }: { isNarrow: boolean }) {
+  const runStatus = useRunStore((s) => s.runStatus);
+  const start = useRunStore((s) => s.start);
+  const reset = useRunStore((s) => s.reset);
+  const isRunning = runStatus === "running";
+  const label = isRunning ? "Running…" : runStatus === "done" ? "Run Again" : "Run Workflow";
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+      {!isNarrow && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 14px",
+            borderRadius: 12,
+            background: "#fff",
+            border: "1px solid rgba(15,23,42,.08)",
+            fontSize: 13,
+            color: "#475569",
+            fontWeight: 600,
+            boxShadow: "0 1px 2px rgba(15,23,42,.04)",
+          }}
+        >
+          Environment: <span style={{ color: "#0f172a", fontWeight: 700 }}>Production</span>
+        </div>
+      )}
+      <button
+        onClick={reset}
+        style={{
+          padding: "10px 16px",
+          borderRadius: 12,
+          border: "1px solid rgba(15,23,42,.08)",
+          background: "#fff",
+          color: "#475569",
+          fontWeight: 700,
+          fontSize: 13,
+          cursor: "pointer",
+        }}
+      >
+        Reset
+      </button>
+      <button
+        onClick={start}
+        disabled={isRunning}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "10px 18px",
+          borderRadius: 12,
+          border: "none",
+          background: isRunning ? "linear-gradient(135deg,#93c5fd,#60a5fa)" : "linear-gradient(135deg,#60a5fa,#2563eb)",
+          color: "#fff",
+          fontWeight: 800,
+          fontSize: 13,
+          cursor: isRunning ? "default" : "pointer",
+          boxShadow: "0 10px 24px -8px rgba(37,99,235,.6)",
+        }}
+      >
+        {isRunning && (
+          <span
+            aria-hidden
+            style={{
+              width: 13,
+              height: 13,
+              borderRadius: "50%",
+              border: "2px solid rgba(255,255,255,.5)",
+              borderTopColor: "#fff",
+              animation: "spin .7s linear infinite",
+            }}
+          />
+        )}
+        {label}
+      </button>
+    </div>
   );
 }

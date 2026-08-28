@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0;height:100%;overscroll-behavior:none;}
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:#d8dce3;border-radius:8px;}
+  @keyframes pulseDot{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.3);}}
+  @keyframes dashFlow{to{stroke-dashoffset:-24;}}
+  @keyframes runGlow{0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,.0), 0 18px 40px -14px rgba(15,23,42,.28);}50%{box-shadow:0 0 0 8px rgba(59,130,246,.10), 0 18px 40px -14px rgba(15,23,42,.28);}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes floatIn{from{opacity:0;transform:translateY(10px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
+</style>
+</helmet>
+<div style="position:fixed;inset:0;font-family:'Manrope',-apple-system,BlinkMacSystemFont,sans-serif;background:#f4f6fa;background-image:radial-gradient(#d9dfe9 1px, transparent 1px);background-size:22px 22px;overflow:hidden;user-select:none;">
+
+  <div style="position:absolute;top:0;left:0;right:0;height:68px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:rgba(255,255,255,.78);backdrop-filter:blur(14px);border-bottom:1px solid rgba(15,23,42,.07);z-index:50;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#60a5fa,#3b82f6);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px -4px rgba(59,130,246,.6);">
+        <span style="color:#fff;font-weight:800;font-size:15px;">R</span>
+      </div>
+      <div>
+        <div style="font-weight:800;font-size:15px;color:#0f172a;letter-spacing:-.01em;">RIGOR-RS</div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;">Workflow Observer</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:12px;background:#fff;border:1px solid rgba(15,23,42,.08);font-size:13px;color:#475569;font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+        Environment: <span style="color:#0f172a;font-weight:700;">Production</span>
+      </div>
+      <button onClick="{{ resetHandler }}" style="padding:10px 16px;border-radius:12px;border:1px solid rgba(15,23,42,.08);background:#fff;color:#475569;font-weight:700;font-size:13px;cursor:pointer;" style-hover="{{ resetHoverStyle }}" style-active="{{ activePress }}">Reset</button>
+      <button onClick="{{ runHandler }}" style="{{ runButtonStyle }}" style-hover="{{ runButtonHover }}" style-active="{{ activePress }}">
+        <sc-if value="{{ isRunning }}" hint-placeholder-val="{{ false }}"><span style="{{ spinnerStyle }}"></span></sc-if>
+        {{ runButtonLabel }}
+      </button>
+    </div>
+  </div>
+
+  <div style="position:absolute;top:68px;left:0;right:0;bottom:0;overflow:hidden;cursor:grab;" onPointerDown="{{ canvasDown }}" onWheel="{{ canvasWheel }}">
+    <div style="{{ canvasInnerStyle }}">
+      <svg style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none;" width="1" height="1">
+        <sc-for list="{{ edges }}" as="edge" hint-placeholder-count="13">
+          <path d="{{ edge.d }}" stroke="{{ edge.stroke }}" stroke-width="{{ edge.width }}" fill="none" stroke-dasharray="{{ edge.dasharray }}" strokeLinecap="round" style="{{ edge.pathStyle }}"></path>
+          <circle cx="{{ edge.x1 }}" cy="{{ edge.y1 }}" r="4.5" fill="{{ edge.dotColor1 }}"></circle>
+          <circle cx="{{ edge.x2 }}" cy="{{ edge.y2 }}" r="4.5" fill="{{ edge.dotColor2 }}"></circle>
+        </sc-for>
+        <circle cx="{{ tracker.cx2 }}" cy="{{ tracker.cy2 }}" r="{{ tracker.r2 }}" fill="#fbbf24" opacity="0.55"></circle>
+        <circle cx="{{ tracker.cx }}" cy="{{ tracker.cy }}" r="{{ tracker.r }}" fill="#f59e0b" style="filter:drop-shadow(0 0 10px rgba(245,158,11,1)) drop-shadow(0 0 4px rgba(255,255,255,.9));"></circle>
+      </svg>
+
+      <sc-for list="{{ nodes }}" as="item" hint-placeholder-count="14">
+        <div style="{{ item.cardStyle }}" style-hover="{{ item.hoverStyle }}" onPointerDown="{{ item.onDown }}" onClick="{{ item.onClick }}">
+          <div style="{{ item.badgeStyle }}"><span style="{{ item.monogramStyle }}">{{ item.mono }}</span></div>
+          <div style="padding:44px 16px 14px 16px;">
+            <div style="font-size:14px;font-weight:800;color:#0f172a;letter-spacing:-.01em;">{{ item.label }}</div>
+            <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-top:2px;">{{ item.sublabel }}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:14px;">
+              <span style="{{ item.statusDotStyle }}"></span>
+              <span style="font-size:12px;font-weight:700;color:{{ item.statusColor }};">{{ item.statusText }}</span>
+              <sc-if value="{{ item.showTimer }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:11px;color:#94a3b8;font-weight:600;font-family:'JetBrains Mono',monospace;margin-left:auto;">{{ item.timerLabel }}</span>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ showInspector }}" hint-placeholder-val="{{ false }}">
+    <div style="{{ backdropStyle }}" onClick="{{ closeInspector }}"></div>
+    <div style="{{ inspectorStyle }}">
+      <div style="{{ inspectorHeaderStyle }}">
+        <button onClick="{{ closeInspector }}" style="position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:10px;border:none;background:rgba(255,255,255,.25);color:#fff;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;" style-hover="{{ closeHoverStyle }}">✕</button>
+        <div style="{{ selectedDetail.badgeStyleLarge }}"><span style="{{ selectedDetail.monogramStyleLarge }}">{{ selectedDetail.mono }}</span></div>
+        <div style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-.01em;margin-top:14px;">{{ selectedDetail.label }}</div>
+        <div style="font-size:12.5px;color:rgba(255,255,255,.85);font-weight:600;margin-top:2px;">{{ selectedDetail.sublabel }}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:12px;">
+          <span style="{{ selectedDetail.statusDotStyleLight }}"></span>
+          <span style="font-size:12.5px;font-weight:700;color:#fff;">{{ selectedDetail.statusText }}</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;padding:14px 24px 0 24px;border-bottom:1px solid rgba(15,23,42,.08);flex-shrink:0;">
+        <button onClick="{{ tabHandlers.summary }}" style="{{ tabStyles.summary }}">Summary</button>
+        <button onClick="{{ tabHandlers.input }}" style="{{ tabStyles.input }}">Input</button>
+        <button onClick="{{ tabHandlers.output }}" style="{{ tabStyles.output }}">Output</button>
+        <button onClick="{{ tabHandlers.history }}" style="{{ tabStyles.history }}">History</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:22px 24px 32px 24px;">
+        <sc-if value="{{ isTabSummary }}" hint-placeholder-val="{{ true }}">
+          <div style="font-size:14.5px;line-height:1.65;color:#334155;">{{ selectedDetail.summary }}</div>
+          <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <sc-for list="{{ selectedDetail.facts }}" as="f" hint-placeholder-count="4">
+              <div style="background:#f8fafc;border:1px solid rgba(15,23,42,.06);border-radius:12px;padding:12px 14px;">
+                <div style="font-size:10.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;">{{ f.label }}</div>
+                <div style="font-size:13.5px;font-weight:700;color:#0f172a;margin-top:4px;">{{ f.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isTabInput }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ selectedDetail.input }}" as="row" hint-placeholder-count="3">
+            <div style="padding:12px 0;border-bottom:1px solid rgba(15,23,42,.06);">
+              <div style="font-size:11px;font-weight:700;color:#94a3b8;">{{ row.label }}</div>
+              <div style="font-size:13.5px;color:#1e293b;margin-top:4px;font-family:{{ row.mono }};line-height:1.5;">{{ row.value }}</div>
+            </div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ isTabOutput }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ selectedDetail.output }}" as="row" hint-placeholder-count="3">
+            <div style="padding:12px 0;border-bottom:1px solid rgba(15,23,42,.06);">
+              <div style="font-size:11px;font-weight:700;color:#94a3b8;">{{ row.label }}</div>
+              <div style="font-size:13.5px;color:#1e293b;margin-top:4px;font-family:{{ row.mono }};line-height:1.5;">{{ row.value }}</div>
+            </div>
+          </sc-for>
+        </sc-if>
+        <sc-if value="{{ isTabHistory }}" hint-placeholder-val="{{ false }}">
+          <sc-for list="{{ selectedDetail.history }}" as="h" hint-placeholder-count="3">
+            <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid rgba(15,23,42,.06);">
+              <div style="width:6px;height:6px;border-radius:50%;background:{{ h.dotColor }};margin-top:6px;flex-shrink:0;"></div>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:#0f172a;">Attempt {{ h.attempt }} — {{ h.status }}</div>
+                <div style="font-size:12px;color:#94a3b8;margin-top:2px;">{{ h.time }} · {{ h.note }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+const LANE_COLORS = [
+  { a:'#22d3ee', b:'#06b6d4', shadow:'rgba(6,182,212,.32)', text:'#0e7490' },
+  { a:'#a78bfa', b:'#8b5cf6', shadow:'rgba(139,92,246,.32)', text:'#6d28d9' },
+  { a:'#fbbf24', b:'#f59e0b', shadow:'rgba(245,158,11,.32)', text:'#b45309' },
+  { a:'#fb7185', b:'#f43f5e', shadow:'rgba(244,63,94,.32)', text:'#be123c' },
+  { a:'#60a5fa', b:'#3b82f6', shadow:'rgba(59,130,246,.32)', text:'#1d4ed8' },
+];
+const RECOVERY_COLOR = LANE_COLORS[3];
+
+const NODE_REGISTRY = [
+  { id:'train_data', label:'Training Data', sublabel:'Dataset', lane:0, mono:'TD' },
+  { id:'data_profiler', label:'Inspect & Prepare Data', sublabel:'Data Profiler', lane:0, mono:'DP' },
+  { id:'phase_guard', label:'Check Data Safety', sublabel:'Safety Gate', lane:0, mono:'SG' },
+  { id:'knowledge_mcp', label:'Find Research Evidence', sublabel:'Research Agent (MCP)', lane:1, mono:'RA' },
+  { id:'scientist', label:'Choose the Next Experiment', sublabel:'Experiment Selector', lane:1, mono:'ES' },
+  { id:'coder', label:'Write the Code Change', sublabel:'Code Agent', lane:2, mono:'CA' },
+  { id:'pruner', label:'Run Fast Safety Tests', sublabel:'Fast Test Suite', lane:2, mono:'FT' },
+  { id:'trainer', label:'Train the Model', sublabel:'Training Job', lane:3, mono:'TR' },
+  { id:'recovery', label:'Recover from Failures', sublabel:'Recovery Agent', lane:3, mono:'RC', isRecovery:true },
+  { id:'evaluator', label:'Score on Validation', sublabel:'Official Evaluator', lane:3, mono:'EV' },
+  { id:'watchdog', label:'Decide: Continue or Stop', sublabel:'Autonomy Controller', lane:4, mono:'WD' },
+  { id:'ledger', label:'Save Run Evidence', sublabel:'Event Ledger', lane:4, mono:'LG' },
+  { id:'finalizer', label:'Build Final Package', sublabel:'Package Builder', lane:4, mono:'FZ' },
+  { id:'submission', label:'Verified Predictions', sublabel:'Final Artifact', lane:4, mono:'SB' },
+];
+
+const RUN_ORDER = ['train_data','data_profiler','phase_guard','knowledge_mcp','scientist','coder','pruner','trainer','evaluator','watchdog','ledger','finalizer','submission'];
+const MAIN_EDGES = RUN_ORDER.slice(0, -1).map((id, i) => [id, RUN_ORDER[i+1]]);
+const ALL_EDGES = [...MAIN_EDGES, ['trainer','recovery']];
+
+const LANE_X = [50, 340, 630, 920, 1210];
+const LANE_COUNTS = [3,2,2,3,4];
+const MAX_COUNT = 4;
+const ROW_GAP = 178;
+const NODE_W = 224;
+const NODE_H = 128;
+
+function computeInitialPositions() {
+  const laneIndex = {};
+  const pos = {};
+  NODE_REGISTRY.forEach(n => {
+    const i = laneIndex[n.lane] || 0;
+    laneIndex[n.lane] = i + 1;
+    const startY = 40 + (MAX_COUNT - LANE_COUNTS[n.lane]) * ROW_GAP / 2;
+    pos[n.id] = { x: LANE_X[n.lane], y: startY + i * ROW_GAP };
+  });
+  return pos;
+}
+
+const NODE_DETAILS = {
+  train_data: { summary:'Provides the frozen train/validation split used across the whole run. Read-only source of interaction rows for the Data Profiler.', facts:[{label:'Rows',value:'2.4M interactions'},{label:'Users',value:'182,400'},{label:'Split',value:'Train / Val / Test'},{label:'Format',value:'Parquet, KuaiRand schema'}], input:[{label:'Source path',value:'Hidden to protect data and credentials',mono:"'JetBrains Mono',monospace"},{label:'Config',value:'challenge_config.yaml'}], output:[{label:'Split manifest',value:'train: 1.9M · val: 250K · test: 250K',mono:'inherit'},{label:'Schema hash',value:'8f2c…a91d',mono:"'JetBrains Mono',monospace"}], history:[{attempt:1,status:'Succeeded',time:'09:12:04',note:'Loaded and validated schema',dotColor:'#22c55e'}] },
+  data_profiler: { summary:'Fits train-only transforms (vocabularies, bucket edges, scalers) and applies the frozen artifact to validation and test features without refitting.', facts:[{label:'long_view prevalence',value:'31.2%'},{label:'Unseen-ID rate',value:'0.8%'},{label:'Missing fields',value:'3 flagged'},{label:'Transform',value:'Frozen, train-only'}], input:[{label:'Raw interactions',value:'Hidden to protect data and credentials',mono:'inherit'}], output:[{label:'profile.json',value:'Aggregate diagnostics, bounded bins'},{label:'transform_receipt.json',value:'source hash → fitted hash → artifact hash',mono:"'JetBrains Mono',monospace"}], history:[{attempt:1,status:'Succeeded',time:'09:12:41',note:'Profile and receipt generated',dotColor:'#22c55e'}] },
+  phase_guard: { summary:'Checks the prepared data against safety rules before it reaches the research and training stages. Blocks the run if a check fails.', facts:[{label:'Checks run',value:'12'},{label:'Result',value:'All passed'},{label:'Leakage check',value:'Clear'},{label:'Label check',value:'Clear'}], input:[{label:'Transform receipt',value:'From Data Profiler'}], output:[{label:'Decision',value:'Approved to continue'}], history:[{attempt:1,status:'Succeeded',time:'09:13:02',note:'No safety violations found',dotColor:'#22c55e'}] },
+  knowledge_mcp: { summary:'Searches curated and auto-ingested research sources for evidence relevant to the current experiment frontier.', facts:[{label:'Sources found',value:'6'},{label:'Curated',value:'4'},{label:'Auto-ingested',value:'2'},{label:'License checked',value:'Yes'}], input:[{label:'Query',value:'sequence modeling for long-view prediction under censoring'}], output:[{label:'Evidence cards',value:'6 with citations and retrieval time'}], history:[{attempt:1,status:'Succeeded',time:'09:13:20',note:'Evidence retrieved and cached',dotColor:'#22c55e'}] },
+  scientist: { summary:'Chooses the next experiment to try, informed by research evidence, the current best model, and remaining budget.', facts:[{label:'Candidate',value:'Attention pooling over session'},{label:'Budget used',value:'18%'},{label:'Parent',value:'stable fallback'},{label:'Rationale',value:'Evidence-backed'}], input:[{label:'Evidence cards',value:'From Research Agent'},{label:'Current best',value:'primary score 0.601'}], output:[{label:'Experiment plan',value:'Attention pooling + duration-aware loss'}], history:[{attempt:1,status:'Succeeded',time:'09:13:55',note:'Experiment selected',dotColor:'#22c55e'}] },
+  coder: { summary:'Writes the code change implementing the selected experiment, then hands it to fast safety tests before training.', facts:[{label:'Files changed',value:'3'},{label:'Lines',value:'+142 / −18'},{label:'Diff type',value:'Unified'},{label:'Secrets',value:'Hidden to protect data and credentials'}], input:[{label:'Experiment plan',value:'From Choose the Next Experiment'}], output:[{label:'Patch',value:'model/pooling.py, train/loss.py, config.yaml'}], history:[{attempt:1,status:'Succeeded',time:'09:14:30',note:'Patch generated',dotColor:'#22c55e'}] },
+  pruner: { summary:'Runs a fast, cheap test suite to catch broken code before committing to a full training run.', facts:[{label:'Tests run',value:'34'},{label:'Passed',value:'34'},{label:'Duration',value:'42s'},{label:'Smoke train',value:'2 steps, no NaN'}], input:[{label:'Patch',value:'From Write the Code Change'}], output:[{label:'Result',value:'All fast tests passed'}], history:[{attempt:1,status:'Succeeded',time:'09:15:12',note:'Cleared for full training',dotColor:'#22c55e'}] },
+  trainer: { summary:'Trains the model on the frozen train split. On failure, hands off to the recovery agent and resumes from the last checkpoint.', facts:[{label:'GPU-hours',value:'1.4'},{label:'Steps',value:'12,000'},{label:'Peak memory',value:'18.2 GB'},{label:'Checkpoints',value:'3'}], input:[{label:'Patch + config',value:'From Write the Code Change'}], output:[{label:'Model checkpoint',value:'Hidden to protect data and credentials'}], history:[{attempt:1,status:'Succeeded',time:'09:22:48',note:'Training completed, converged',dotColor:'#22c55e'}] },
+  recovery: { summary:'Standby agent. Activates only when training fails or diverges, restoring the last stable checkpoint and reconnecting to its parent stage.', facts:[{label:'Status',value:'On standby'},{label:'Last activation',value:'None this run'},{label:'Reconnects to',value:'Train the Model'},{label:'Preserves',value:'Full run history'}], input:[{label:'Trigger',value:'Training failure or divergence signal'}], output:[{label:'Restored state',value:'Last stable checkpoint (if activated)'}], history:[{attempt:0,status:'Standby',time:'—',note:'Not activated this run',dotColor:'#94a3b8'}] },
+  evaluator: { summary:'Scores the trained model on the held-out validation split using the authoritative evaluation code. This is the only source of truth for metrics.', facts:[{label:'GAUC',value:'0.641'},{label:'nDCG@5',value:'0.318'},{label:'Primary score',value:'0.614'},{label:'vs. baseline',value:'+2.2%'}], input:[{label:'Model checkpoint',value:'From Train the Model'},{label:'Eval split',value:'Held-out validation'}], output:[{label:'Metrics',value:'GAUC 0.641 · nDCG@5 0.318 · primary 0.614'}], history:[{attempt:1,status:'Succeeded',time:'09:24:10',note:'Evaluation complete',dotColor:'#22c55e'}] },
+  watchdog: { summary:'Decides whether the run continues to another experiment or stops, based on convergence and remaining budget. This decision is authoritative.', facts:[{label:'Decision',value:'Continue'},{label:'Budget remaining',value:'62%'},{label:'Convergence',value:'Not yet reached'},{label:'Consecutive rejects',value:'0'}], input:[{label:'Metrics',value:'From Score on Validation'},{label:'Budget state',value:'From budget_config.yaml'}], output:[{label:'Decision',value:'Continue — new best accepted'}], history:[{attempt:1,status:'Succeeded',time:'09:24:22',note:'Decision recorded',dotColor:'#22c55e'}] },
+  ledger: { summary:'Records every step of this run as an ordered, append-only event log used for live viewing, replay, and audit.', facts:[{label:'Events this run',value:'13'},{label:'Storage',value:'Local SQLite'},{label:'Replay-ready',value:'Yes'},{label:'Tamper checks',value:'Hash-chained'}], input:[{label:'Run events',value:'From all pipeline stages'}], output:[{label:'Event log',value:'13 events, sequence 1–13'}], history:[{attempt:1,status:'Succeeded',time:'09:24:30',note:'Run evidence saved',dotColor:'#22c55e'}] },
+  finalizer: { summary:'Builds the final submission package once the watchdog signals convergence or a budget stop, and only after explicit confirmation.', facts:[{label:'Trigger',value:'Convergence or budget stop'},{label:'Confirmation',value:'Session ID required'},{label:'Manifest',value:'Hash-verified'},{label:'Replay check',value:'Clean'}], input:[{label:'Best checkpoint',value:'Validation-best'}], output:[{label:'Package',value:'Prediction schema checked, manifest hashed'}], history:[{attempt:0,status:'Waiting',time:'—',note:'Awaiting convergence or stop',dotColor:'#94a3b8'}] },
+  submission: { summary:'The final, one-way artifact produced by this run. Once built, this boundary cannot be reopened by the UI.', facts:[{label:'Status',value:'Not yet built'},{label:'Schema check',value:'Pending'},{label:'Boundary',value:'One-way, explicit'},{label:'Source',value:'Build Final Package'}], input:[{label:'Final package',value:'From Build Final Package'}], output:[{label:'Predictions',value:'Pending finalization'}], history:[{attempt:0,status:'Waiting',time:'—',note:'Pipeline not yet finalized',dotColor:'#94a3b8'}] },
+};
+
+function shapeStyle(lane, isRecovery) {
+  if (isRecovery) return { borderRadius: '10px', border: '2px dashed rgba(148,163,184,.7)' };
+  const shapes = [
+    { borderRadius: '10px' },
+    { borderRadius: '50%' },
+    { borderRadius: '7px', transform: 'rotate(45deg)' },
+    { clipPath: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)' },
+    { clipPath: 'polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0% 50%)' },
+  ];
+  return shapes[lane];
+}
+
+class Component extends DCLogic {
+  state = {
+    positions: computeInitialPositions(),
+    pan: { x: 0, y: 0 },
+    zoom: 1,
+    nodeStatus: Object.fromEntries(NODE_REGISTRY.map(n => [n.id, 'waiting'])),
+    nodeElapsed: {},
+    runStatus: 'idle',
+    selected: null,
+    overlayRect: null,
+    overlayOpen: false,
+    activeTab: 'summary',
+  };
+
+  componentWillUnmount() {
+    clearInterval(this._elInterval);
+    clearTimeout(this._runTimeout);
+    window.removeEventListener('pointermove', this.handleDragMove);
+    window.removeEventListener('pointerup', this.handleDragUp);
+    window.removeEventListener('pointermove', this.handlePanMove);
+    window.removeEventListener('pointerup', this.handlePanUp);
+  }
+
+  startDrag = (id, e) => {
+    e.stopPropagation();
+    this.dragInfo = { id, startX: e.clientX, startY: e.clientY, origX: this.state.positions[id].x, origY: this.state.positions[id].y, moved: false };
+    window.addEventListener('pointermove', this.handleDragMove);
+    window.addEventListener('pointerup', this.handleDragUp);
+  };
+  handleDragMove = (e) => {
+    if (!this.dragInfo) return;
+    const dx = (e.clientX - this.dragInfo.startX) / this.state.zoom;
+    const dy = (e.clientY - this.dragInfo.startY) / this.state.zoom;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) this.dragInfo.moved = true;
+    const id = this.dragInfo.id;
+    this.setState(s => ({ positions: { ...s.positions, [id]: { x: this.dragInfo.origX + dx, y: this.dragInfo.origY + dy } } }));
+  };
+  handleDragUp = () => {
+    window.removeEventListener('pointermove', this.handleDragMove);
+    window.removeEventListener('pointerup', this.handleDragUp);
+    if (this.dragInfo && this.dragInfo.moved) {
+      this.suppressClick = true;
+      setTimeout(() => { this.suppressClick = false; }, 50);
+    }
+    this.dragInfo = null;
+  };
+
+  onCanvasDown = (e) => {
+    if (e.target !== e.currentTarget) return;
+    this.panInfo = { startX: e.clientX, startY: e.clientY, origX: this.state.pan.x, origY: this.state.pan.y };
+    window.addEventListener('pointermove', this.handlePanMove);
+    window.addEventListener('pointerup', this.handlePanUp);
+  };
+  handlePanMove = (e) => {
+    if (!this.panInfo) return;
+    this.setState({ pan: { x: this.panInfo.origX + (e.clientX - this.panInfo.startX), y: this.panInfo.origY + (e.clientY - this.panInfo.startY) } });
+  };
+  handlePanUp = () => {
+    window.removeEventListener('pointermove', this.handlePanMove);
+    window.removeEventListener('pointerup', this.handlePanUp);
+    this.panInfo = null;
+  };
+  onCanvasWheel = (e) => {
+    e.preventDefault();
+    const nz = Math.min(1.4, Math.max(0.55, this.state.zoom - e.deltaY * 0.001));
+    this.setState({ zoom: nz });
+  };
+
+  onNodeClick = (id, e) => {
+    if (this.suppressClick) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    this.setState({ selected: id, overlayRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, overlayOpen: false, activeTab: 'summary' });
+    requestAnimationFrame(() => requestAnimationFrame(() => this.setState({ overlayOpen: true })));
+  };
+  closeInspector = () => {
+    this.setState({ overlayOpen: false });
+    setTimeout(() => this.setState({ selected: null, overlayRect: null }), 460);
+  };
+
+  runWorkflow = () => {
+    if (this.state.runStatus === 'running') return;
+    const nodeStatus = Object.fromEntries(NODE_REGISTRY.map(n => [n.id, 'waiting']));
+    this.setState({ runStatus: 'running', nodeStatus, nodeElapsed: {} });
+    this._runStep(0);
+  };
+  _runStep = (i) => {
+    if (i >= RUN_ORDER.length) { this.setState({ runStatus: 'done' }); return; }
+    const id = RUN_ORDER[i];
+    this.setState(s => ({ nodeStatus: { ...s.nodeStatus, [id]: 'running' } }));
+    const start = Date.now();
+    clearInterval(this._elInterval);
+    this._elInterval = setInterval(() => {
+      this.setState(s => ({ nodeElapsed: { ...s.nodeElapsed, [id]: Date.now() - start } }));
+    }, 100);
+    const dur = 850 + Math.random() * 450;
+    this._currentDur = dur;
+    this._runTimeout = setTimeout(() => {
+      clearInterval(this._elInterval);
+      this.setState(s => ({ nodeStatus: { ...s.nodeStatus, [id]: 'succeeded' } }));
+      this._runStep(i + 1);
+    }, dur);
+  };
+  resetWorkflow = () => {
+    clearInterval(this._elInterval);
+    clearTimeout(this._runTimeout);
+    this.setState({ runStatus: 'idle', nodeStatus: Object.fromEntries(NODE_REGISTRY.map(n => [n.id, 'waiting'])), nodeElapsed: {} });
+  };
+
+  edgePoint(id, side) {
+    const p = this.state.positions[id];
+    return side === 'right' ? { x: p.x + NODE_W, y: p.y + NODE_H / 2 } : { x: p.x, y: p.y + NODE_H / 2 };
+  }
+
+  renderVals() {
+    const { positions, pan, zoom, nodeStatus, nodeElapsed, runStatus, selected, overlayRect, overlayOpen, activeTab } = this.state;
+
+    const nodes = NODE_REGISTRY.map(n => {
+      const status = nodeStatus[n.id];
+      const colors = n.isRecovery ? RECOVERY_COLOR : LANE_COLORS[n.lane];
+      const p = positions[n.id];
+      const statusMap = {
+        waiting: { text: 'Waiting', color: '#94a3b8', dot: '#cbd5e1' },
+        running: { text: 'Running', color: '#2563eb', dot: '#3b82f6' },
+        succeeded: { text: 'Succeeded', color: '#16a34a', dot: '#22c55e' },
+      };
+      const st = statusMap[status] || statusMap.waiting;
+      const isRunning = status === 'running';
+      return {
+        ...n,
+        statusText: n.isRecovery && status === 'waiting' ? 'Standby' : st.text,
+        statusColor: st.color,
+        showTimer: isRunning,
+        timerLabel: isRunning ? ((nodeElapsed[n.id] || 0) / 1000).toFixed(1) + 's' : '',
+        statusDotStyle: { width: '7px', height: '7px', borderRadius: '50%', background: st.dot, flexShrink: 0, animation: isRunning ? 'pulseDot 1s ease-in-out infinite' : 'none' },
+        badgeStyle: { position: 'absolute', top: '-14px', left: '16px', width: '44px', height: '44px', background: `linear-gradient(135deg, ${colors.a}, ${colors.b})`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 8px 18px -4px ${colors.shadow}`, ...shapeStyle(n.lane, n.isRecovery) },
+        monogramStyle: { color: '#fff', fontWeight: 800, fontSize: '13px', transform: n.lane === 2 && !n.isRecovery ? 'rotate(-45deg)' : 'none', letterSpacing: '-.02em' },
+        mono: n.mono,
+        cardStyle: {
+          position: 'absolute', left: p.x + 'px', top: p.y + 'px', width: NODE_W + 'px', minHeight: NODE_H + 'px',
+          background: '#fff', borderRadius: '18px', cursor: 'pointer', touchAction: 'none',
+          border: n.isRecovery ? '2px dashed rgba(148,163,184,.6)' : '1px solid rgba(15,23,42,.06)',
+          boxShadow: isRunning ? undefined : `0 10px 26px -12px rgba(15,23,42,.18), 0 0 0 2px ${colors.shadow}, 0 0 18px 1px ${colors.shadow}`,
+          animation: isRunning ? 'runGlow 1.4s ease-in-out infinite' : 'none',
+          transition: 'box-shadow .25s ease, transform .3s cubic-bezier(.2,.8,.2,1)',
+          opacity: status === 'waiting' && n.isRecovery ? 0.75 : 1,
+        },
+        hoverStyle: { transform: 'perspective(900px) rotateX(-3deg) rotateY(3deg) translateY(-5px) scale(1.015)', boxShadow: `0 22px 44px -14px ${colors.shadow}` },
+        onDown: (e) => this.startDrag(n.id, e),
+        onClick: (e) => this.onNodeClick(n.id, e),
+      };
+    });
+
+    const edges = ALL_EDGES.map(([from, to]) => {
+      const isDashed = from === 'trainer' && to === 'recovery';
+      const p1 = this.edgePoint(from, 'right');
+      const p2 = this.edgePoint(to, 'left');
+      const midX = (p1.x + p2.x) / 2;
+      const d = `M ${p1.x} ${p1.y} C ${midX} ${p1.y}, ${midX} ${p2.y}, ${p2.x} ${p2.y}`;
+      const fromDone = nodeStatus[from] === 'succeeded';
+      const toActive = nodeStatus[to] === 'running' || nodeStatus[to] === 'succeeded';
+      const active = fromDone && toActive && !isDashed;
+      const color = active ? '#3b82f6' : (isDashed ? '#94a3b8' : '#64748b');
+      return {
+        d, stroke: color, width: active ? 2.6 : 1.8, dasharray: isDashed ? '5 5' : (active ? '10 6' : 'none'),
+        pathStyle: active ? { animation: 'dashFlow .7s linear infinite' } : {},
+        x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, dotColor1: color, dotColor2: color,
+        from, to, p1, p2, midX,
+      };
+    });
+
+    const runningId = Object.keys(nodeStatus).find(id => nodeStatus[id] === 'running');
+    let tracker = { r: 0, cx: -100, cy: -100, r2: 0 };
+    if (runningId) {
+      const inEdge = edges.find(e => e.to === runningId);
+      if (inEdge) {
+        const loopMs = 750;
+        const elapsed = nodeElapsed[runningId] || 0;
+        const t = (elapsed % loopMs) / loopMs;
+        const tTail = ((elapsed - 90 + loopMs) % loopMs) / loopMs;
+        const bez = (tt) => {
+          const mt = 1 - tt;
+          const { p1, p2, midX } = inEdge;
+          return {
+            x: mt ** 3 * p1.x + 3 * mt * mt * tt * midX + 3 * mt * tt * tt * midX + tt ** 3 * p2.x,
+            y: mt ** 3 * p1.y + 3 * mt * mt * tt * p1.y + 3 * mt * tt * tt * p2.y + tt ** 3 * p2.y,
+          };
+        };
+        const head = bez(t);
+        const tail = bez(tTail);
+        tracker = { r: 8, cx: head.x, cy: head.y, r2: 5, cx2: tail.x, cy2: tail.y };
+      }
+    }
+
+    const detail = NODE_DETAILS[selected] || {};
+    const detailNode = NODE_REGISTRY.find(n => n.id === selected);
+    const detailColors = detailNode ? (detailNode.isRecovery ? RECOVERY_COLOR : LANE_COLORS[detailNode.lane]) : LANE_COLORS[0];
+    const detailStatus = detailNode ? nodeStatus[detailNode.id] : 'waiting';
+    const detailStatusMap = { waiting: { text: 'Waiting', dot: '#e2e8f0' }, running: { text: 'Running', dot: '#93c5fd' }, succeeded: { text: 'Succeeded', dot: '#86efac' } };
+    const dst = detailStatusMap[detailStatus] || detailStatusMap.waiting;
+
+    const selectedDetail = {
+      ...detail,
+      label: detailNode ? detailNode.label : '',
+      sublabel: detailNode ? detailNode.sublabel : '',
+      mono: detailNode ? detailNode.mono : '',
+      statusText: detailNode && detailNode.isRecovery && detailStatus === 'waiting' ? 'Standby' : dst.text,
+      statusDotStyleLight: { width: '7px', height: '7px', borderRadius: '50%', background: dst.dot },
+      badgeStyleLarge: { width: '56px', height: '56px', background: 'rgba(255,255,255,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '14px', border: '1px solid rgba(255,255,255,.35)' },
+      monogramStyleLarge: { color: '#fff', fontWeight: 800, fontSize: '16px' },
+    };
+
+    const targetW = typeof window !== 'undefined' ? Math.min(760, window.innerWidth - 80) : 640;
+    const targetH = typeof window !== 'undefined' ? window.innerHeight - 96 : 700;
+    const targetL = typeof window !== 'undefined' ? (window.innerWidth - targetW) / 2 : 100;
+    const easing = 'cubic-bezier(.2,.8,.2,1)';
+    const inspectorStyle = overlayRect ? {
+      position: 'fixed',
+      left: overlayOpen ? targetL : overlayRect.left,
+      top: overlayOpen ? 48 : overlayRect.top,
+      width: overlayOpen ? targetW : overlayRect.width,
+      height: overlayOpen ? targetH : overlayRect.height,
+      borderRadius: overlayOpen ? 26 : 18,
+      background: '#fff',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column',
+      zIndex: 1000,
+      boxShadow: overlayOpen ? '0 50px 110px -24px rgba(15,23,42,.5)' : '0 10px 30px -10px rgba(15,23,42,.3)',
+      transition: `left .5s ${easing}, top .5s ${easing}, width .5s ${easing}, height .5s ${easing}, border-radius .5s ${easing}, box-shadow .5s ease`,
+    } : { display: 'none' };
+
+    const tabDef = (key, label) => ({
+      key,
+      style: {
+        padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 700,
+        color: activeTab === key ? '#0f172a' : '#94a3b8',
+        borderBottom: activeTab === key ? '2px solid #3b82f6' : '2px solid transparent',
+      },
+    });
+
+    return {
+      nodes, edges, tracker,
+      canvasInnerStyle: { position: 'absolute', left: 0, top: 0, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' },
+      canvasDown: this.onCanvasDown,
+      canvasWheel: this.onCanvasWheel,
+      isRunning: runStatus === 'running',
+      runButtonLabel: runStatus === 'running' ? 'Running…' : runStatus === 'done' ? 'Run Again' : 'Run Workflow',
+      runHandler: this.runWorkflow,
+      resetHandler: this.resetWorkflow,
+      resetHoverStyle: { background: '#f8fafc', borderColor: 'rgba(15,23,42,.14)' },
+      activePress: { transform: 'scale(.98)' },
+      runButtonStyle: {
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '12px', border: 'none',
+        background: runStatus === 'running' ? 'linear-gradient(135deg,#93c5fd,#60a5fa)' : 'linear-gradient(135deg,#60a5fa,#2563eb)',
+        color: '#fff', fontWeight: 800, fontSize: '13px', cursor: runStatus === 'running' ? 'default' : 'pointer',
+        boxShadow: '0 10px 24px -8px rgba(37,99,235,.6)',
+      },
+      runButtonHover: runStatus === 'running' ? {} : { boxShadow: '0 14px 30px -8px rgba(37,99,235,.7)', transform: 'translateY(-1px)' },
+      spinnerStyle: { width: '13px', height: '13px', borderRadius: '50%', border: '2px solid rgba(255,255,255,.5)', borderTopColor: '#fff', animation: 'spin .7s linear infinite' },
+      showInspector: !!selected,
+      backdropStyle: { position: 'fixed', inset: 0, background: 'rgba(15,23,42,.35)', opacity: overlayOpen ? 1 : 0, transition: 'opacity .4s ease', zIndex: 999 },
+      closeHoverStyle: { background: 'rgba(255,255,255,.4)' },
+      inspectorStyle,
+      inspectorHeaderStyle: { position: 'relative', padding: '24px 24px 20px 24px', background: `linear-gradient(135deg, ${detailColors.a}, ${detailColors.b})`, flexShrink: 0 },
+      closeInspector: this.closeInspector,
+      selectedDetail,
+      tabHandlers: {
+        summary: () => this.setState({ activeTab: 'summary' }),
+        input: () => this.setState({ activeTab: 'input' }),
+        output: () => this.setState({ activeTab: 'output' }),
+        history: () => this.setState({ activeTab: 'history' }),
+      },
+      tabStyles: {
+        summary: tabDef('summary').style, input: tabDef('input').style, output: tabDef('output').style, history: tabDef('history').style,
+      },
+      isTabSummary: activeTab === 'summary',
+      isTabInput: activeTab === 'input',
+      isTabOutput: activeTab === 'output',
+      isTabHistory: activeTab === 'history',
+    };
+  }
+}
+
+</script>
+</body>
+</html>

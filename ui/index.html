@@ -2,11 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="light dark" />
-    <title>RIGOR-RS — Workflow Observer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RIGOR-RS Workflow Observer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
+    <!--
+      THESIS: The pipeline is a workshop of physical, colorful cards on a light canvas the
+      viewer can pan, drag, and run -- a live diagram, not an instrument panel or a flowchart.
+      OWN-WORLD: light dotted-grid canvas (#f4f6fa / #d9dfe9), one identity color per pipeline
+      lane (cyan/violet/amber/rose/blue gradients), Manrope for UI text, JetBrains Mono for
+      elapsed timers. White rounded cards with a colored badge, glow, and shadow per lane.
+      STORY: a viewer drags nodes to read the graph, presses Run Workflow to watch the pipeline
+      execute node-by-node with a traveling comet on the active edge, and clicks any node to
+      morph it into a full inspector (Stripe-books style) with Summary/Input/Output/History.
+      FIRST VIEWPORT: the full 14-node, 5-lane pipeline on the canvas, top toolbar above
+      (brand, route nav, Run Workflow), autonomy timeline below.
+      FORM: recreated pixel-for-pixel from a high-fidelity design handoff
+      (design_handoff_workflow_observer/), superseding the prior dark instrument-panel and
+      3D-scene worlds at explicit user direction -- seed key rigor-rs-observer-v3.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish
+      review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

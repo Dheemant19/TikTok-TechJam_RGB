@@ -1,6 +1,28 @@
-import styles from "./DemoBanner.module.css";
-
-/** Shown on every page while viewing the bundled fixture, never just one route (Plan_UI.md #7.3). */
 export function DemoBanner() {
-  return <div className={styles.banner}>Interface demo data — not a completed experiment</div>;
+  return (
+    <div
+      role="status"
+      style={{
+        background: "var(--ink-2)",
+        borderBottom: "1px solid var(--ink-3)",
+        color: "var(--text-1)",
+        fontSize: 11.5,
+        padding: "var(--space-1) var(--space-5)",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-2)",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: "var(--status-attention)",
+        }}
+      />
+      Interface demo data — not a completed experiment
+    </div>
+  );
 }

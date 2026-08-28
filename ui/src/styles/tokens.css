@@ -1,93 +1,75 @@
 :root {
-  color-scheme: light;
+  /* ground -- matches the design handoff's neutral palette exactly */
+  --surface-0: #f4f6fa; /* page / canvas background */
+  --surface-1: #ffffff; /* cards, panels, toolbar */
+  --surface-2: #f8fafc; /* raised / hover surface, fact cards */
+  --border: rgba(15, 23, 42, 0.06);
+  --border-strong: rgba(15, 23, 42, 0.14);
+  --grid-dot: #d9dfe9;
 
-  /*
-   * Light, legible workflow canvas — n8n-style clarity, not a dark theater.
-   * White surfaces, calm neutral borders, one committed amber accent that
-   * means "this is active / this is signal" everywhere it appears. Red is a
-   * real alarm state (failed/blocked), not decoration.
-   */
-  --color-bg: #eef0f3;
-  --color-surface: #ffffff;
-  --color-surface-raised: #ffffff;
-  --color-border: rgba(23, 26, 31, 0.12);
-  --color-text: #171a1f;
-  --color-text-secondary: #565d68;
-  --color-text-tertiary: #838a96;
+  /* legacy aliases kept so existing components using --ink-* still resolve
+     correctly to the light surfaces above */
+  --ink-0: var(--surface-0);
+  --ink-1: var(--surface-1);
+  --ink-2: var(--surface-2);
+  --ink-3: var(--border);
+  --ink-4: var(--border-strong);
 
-  /* Amber accent — the one signal color, darkened enough to stay legible as text on white. */
-  --color-action: #a15c00;
-  --color-action-pressed: #7f4900;
-  --color-action-dim: rgba(245, 166, 35, 0.14);
-  --color-success: #a15c00;
-  --color-warning: #a15c00;
-  --color-danger: #b3271b;
-  --color-focus-ring: #a15c00;
+  /* text */
+  --text-0: #0f172a; /* primary */
+  --text-1: #334155; /* secondary / body */
+  --text-2: #94a3b8; /* tertiary / muted */
 
-  --toolbar-material: rgba(255, 255, 255, 0.82);
-  --inspector-material: rgba(255, 255, 255, 0.94);
-  --scrim: rgba(23, 26, 31, 0.32);
+  /* primary interactive color -- indigo blue, matches the handoff's buttons */
+  --primary: #3b82f6;
+  --primary-dim: #2563eb;
+  --primary-tint: #eff6ff;
 
-  /* rem-based spacing tokens: text-scaling never breaks layout. */
+  /* one identity color per pipeline lane (gradient a->b), from the handoff */
+  --group-data: #06b6d4;
+  --group-research: #8b5cf6;
+  --group-code: #f59e0b;
+  --group-train: #f43f5e;
+  --group-decide: #3b82f6;
+
+  /* universal status indicators */
+  --status-success: #22c55e;
+  --status-success-glow: rgba(34, 197, 94, 0.35);
+  --status-attention: #f59e0b;
+  --status-attention-glow: rgba(245, 158, 11, 0.35);
+  --status-failed: #ef4444;
+
+  --font-ui: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
-  --space-8: 3rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
 
-  --radius-sm: 0.5rem;
-  --radius-md: 0.875rem;
-  --radius-lg: 1.25rem;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
 
-  --font-system:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --shadow-card: 0 10px 26px -12px rgba(15, 23, 42, 0.18);
+  --shadow-card-lifted: 0 50px 110px -24px rgba(15, 23, 42, 0.5);
 
-  --shadow-sm: 0 1px 2px rgba(23, 26, 31, 0.06), 0 1px 1px rgba(23, 26, 31, 0.04);
-  --shadow-md: 0 4px 16px rgba(23, 26, 31, 0.1), 0 1px 3px rgba(23, 26, 31, 0.06);
-  --shadow-lg: 0 16px 48px rgba(23, 26, 31, 0.16), 0 2px 6px rgba(23, 26, 31, 0.08);
+  --ease-instrument: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-med: 320ms;
+  --dur-camera: 900ms;
 
-  --hit-target-min: 2.75rem; /* 44px */
-  --header-height: 6.25rem; /* top toolbar (3.5rem) + session bar (2.75rem) */
-
-  /* 3D scene tokens (hex values — consumed by scene3d as THREE.Color). */
-  --scene-bg: #eef0f3;
-  --scene-amber: #f5a623;
-  --scene-amber-text: #a15c00;
-  --scene-neutral: #9aa1ad;
-  --scene-neutral-text: #6b7280;
-  --scene-alarm: #ef4444;
+  color-scheme: light;
 }
 
-
-/* Status colors: shape + icon + text carry meaning together, color is
-   secondary. Only two hues exist in the whole system: amber (signal) and a
-   desaturated alarm red (real failure states) — everything else is neutral. */
-:root {
-  --status-waiting: var(--color-text-tertiary);
-  --status-ready: var(--color-text-secondary);
-  --status-running: var(--color-action);
-  --status-paused: var(--color-text-tertiary);
-  --status-succeeded: var(--color-action);
-  --status-failed: var(--color-danger);
-  --status-rejected: var(--color-text-secondary);
-  --status-skipped: var(--color-text-tertiary);
-  --status-blocked: var(--color-danger);
-}
-
-@media (prefers-reduced-transparency: reduce) {
+@media (prefers-reduced-motion: reduce) {
   :root {
-    --toolbar-material: var(--color-surface);
-    --inspector-material: var(--color-surface);
-  }
-}
-
-@media (prefers-contrast: more) {
-  :root {
-    --color-border: currentColor;
-    --toolbar-material: var(--color-surface);
-    --inspector-material: var(--color-surface);
+    --dur-fast: 1ms;
+    --dur-med: 1ms;
+    --dur-camera: 1ms;
   }
 }

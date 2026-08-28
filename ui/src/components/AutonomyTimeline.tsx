@@ -1,67 +1,83 @@
-import { NODE_REGISTRY } from "@/workflow/nodeRegistry";
-import { STATUS_STYLES } from "@/workflow/statusStyles";
-import type { ComponentId, RunEvent } from "@/api/types";
-import styles from "./AutonomyTimeline.module.css";
+import type { CSSProperties } from "react";
+import { DEMO_TIMELINE } from "../data/demoFixture";
+import { NODES } from "../data/nodeRegistry";
 
-interface AutonomyTimelineProps {
-  events: RunEvent[];
-  onSelectRow: (componentId: ComponentId, executionId: string) => void;
-}
-
-function durationLabel(event: RunEvent, startedAtByExecution: Map<string, string>): string {
-  const startedAt = startedAtByExecution.get(event.execution_id);
-  if (!startedAt) return "—";
-  const seconds = Math.max(0, (new Date(event.occurred_at).getTime() - new Date(startedAt).getTime()) / 1000);
-  return seconds < 1 ? "<1s" : `${seconds.toFixed(1)}s`;
-}
-
-/** Each row selects the corresponding node and execution attempt (Plan_UI.md #5.2). */
-export function AutonomyTimeline({ events, onSelectRow }: AutonomyTimelineProps) {
-  const startedAtByExecution = new Map<string, string>();
-  for (const event of events) {
-    if (!startedAtByExecution.has(event.execution_id)) startedAtByExecution.set(event.execution_id, event.occurred_at);
-  }
-  const rows = [...events].reverse().slice(0, 100);
-
+export function AutonomyTimeline() {
   return (
-    <div className={styles.wrapper}>
-      <table className={styles.table}>
-        <caption className="visually-hidden">Autonomy timeline: every recorded workflow action</caption>
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Component</th>
-            <th scope="col">Action</th>
-            <th scope="col">Outcome</th>
-            <th scope="col">Duration</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((event) => {
-            const style = STATUS_STYLES[event.status];
-            return (
-              <tr key={event.event_id}>
-                <td>
-                  <button type="button" className={styles.rowButton} onClick={() => onSelectRow(event.component_id, event.execution_id)}>
-                    {new Date(event.occurred_at).toLocaleTimeString()}
-                  </button>
-                </td>
-                <td>{NODE_REGISTRY[event.component_id].label}</td>
-                <td>{event.event_type}</td>
-                <td style={{ color: `var(${style.colorVar})` }}>{style.label}</td>
-                <td>{durationLabel(event, startedAtByExecution)}</td>
-              </tr>
-            );
-          })}
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={5} className="text-small">
-                No events recorded yet for this session.
-              </td>
+    <div
+      style={{
+        background: "var(--surface-1)",
+        boxShadow: "0 -1px 0 var(--border), 0 -2px 12px rgba(20, 22, 40, 0.05)",
+        height: 148,
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+        zIndex: 5,
+      }}
+      aria-label="Autonomy timeline"
+    >
+      <div
+        style={{
+          padding: "var(--space-2) var(--space-4)",
+          fontSize: 11,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: "var(--text-2)",
+          borderBottom: "1px solid var(--ink-3)",
+        }}
+      >
+        Autonomy timeline
+      </div>
+      <div style={{ overflowX: "auto", flex: 1 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <caption className="visually-hidden">
+            Chronological log of every stage action and outcome in this run
+          </caption>
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--text-2)" }}>
+              <th scope="col" style={cellStyle}>
+                Time
+              </th>
+              <th scope="col" style={cellStyle}>
+                Stage
+              </th>
+              <th scope="col" style={cellStyle}>
+                Action
+              </th>
+              <th scope="col" style={cellStyle}>
+                Outcome
+              </th>
+              <th scope="col" style={cellStyle}>
+                Duration
+              </th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {DEMO_TIMELINE.map((row, i) => {
+              const def = NODES.find((n) => n.id === row.component);
+              return (
+                <tr key={i}>
+                  <td className="mono tabular" style={cellStyle}>
+                    {row.t}
+                  </td>
+                  <td style={cellStyle}>{def?.label ?? row.component}</td>
+                  <td style={cellStyle}>{row.action}</td>
+                  <td style={{ ...cellStyle, color: "var(--text-1)" }}>{row.outcome}</td>
+                  <td className="mono tabular" style={cellStyle}>
+                    {row.duration}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
+
+const cellStyle: CSSProperties = {
+  padding: "var(--space-2) var(--space-4)",
+  borderBottom: "1px solid var(--ink-2)",
+  whiteSpace: "nowrap",
+};
