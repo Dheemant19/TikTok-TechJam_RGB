@@ -76,6 +76,20 @@ class WorkspaceManager:
             detail = (check.stderr or check.stdout).strip()
             raise IntegrityViolation(f"patch failed git apply --check: {detail}")
         self._git("apply", str(patch), cwd=workspace)
+        # A patch can apply cleanly and still produce invalid Python: the agent
+        # returns file content inside a JSON string, so a single-escaped "\n"
+        # decodes into a real newline inside a string literal. Compile-check
+        # here so the Code Agent gets a repair round-trip with the exact
+        # SyntaxError, instead of it surfacing later as an uncaught crash.
+        for relative in paths:
+            target = workspace / relative
+            if target.suffix != ".py" or not target.is_file():
+                continue
+            try:
+                compile(target.read_text(encoding="utf-8"), str(target), "exec")
+            except SyntaxError as error:
+                self._git("checkout", "--", ".", cwd=workspace, check=False)
+                raise IntegrityViolation(f"patched {relative} is not valid Python: {error}") from error
         digest = hashlib.sha256(patch.read_bytes()).hexdigest()
         return patch, digest, paths
 

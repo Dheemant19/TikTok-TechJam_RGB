@@ -14,6 +14,7 @@ from rigor_rs.contract.models import ComponentStatus, FrontierState
 from rigor_rs.ledger.workflow import WorkflowLedger
 from rigor_rs.models.experimental import FactorizationMachine
 from rigor_rs.orchestration.graph import AutonomousResearchWorkflow
+from rigor_rs.recovery.controller import RecoveryController
 from rigor_rs.reporting.finalizer import SubmissionFinalizer
 
 
@@ -127,6 +128,53 @@ async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_p
 
     assert not tier3_called["value"]
     assert "no measurable change in training behavior" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_execute_contains_unhandled_exceptions_as_recoverable_errors(tmp_path: Path, monkeypatch) -> None:
+    # An unhandled exception in the funnel (live: a SyntaxError raised by
+    # tier1's bare compile() on agent-generated code) previously escaped this
+    # graph node entirely -- LangGraph recorded an internal __error__ write and
+    # the whole run died with no ledger event, no recovery, and no visible
+    # failure. It must become a routed, recoverable error instead.
+    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
+
+    contract = ExperimentContract(
+        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
+        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+        fallback_run_id="B0", recovery_attempt_limit=1,
+    )
+    proposal = PatchProposal(unified_diff="diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-a\n+b\n", tests=[], explanation="x")
+
+    class ExplodingFunnel:
+        async def tier1(self, *_a, **_k):
+            raise SyntaxError("unterminated string literal (detected at line 229)")
+
+    services = SimpleNamespace(funnel=ExplodingFunnel(), artifacts=tmp_path / "artifacts")
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "session-1", "experiment_contract": contract.model_dump(mode="json"),
+        "patch_proposal": proposal.model_dump(mode="json"), "workspace": str(tmp_path),
+        "touched_files": ["a.py"], "transform_dir": str(tmp_path / "transform"),
+    }
+
+    result = await workflow.execute(state)
+
+    assert "SyntaxError" in result["error"]
+    # Must route into recovery, and classify to the code-repair recipe.
+    assert workflow._route_execute(result) == "recover"
+    assert RecoveryController().classify(result["error"]) == "syntax_import_config"
 
 
 def test_recover_node_has_outgoing_edges_back_into_the_loop() -> None:

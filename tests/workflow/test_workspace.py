@@ -75,3 +75,37 @@ def test_patch_scope_and_git_apply_check(tmp_path: Path) -> None:
     )
     with pytest.raises(IntegrityViolation, match="invalid unified-diff hunk header"):
         manager.validate_proposal(workspace, contract(["model.py"]), bare_hunk)
+
+
+def test_apply_rejects_and_reverts_syntactically_invalid_python(tmp_path: Path) -> None:
+    # Reproduced live: the agent returns file content inside a JSON string, so a
+    # single-escaped "\n" decodes into a real newline inside a string literal.
+    # The patch applies cleanly but the resulting Python does not compile. This
+    # must be caught here (so the Code Agent gets a repair round-trip) and the
+    # worktree restored, rather than surfacing later as an uncaught crash.
+    repo = tmp_path / "repo2"; repo.mkdir()
+    run("git", "init", cwd=repo)
+    (repo / "model.py").write_text("VALUE = 'ok'\n", encoding="utf-8")
+    run("git", "add", ".", cwd=repo)
+    subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+    manager = WorkspaceManager(repo, tmp_path / "worktrees2")
+    workspace, _ = manager.create("E2")
+
+    broken = PatchProposal(
+        unified_diff=(
+            "diff --git a/model.py b/model.py\n"
+            "--- a/model.py\n"
+            "+++ b/model.py\n"
+            "@@ -1 +1 @@\n"
+            "-VALUE = 'ok'\n"
+            "+VALUE = 'unterminated\n"
+        ),
+        explanation="mangled escape",
+        tests=[],
+    )
+
+    with pytest.raises(IntegrityViolation, match="is not valid Python"):
+        manager.apply(workspace, contract(["model.py"]), broken)
+    # The worktree must be restored so the Code Agent's repaired patch, which
+    # is generated against the original content, still applies.
+    assert (workspace / "model.py").read_text(encoding="utf-8") == "VALUE = 'ok'\n"

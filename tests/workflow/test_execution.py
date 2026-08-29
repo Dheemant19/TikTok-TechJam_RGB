@@ -82,3 +82,25 @@ async def test_tier1_does_not_run_unrelated_full_suite_when_no_scoped_test_exist
 
     assert receipt.status == "succeeded"
     assert "compileall" in receipt.command
+
+
+@pytest.mark.asyncio
+async def test_tier1_returns_failed_receipt_for_syntax_error_instead_of_raising(tmp_path: Path) -> None:
+    # A SyntaxError in agent-generated code is a routine, expected failure. It
+    # previously escaped execute() as a bare raise and killed the entire run
+    # with no ledger event and no recovery; it must be a failed receipt.
+    from types import SimpleNamespace
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "broken.py").write_text("VALUE = 'unterminated\n", encoding="utf-8")
+
+    funnel = object.__new__(ExecutionFunnel)
+    funnel.timeout_seconds = 60
+    funnel.validator = SimpleNamespace(verify_official_files=lambda: None)
+
+    receipt = await funnel.tier1(workspace, ["broken.py"], [], tmp_path / "tier1")
+
+    assert receipt.status == "failed"
+    assert "SyntaxError" in receipt.error
+    assert "broken.py" in receipt.error

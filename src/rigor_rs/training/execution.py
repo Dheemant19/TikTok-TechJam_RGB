@@ -153,13 +153,33 @@ class ExecutionFunnel:
         experiment_test = root / "tests/workflow/test_experiment.py"
         return ["tests/workflow/test_experiment.py"] if experiment_test.is_file() else []
 
+    def _preflight_failure(self, tier: int, output: Path, message: str) -> TierReceipt:
+        output.mkdir(parents=True, exist_ok=True)
+        stdout_path, stderr_path = output / "stdout.log", output / "stderr.log"
+        stdout_path.write_text("", encoding="utf-8")
+        stderr_path.write_text(message, encoding="utf-8")
+        document = {
+            "receipt_id": new_id("tier"), "tier": tier, "status": "failed", "comparable": False,
+            "command": [], "return_code": None, "wall_seconds": 0.0,
+            "peak_rss_mb": 0.0, "peak_gpu_memory_mb": None,
+            "stdout_path": stdout_path, "stderr_path": stderr_path, "output_directory": output,
+            "error": message[-4000:],
+        }
+        return TierReceipt(**document, receipt_hash=canonical_hash({key: str(value) for key, value in document.items()}))
 
     async def tier1(self, workspace: Path, touched_files: list[str], tests: list[str], output: Path) -> TierReceipt:
         self.validator.verify_official_files()
         for relative in touched_files:
             path = workspace / relative
-            if path.suffix == ".py":
-                compile(path.read_text(encoding="utf-8"), str(path), "exec")
+            if path.suffix == ".py" and path.is_file():
+                # A SyntaxError in agent-generated code is a routine, expected
+                # failure that must become a recoverable failed receipt. Raising
+                # here previously escaped execute() entirely and killed the whole
+                # run with no ledger event and no recovery.
+                try:
+                    compile(path.read_text(encoding="utf-8"), str(path), "exec")
+                except SyntaxError as error:
+                    return self._preflight_failure(1, output, f"SyntaxError in {relative}: {error}")
         targets = self._pytest_targets(workspace, tests)
         command = [sys.executable, "-m", "pytest", *targets] if targets else [sys.executable, "-m", "compileall", "-q", *touched_files]
         return await self._run(1, command, workspace, output, False, min(300, self.timeout_seconds))

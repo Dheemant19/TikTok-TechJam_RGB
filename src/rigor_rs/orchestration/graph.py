@@ -285,6 +285,22 @@ class AutonomousResearchWorkflow:
 
     async def execute(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
+        try:
+            return await self._execute_tiers(state)
+        except Exception as error:
+            # Any unhandled exception in the funnel (a SyntaxError in
+            # agent-generated code, a missing artifact, a git failure)
+            # previously escaped this graph node entirely: LangGraph recorded
+            # an internal __error__ write and the whole run died with no
+            # ledger event, no recovery, and no visible failure. Every
+            # execution failure must become a recoverable, logged error.
+            # asyncio.CancelledError derives from BaseException, so an
+            # intentional session cancel is still not swallowed here.
+            message = f"{type(error).__name__}: {error}"
+            self._event(state, "trainer", "execute", "failed", ComponentStatus.FAILED, f"Execution funnel failed: {message}", {"error": message})
+            return {"error": message}
+
+    async def _execute_tiers(self, state: WorkflowState) -> dict[str, Any]:
         contract = ExperimentContract.model_validate(state["experiment_contract"])
         proposal = PatchProposal.model_validate(state["patch_proposal"])
         workspace = Path(state["workspace"])
