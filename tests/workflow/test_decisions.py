@@ -70,3 +70,16 @@ def test_invalid_diff_uses_code_patch_recovery() -> None:
 
     assert receipt.category == "code_patch"
     assert receipt.action == "regenerate_standard_git_diff"
+
+
+def test_hallucinated_citation_uses_agent_output_recovery() -> None:
+    receipt = RecoveryController().recover(
+        "run",
+        "Research Agent cited evidence not supplied by MCP",
+        1,
+        1,
+    )
+
+    assert receipt.category == "agent_output"
+    assert receipt.action == "bounded_structured_output_retry"
+    assert receipt.result == "retry permitted"

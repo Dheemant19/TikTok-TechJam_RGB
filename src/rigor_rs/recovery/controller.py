@@ -23,7 +23,7 @@ class RecoveryController:
     @staticmethod
     def classify(error: str) -> str:
         value = error.casefold()
-        if any(term in value for term in ("invalid json", "json_invalid", "eof while parsing", "structured output")):
+        if any(term in value for term in ("invalid json", "json_invalid", "eof while parsing", "structured output", "cited evidence not supplied")):
             return "agent_output"
         if any(term in value for term in ("patch contains no file changes", "git apply", "patch does not apply", "hunk header")):
             return "code_patch"

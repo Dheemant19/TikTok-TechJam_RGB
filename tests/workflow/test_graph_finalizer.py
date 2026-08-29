@@ -23,6 +23,24 @@ def test_langgraph_contains_durable_research_loop() -> None:
     assert {"prepare", "profile", "baseline", "research", "code", "execute", "evaluate", "decide", "recover"} <= nodes
 
 
+def test_recover_node_has_outgoing_edges_back_into_the_loop() -> None:
+    # _route_recovery existed but _build() never wired it via
+    # add_conditional_edges("recover", ...), so every recovery event -- a
+    # hallucinated citation, a timeout, any transient failure -- silently
+    # terminated the whole workflow instead of retrying, with no error and
+    # no way to tell the difference from a legitimate stop.
+    workflow = AutonomousResearchWorkflow(SimpleNamespace())
+    edges = {(edge.source, edge.target) for edge in workflow.graph.get_graph().edges}
+    assert ("recover", "research") in edges
+    assert ("recover", "__end__") in edges
+
+
+def test_route_recovery_retries_unless_explicitly_stopped() -> None:
+    workflow = AutonomousResearchWorkflow(SimpleNamespace())
+    assert workflow._route_recovery({"stop": False}) == "research"
+    assert workflow._route_recovery({"stop": True}) == "stop"
+
+
 @pytest.mark.asyncio
 async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, monkeypatch) -> None:
     def reproduce(_transform_dir):

@@ -372,6 +372,7 @@ class AutonomousResearchWorkflow:
         graph.add_conditional_edges("execute", self._route_execute, {"recover": "recover", "evaluate": "evaluate"})
         graph.add_edge("evaluate", "decide")
         graph.add_conditional_edges("decide", self._route_decide, {"research": "research", "stop": END})
+        graph.add_conditional_edges("recover", self._route_recovery, {"research": "research", "stop": END})
         return graph.compile(checkpointer=checkpointer)
 
     async def run(self, session_id: str) -> WorkflowState:
