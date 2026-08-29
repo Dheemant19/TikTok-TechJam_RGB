@@ -162,19 +162,27 @@ class PreprocessorService:
         video = pl.read_csv(self.contract.dataset_dir / "video_features_basic_pure.csv", columns=["video_id", "author_id"])
         author = dict(zip(video["video_id"].cast(pl.String).to_list(), video["author_id"].cast(pl.String).to_list()))
         output: dict[str, list[tuple[Any, ...]]] = {"train": [], "valid": []}
+        columns = [
+            "date", "user_id", "video_id", "tab", "duration_ms", "long_view",
+            "time_ms", "hourmin", "play_time_ms", "is_click", "is_like",
+            "is_follow", "is_comment", "is_forward", "is_hate",
+        ]
         files = [
             self.contract.dataset_dir / "log_standard_4_08_to_4_21_pure.csv",
             self.contract.dataset_dir / "log_standard_4_22_to_5_08_pure.csv",
         ]
         for file in files:
-            table = pl.read_csv(file, columns=["date", "user_id", "video_id", "tab", "duration_ms", "long_view"])
+            table = pl.read_csv(file, columns=columns)
             for split in ("train", "valid"):
                 lo, hi = self.contract.splits[split]
                 rows = table.filter(pl.col("date").is_between(lo, hi)).iter_rows(named=True)
                 output[split].extend((
                     int(row["date"]), str(row["user_id"]), str(row["video_id"]),
                     author.get(str(row["video_id"]), "UNK"), str(row["tab"]),
-                    float(row["duration_ms"]), 1 if str(row["long_view"]) != "0" else 0,
+                    float(row["duration_ms"]), 1 if int(row["long_view"]) != 0 else 0,
+                    int(row["time_ms"]), int(row["hourmin"]), float(row["play_time_ms"]),
+                    int(row["is_click"]), int(row["is_like"]), int(row["is_follow"]),
+                    int(row["is_comment"]), int(row["is_forward"]), int(row["is_hate"]),
                 ) for row in rows)
         return output
 
@@ -220,18 +228,43 @@ class PreprocessorService:
             labels = np.empty(len(values), dtype=np.float32)
             users = np.empty(len(values), dtype="<U128")
             videos = np.empty(len(values), dtype="<U128")
+            dates = np.empty(len(values), dtype=np.int32)
+            times = np.empty(len(values), dtype=np.int64)
+            hourmins = np.empty(len(values), dtype=np.int16)
+            durations = np.empty(len(values), dtype=np.float32)
             for row_index, row in enumerate(values):
                 for field_index, value in enumerate(raw(row)):
                     features[row_index, field_index] = vocabs[field_index].get(value, unknown[field_index]) + offsets[field_index]
-                labels[row_index] = row[6]
+                dates[row_index] = row[0]
                 users[row_index], videos[row_index] = row[1], row[2]
+                durations[row_index] = row[5]
+                labels[row_index] = row[6]
+                times[row_index], hourmins[row_index] = row[7], row[8]
+            arrays: dict[str, np.ndarray] = {
+                "X": features, "y": labels, "users": users, "videos": videos,
+                "date": dates, "time_ms": times, "hourmin": hourmins,
+                "duration_ms": durations,
+            }
+            if split == "train":
+                arrays.update({
+                    "play_time_ms": np.asarray([row[9] for row in values], dtype=np.float32),
+                    "is_click": np.asarray([row[10] for row in values], dtype=np.int8),
+                    "is_like": np.asarray([row[11] for row in values], dtype=np.int8),
+                    "is_follow": np.asarray([row[12] for row in values], dtype=np.int8),
+                    "is_comment": np.asarray([row[13] for row in values], dtype=np.int8),
+                    "is_forward": np.asarray([row[14] for row in values], dtype=np.int8),
+                    "is_hate": np.asarray([row[15] for row in values], dtype=np.int8),
+                })
             path = output / f"{split}.npz"
-            np.savez_compressed(path, X=features, y=labels, users=users, videos=videos)
-            if not np.isfinite(features).all() or not np.isfinite(labels).all():
+            np.savez_compressed(path, **arrays)
+            if not all(np.isfinite(value).all() for value in arrays.values() if value.dtype.kind not in {"U", "S"}):
                 raise ValueError(f"non-finite values in {split} transform")
             split_receipts[split] = {
-                "rows": len(values), "schema": ["X", "y", "users", "videos"],
-                "content_hash": sha256_file(path), "taints": [f"{split.upper()}_FEATURES", f"{split.upper()}_LABELS"],
+                "rows": len(values), "schema": list(arrays),
+                "content_hash": sha256_file(path), "taints": [
+                    f"{'TRAIN' if split == 'train' else 'VALIDATION'}_FEATURES",
+                    f"{'TRAIN' if split == 'train' else 'VALIDATION'}_LABELS",
+                ],
                 "unknown_counts": [int(np.sum(features[:, i] == unknown[i] + offsets[i])) for i in range(len(spec.fields))],
             }
         receipt = {

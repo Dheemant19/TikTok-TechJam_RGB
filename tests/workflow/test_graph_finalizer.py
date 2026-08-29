@@ -86,6 +86,10 @@ async def test_behavior_unchanged_vs_baseline_detects_dead_patches_and_caches_re
     transform_dir = tmp_path / "transform"
     transform_dir.mkdir()
     reference_scores = np.asarray([0.1, 0.2, 0.3], dtype=np.float32)
+    np.savez_compressed(
+        transform_dir / "valid.npz",
+        users=np.asarray(["u1", "u1", "u1"]),
+    )
 
     tier2_calls = []
 
@@ -112,10 +116,23 @@ async def test_behavior_unchanged_vs_baseline_detects_dead_patches_and_caches_re
     (real_patch_output / "model").mkdir(parents=True)
     np.save(real_patch_output / "model" / "valid_scores.npy", np.asarray([0.9, 0.8, 0.7], dtype=np.float32))
 
-    assert await workflow._behavior_unchanged_vs_baseline(transform_dir, dead_patch_output, 0) is True
-    assert await workflow._behavior_unchanged_vs_baseline(transform_dir, real_patch_output, 0) is False
+    assert await workflow._behavior_unchanged_vs_baseline("session-1", transform_dir, dead_patch_output, 0) is True
+    assert await workflow._behavior_unchanged_vs_baseline("session-1", transform_dir, real_patch_output, 0) is False
     # The reference run must be computed exactly once and reused for both checks.
     assert len(tier2_calls) == 1
+
+def test_ranking_guard_rejects_different_scores_with_identical_within_user_order() -> None:
+    users = np.asarray(["u1", "u1", "u2", "u2"])
+    baseline = np.asarray([0.1, 0.2, -2.0, 4.0])
+    monotonic_rescale = np.asarray([10.0, 20.0, -20.0, 40.0])
+    changed_ranking = np.asarray([20.0, 10.0, -20.0, 40.0])
+
+    assert AutonomousResearchWorkflow._same_within_user_ranking(
+        users, baseline, monotonic_rescale
+    )
+    assert not AutonomousResearchWorkflow._same_within_user_ranking(
+        users, baseline, changed_ranking
+    )
 
 
 @pytest.mark.asyncio
@@ -138,6 +155,12 @@ async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_p
 
     tier3_called = {"value": False}
     scores = np.asarray([0.1, 0.2, 0.3], dtype=np.float32)
+    transform_dir = tmp_path / "transform"
+    transform_dir.mkdir()
+    np.savez_compressed(
+        transform_dir / "valid.npz",
+        users=np.asarray(["u1", "u1", "u1"]),
+    )
 
     class FakeFunnel:
         async def tier1(self, *_a, **_k):
@@ -171,13 +194,13 @@ async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_p
     state = {
         "session_id": "session-1", "experiment_contract": contract.model_dump(mode="json"),
         "patch_proposal": proposal.model_dump(mode="json"), "workspace": str(workspace),
-        "touched_files": ["a.py"], "transform_dir": str(tmp_path / "transform"),
+        "touched_files": ["a.py"], "transform_dir": str(transform_dir),
     }
 
     result = await workflow.execute(state)
 
     assert not tier3_called["value"]
-    assert "no measurable change in training behavior" in result["error"]
+    assert "no measurable change in ranking behavior" in result["error"]
 
 
 @pytest.mark.asyncio
@@ -343,6 +366,7 @@ async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_resear
     services = SimpleNamespace(
         recovery=RecoveryController(), maximum_experiments=10,
         frontier=SimpleNamespace(),
+        ledger=SimpleNamespace(store_recovery_receipt=lambda *_args: None),
     )
     workflow = AutonomousResearchWorkflow(services)
 
@@ -382,7 +406,11 @@ async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path
         budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
         fallback_run_id="B0", recovery_attempt_limit=1,
     )
-    services = SimpleNamespace(recovery=RecoveryController(), maximum_experiments=10, frontier=SimpleNamespace())
+    services = SimpleNamespace(
+        recovery=RecoveryController(), maximum_experiments=10, frontier=SimpleNamespace(),
+        bedrock_input_limit=10_000, bedrock_output_limit=10_000, total_wall_seconds=0,
+        ledger=SimpleNamespace(store_recovery_receipt=lambda *_args: None),
+    )
     workflow = AutonomousResearchWorkflow(services)
 
     async def control_gate(_state):
@@ -405,6 +433,44 @@ async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path
     assert result["retry_target"] == "research"
     assert workflow._route_recovery({**state, **result}) == "research"
     assert "run-1" in result["frontier"]["failed"]
+
+
+@pytest.mark.asyncio
+async def test_research_stops_at_budget_instead_of_looping_forever(monkeypatch) -> None:
+    # Live failure mode: every experiment failed, recovery routed back to
+    # research, research reset recovery_attempt, and the loop only ended when
+    # the Azure output-token budget was exceeded mid-call. The organizer
+    # experiment budget must stop the loop before another paid call.
+    locked = {}
+    services = SimpleNamespace(
+        maximum_experiments=1, bedrock_input_limit=10_000, bedrock_output_limit=10_000,
+        total_wall_seconds=0,
+        frontier=SimpleNamespace(budget_stop=lambda state: state.model_copy(update={"locked": True})),
+        ledger=SimpleNamespace(store_frontier=lambda _session, frontier: locked.update(value=frontier.locked)),
+        knowledge=SimpleNamespace(),
+        agents=SimpleNamespace(),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "s", "run_id": "run-1", "experiment_count": 1,
+        "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+    }
+
+    result = await workflow.research(state)
+
+    assert result["stop"] is True
+    assert result["stop_reason"] == "budget"
+    assert result["frontier"]["locked"] is True
+    assert locked == {"value": True}
+    assert workflow._route_research({**state, **result}) == "stop"
+
 
 
 
@@ -632,7 +698,7 @@ async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, m
 async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, monkeypatch) -> None:
     def reproduce(_transform_dir):
         time.sleep(0.2)
-        return {"status": "succeeded", "seeds": [{"metrics": {"primary": 0.6}}]}
+        return {"status": "succeeded", "seeds": [{"metrics": {"run_id": "B0-seed-0", "primary": 0.6}}]}
 
     services = SimpleNamespace(
         baseline=SimpleNamespace(reproduce=reproduce),
@@ -640,6 +706,10 @@ async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, mon
             register_baseline=lambda _run_id: SimpleNamespace(
                 model_dump=lambda mode: {"validation_best": "B0"}
             )
+        ),
+        ledger=SimpleNamespace(
+            store_metric_receipt=lambda *_args: None,
+            store_frontier=lambda *_args: None,
         ),
     )
     workflow = AutonomousResearchWorkflow(services)
@@ -678,14 +748,35 @@ def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:
         plain_summary="stopped", payload={"frontier": frontier.model_dump(mode="json"), "experiment_id": "E1"},
     )
     artifacts = tmp_path / "artifacts"
-    checkpoint = artifacts / "runs/E1/tier4/model/checkpoint.pt"; checkpoint.parent.mkdir(parents=True)
+    tier4 = artifacts / "runs/session/run-1/attempt-0/E1/tier4"
+    checkpoint = tier4 / "model/checkpoint.pt"
+    checkpoint.parent.mkdir(parents=True)
     model = FactorizationMachine(20, 4)
     torch.save({"state_dict": model.state_dict(), "dimension": 20, "config": {"model": {"factors": 4}}}, checkpoint)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    ledger.append_event(
+        session_id=session, run_id="run-1", component_id="coder", execution_id="patch",
+        stage="patch", event_type="completed", status=ComponentStatus.SUCCEEDED,
+        plain_summary="patched", payload={"workspace": str(workspace)},
+    )
+    ledger.append_event(
+        session_id=session, run_id="run-1", component_id="trainer", execution_id="tier4",
+        stage="execute", event_type="tier4", status=ComponentStatus.SUCCEEDED,
+        plain_summary="trained", payload={"receipt": {"output_directory": str(tier4)}},
+    )
     finalizer = SubmissionFinalizer(load_challenge_contract(), ledger, artifacts)
-    monkeypatch.setattr(finalizer, "_test_features", lambda _: (np.asarray([[1, 2, 3, 4, 5]], dtype=np.int32), ["u"], ["v"]))
-    monkeypatch.setattr("rigor_rs.reporting.finalizer.subprocess.run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="ok", stderr=""))
+    monkeypatch.setattr(finalizer, "_test_features", lambda _: ({
+        "X": np.asarray([[1, 2, 3, 4, 5]], dtype=np.int32),
+        "users": np.asarray(["u"]), "videos": np.asarray(["v"]),
+    }, ["u"], ["v"]))
+    monkeypatch.setattr(
+        "rigor_rs.reporting.finalizer.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="✓ ok".encode("utf-8"), stderr=b""),
+    )
     result = finalizer.package(session)
     assert result["test_prediction_passes"] == 1
+    assert result["schema_check"]["stdout"] == "✓ ok"
     assert result["event_chain_valid"]
     with pytest.raises(RuntimeError, match="already been finalized"):
         finalizer.package(session)

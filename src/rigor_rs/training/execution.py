@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import json
 import os
 import signal
@@ -58,16 +59,30 @@ class ResourceMonitor:
         try:
             processes = [self.process, *self.process.children(recursive=True)]
             self.peak_rss = max(self.peak_rss, sum(item.memory_info().rss for item in processes if item.is_running()))
-            if self._nvml_ready:
-                total = 0
-                for index in range(pynvml.nvmlDeviceGetCount()):
-                    handle = pynvml.nvmlDeviceGetHandleByIndex(index)
-                    for item in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
-                        if item.pid in {process.pid for process in processes}:
-                            total += item.usedGpuMemory
-                self.peak_gpu = max(self.peak_gpu or 0, total / 1024 / 1024)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+            return
+        if not self._nvml_ready:
+            return
+        # NVML reports usedGpuMemory as None whenever per-process accounting is
+        # unavailable (routine on Windows/WDDM). Summing that None previously
+        # raised TypeError out of the sampler's finally block and failed every
+        # training tier with "unsupported operand type(s) for +=".
+        try:
+            pids = {process.pid for process in processes}
+            total = 0
+            measured = False
+            for index in range(pynvml.nvmlDeviceGetCount()):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+                for item in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
+                    if item.pid in pids and item.usedGpuMemory is not None:
+                        total += int(item.usedGpuMemory)
+                        measured = True
+            if measured:
+                self.peak_gpu = max(self.peak_gpu or 0.0, total / 1024 / 1024)
+        except Exception:
+            # Telemetry must never fail a real training run; an unavailable
+            # measurement stays null rather than becoming an invented number.
+            self._nvml_ready = False
 
     def close(self) -> None:
         if self._nvml_ready:
@@ -122,7 +137,10 @@ class ExecutionFunnel:
 
 
     async def _run(self, tier: int, command: list[str], cwd: Path, output: Path, comparable: bool, timeout: int) -> TierReceipt:
-        output.mkdir(parents=True, exist_ok=True)
+        # Tier directories are immutable evidence. Reusing an old directory can
+        # make a no-op or failed process appear successful because stale
+        # checkpoint/scores files still satisfy the artifact check.
+        output.mkdir(parents=True, exist_ok=False)
         stdout_path, stderr_path = output / "stdout.log", output / "stderr.log"
         started = time.perf_counter()
         process = await asyncio.create_subprocess_exec(
@@ -131,27 +149,47 @@ class ExecutionFunnel:
         )
         monitor = ResourceMonitor(process.pid)
         timed_out = False
+
         async def sample() -> None:
             while process.returncode is None:
                 monitor.sample()
                 await asyncio.sleep(1)
+
         sampler = asyncio.create_task(sample())
+        communication = asyncio.create_task(process.communicate())
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout, stderr = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout)
         except asyncio.TimeoutError:
             timed_out = True
+            descendants: list[psutil.Process] = []
             try:
                 root = psutil.Process(process.pid)
-                for child in root.children(recursive=True):
+                descendants = root.children(recursive=True)
+                for child in descendants:
                     child.terminate()
                 root.terminate()
-            except psutil.NoSuchProcess:
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-            await process.wait()
-            stdout, stderr = b"", b"process timed out"
+            try:
+                stdout, stderr = await asyncio.wait_for(communication, timeout=10)
+            except asyncio.TimeoutError:
+                for child in descendants:
+                    with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                        child.kill()
+                if process.returncode is None:
+                    process.kill()
+                await process.wait()
+                communication.cancel()
+                with suppress(asyncio.CancelledError):
+                    await communication
+                stdout, stderr = b"", b""
+            stderr = stderr + (b"\n" if stderr else b"") + f"process timed out after {timeout}s".encode()
         finally:
             sampler.cancel()
-            monitor.sample(); monitor.close()
+            with suppress(asyncio.CancelledError):
+                await sampler
+            monitor.sample()
+            monitor.close()
         stdout_path.write_bytes(stdout)
         stderr_path.write_bytes(stderr)
         status = "timeout" if timed_out else ("succeeded" if process.returncode == 0 else "failed")

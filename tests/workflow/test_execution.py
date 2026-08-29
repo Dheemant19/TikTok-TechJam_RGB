@@ -3,12 +3,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
+import torch
 import pytest
 
 from rigor_rs.contract.challenge import load_challenge_contract
 from rigor_rs.recovery.controller import RecoveryController
 from rigor_rs.training.execution import ExecutionFunnel
-from rigor_rs.training.experiment import resolve_device
+from rigor_rs.training.experiment import predict, resolve_device
 
 
 def test_pytest_targets_normalize_commands_and_ignore_missing_paths(tmp_path: Path) -> None:
@@ -151,3 +153,28 @@ def test_cuda_device_request_resolves_unspecified_index(monkeypatch) -> None:
     monkeypatch.setattr("torch.cuda.device_count", lambda: 1)
 
     assert str(resolve_device("cuda")) == "cuda:0"
+
+def test_checkpoint_prediction_uses_training_model_contract(tmp_path: Path) -> None:
+    from rigor_rs.models.experimental import FactorizationMachine
+
+    model = FactorizationMachine(20, 4)
+    checkpoint = tmp_path / "checkpoint.pt"
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "dimension": 20,
+            "config": {"model": {"factors": 4}},
+        },
+        checkpoint,
+    )
+    features = np.asarray([[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]], dtype=np.int32)
+    data = tmp_path / "test_features.npz"
+    np.savez_compressed(data, X=features)
+    output = tmp_path / "scores.npy"
+
+    receipt = predict(checkpoint, data, output)
+
+    with torch.no_grad():
+        expected = model(torch.as_tensor(features, dtype=torch.long)).numpy()
+    assert receipt["rows"] == 2
+    np.testing.assert_allclose(np.load(output), expected)

@@ -12,7 +12,7 @@ import uvicorn
 
 from rigor_rs.agents.azure_foundry import AzureAgentFactory
 from rigor_rs.api.server import WorkflowHost, create_app
-from rigor_rs.contract.challenge import load_challenge_contract
+from rigor_rs.contract.challenge import load_challenge_contract, sha256_file
 from rigor_rs.contract.models import ComponentStatus, DataArtifact, ProfileConfig, SplitTaint, TransformSpec
 from rigor_rs.data.profiler import PreprocessorService, ProfilerService
 from rigor_rs.evaluation.official import OfficialEvaluator
@@ -36,6 +36,7 @@ def emit(value: Any) -> None:
 
 
 def _data_artifact(contract) -> DataArtifact:
+    root = repository_root()
     files = [
         contract.dataset_dir / "log_standard_4_08_to_4_21_pure.csv",
         contract.dataset_dir / "log_standard_4_22_to_5_08_pure.csv",
@@ -44,8 +45,8 @@ def _data_artifact(contract) -> DataArtifact:
         artifact_id=new_id("data"), path=contract.dataset_dir,
         taints={SplitTaint.TRAIN_FEATURES, SplitTaint.TRAIN_LABELS, SplitTaint.VALIDATION_FEATURES},
         row_count=0, schema_fingerprint="kuairand-dev-logs",
-        source_hash=canonical_hash({str(path): path.stat().st_size for path in files}),
-        code_hash=canonical_hash({"profiler": 1}), creation_receipt_id=new_id("receipt"),
+        source_hash=canonical_hash({str(path): sha256_file(path) for path in files}),
+        code_hash=sha256_file(root / "src/rigor_rs/data/profiler.py"), creation_receipt_id=new_id("receipt"),
     )
 
 
@@ -69,6 +70,7 @@ def build_workflow(challenge_path: str, budget_path: str, ledger: WorkflowLedger
         maximum_experiments=int(budget.limits["maximum_experiments"]),
         bedrock_input_limit=int(budget.limits["bedrock_input_tokens"]),
         bedrock_output_limit=int(budget.limits["bedrock_output_tokens"]),
+        total_wall_seconds=int(budget.limits["total_wall_seconds"]),
     )
     return AutonomousResearchWorkflow(services), ledger, SubmissionFinalizer(contract, ledger, artifacts)
 

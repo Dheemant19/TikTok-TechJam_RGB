@@ -146,8 +146,10 @@ class AzureAgentFactory:
         output_tokens = usage.get("output_tokens")
         if input_tokens is None or output_tokens is None:
             raise RuntimeError("Azure Foundry response omitted actual token usage metadata")
-        if remaining_output_tokens is not None and int(output_tokens) > remaining_output_tokens:
-            raise RuntimeError("Azure Foundry response exceeded the remaining LLM output token budget")
+        # An overspend is recorded, never raised: the tokens were already
+        # billed, and discarding the response here previously threw away a
+        # paid, valid result and drove the workflow into a recovery loop.
+        # The orchestrator's budget gate stops the run on the next decision.
         return AgentUsage(input_tokens=int(input_tokens), output_tokens=int(output_tokens), model_id=model_id)
 
     @staticmethod
@@ -285,6 +287,11 @@ class AzureAgentFactory:
                 "select is rejected automatically before training even starts. If previous_execution_failure mentions "
                 "an unreachable loss branch or no measurable change, your last attempt made exactly this mistake: set "
                 "training.loss to the branch you implemented.\n"
+                "The train materialization exposes X, y, users, videos, date, time_ms, hourmin, duration_ms, "
+                "play_time_ms, is_click, is_like, is_follow, is_comment, is_forward, and is_hate. The validation "
+                "materialization deliberately exposes only X, y, users, videos, date, time_ms, hourmin, and "
+                "duration_ms; auxiliary feedback is train-only. Use these exact keys rather than inventing a "
+                "timestamp or sequence field that the loader never writes.\n"
                 "The tests field must contain only relative pytest "
                 "targets such as `tests/workflow/test_decisions.py` or a `::test_name` node ID—never `python -m "
                 "pytest`, flags, shell commands, or test source code. Use an empty list if no targeted test file exists. "

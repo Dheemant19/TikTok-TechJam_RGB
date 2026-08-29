@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ast
 import json
+import time
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +15,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from rigor_rs.agents.azure_foundry import AzureAgentFactory
-from rigor_rs.contract.challenge import ChallengeContract
+from rigor_rs.contract.challenge import ChallengeContract, sha256_file
 from rigor_rs.contract.models import (
     ComponentStatus, DataArtifact, ExperimentContract, FrontierState, MetricReceipt,
     PatchProposal, ProfileConfig, SplitTaint, TransformSpec,
@@ -60,6 +61,7 @@ class WorkflowState(TypedDict, total=False):
     retry_target: str
     stop: bool
     stop_reason: str
+    started_at: float
 
 
 @dataclass
@@ -81,6 +83,7 @@ class WorkflowServices:
     maximum_experiments: int
     bedrock_input_limit: int
     bedrock_output_limit: int
+    total_wall_seconds: int = 0
 
 
 class AutonomousResearchWorkflow:
@@ -118,12 +121,14 @@ class AutonomousResearchWorkflow:
             self.s.contract.dataset_dir / "log_standard_4_08_to_4_21_pure.csv",
             self.s.contract.dataset_dir / "log_standard_4_22_to_5_08_pure.csv",
         ]
-        source_hash = canonical_hash({str(path): path.stat().st_size for path in source_files})
+        source_hash = canonical_hash({str(path): sha256_file(path) for path in source_files})
         artifact = DataArtifact(
             artifact_id=new_id("data"), path=self.s.contract.dataset_dir,
             taints={SplitTaint.TRAIN_FEATURES, SplitTaint.TRAIN_LABELS, SplitTaint.VALIDATION_FEATURES},
             row_count=sum(1 for _ in ()), schema_fingerprint="kuairand-dev-logs",
-            source_hash=source_hash, code_hash=canonical_hash({"profiler": 1}), creation_receipt_id=new_id("receipt"),
+            source_hash=source_hash,
+            code_hash=sha256_file(self.s.repository / "src/rigor_rs/data/profiler.py"),
+            creation_receipt_id=new_id("receipt"),
         )
         self._event(state, "train_data", "prepare", "data_ready", ComponentStatus.SUCCEEDED, "Training and validation data contract locked")
         return {"dataset_artifact": artifact.model_dump(mode="json"), "status": "running"}
@@ -155,14 +160,56 @@ class AutonomousResearchWorkflow:
             return {"baseline_result": result, "error": "baseline reproduction failed", "stop": True, "stop_reason": "baseline_gate"}
         metrics = result["seeds"][0]["metrics"]
         frontier = self.s.frontier.register_baseline("B0")
+        for seed_result in result["seeds"]:
+            metric = seed_result["metrics"]
+            self.s.ledger.store_metric_receipt(
+                state["session_id"], metric["run_id"], metric
+            )
+        self.s.ledger.store_frontier(state["session_id"], frontier)
         self._event(state, "ledger", "baseline", "frontier", ComponentStatus.SUCCEEDED, "B0 registered as validation best and stable fallback", {"frontier": frontier.model_dump(mode="json"), "baseline_result": result})
         return {
             "baseline_result": result, "baseline_metric": metrics, "best_metric": metrics,
             "parent_metric": metrics, "frontier": frontier.model_dump(mode="json"), "experiment_count": 0,
         }
 
+    def _budget_exhausted(self, state: WorkflowState) -> str:
+        """Name the exhausted budget, or an empty string while work may continue."""
+        if state.get("experiment_count", 0) >= self.s.maximum_experiments:
+            return f"experiment budget reached ({self.s.maximum_experiments})"
+        if state.get("agent_input_tokens", 0) >= self.s.bedrock_input_limit:
+            return "LLM input token budget reached"
+        if state.get("agent_output_tokens", 0) >= self.s.bedrock_output_limit:
+            return "LLM output token budget reached"
+        started = state.get("started_at")
+        if started and self.s.total_wall_seconds:
+            elapsed = time.time() - float(started)
+            if elapsed >= self.s.total_wall_seconds:
+                return f"wall-clock budget reached ({self.s.total_wall_seconds}s)"
+        return ""
+
     async def research(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
+        # The experiment/token budget was previously only consulted inside
+        # decide(), so a run whose experiments kept failing looped forever:
+        # every recovery routed back here, research reset recovery_attempt,
+        # and the loop only ended when Azure tokens ran out mid-call. Enforce
+        # the same organizer-configured stop before spending another call.
+        exhausted = self._budget_exhausted(state)
+        if exhausted:
+            frontier = self.s.frontier.budget_stop(FrontierState.model_validate(state["frontier"]))
+            self.s.ledger.store_frontier(state["session_id"], frontier)
+            self._event(
+                state, "watchdog", "decision", "frontier", ComponentStatus.SUCCEEDED,
+                f"Stopping before a new experiment: {exhausted}",
+                {
+                    "frontier": frontier.model_dump(mode="json"), "decision": "budget_stop",
+                    "converged": False, "budget_stop": True, "reason": exhausted,
+                },
+            )
+            return {
+                "frontier": frontier.model_dump(mode="json"),
+                "stop": True, "stop_reason": "budget", "error": "",
+            }
         run_id = new_id("run")
         self._event(state, "knowledge_mcp", "research", "started", ComponentStatus.RUNNING, "Finding research evidence")
         profile_path = Path(state["profile_receipt"]["profile"]["path"])
@@ -226,8 +273,21 @@ class AutonomousResearchWorkflow:
                 "run_id": run_id, "error": str(error), "recovery_attempt": 0,
                 "experiment_count": state.get("experiment_count", 0) + 1,
             }
+        proposed_experiment_id = contract.experiment_id
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", proposed_experiment_id).strip("-._") or "experiment"
+        contract = contract.model_copy(
+            update={"experiment_id": f"{safe_name[:48]}-{run_id.rsplit('-', 1)[-1]}"}
+        )
         self.s.ledger.store_contract(state["session_id"], contract.experiment_id, contract.model_dump(mode="json"))
-        self._event(state, "scientist", "research", "plan", ComponentStatus.SUCCEEDED, "One bounded experiment selected", {"contract": contract.model_dump(mode="json"), "usage": result.usage.model_dump()})
+        self._event(
+            state, "scientist", "research", "plan", ComponentStatus.SUCCEEDED,
+            "One bounded experiment selected",
+            {
+                "contract": contract.model_dump(mode="json"),
+                "proposed_experiment_id": proposed_experiment_id,
+                "usage": result.usage.model_dump(),
+            },
+        )
         return {
             "run_id": run_id, "experiment_contract": contract.model_dump(mode="json"), "error": "",
             "recovery_attempt": 0,
@@ -241,11 +301,16 @@ class AutonomousResearchWorkflow:
         await self._control_gate(state)
         contract = ExperimentContract.model_validate(state["experiment_contract"])
         self._event(state, "coder", "patch", "started", ComponentStatus.RUNNING, "Generating isolated code change")
-        # A retry for the same contract cannot reuse the previous worktree (it
-        # already exists and still holds the rejected patch). Keep the failed
-        # attempt on disk for audit and branch a fresh one from HEAD.
+        # Worktrees are namespaced by the system-assigned contract ID. The
+        # Research Agent often reuses human-friendly IDs such as "E1"; using
+        # those values directly previously collided with worktrees and ledger
+        # rows from earlier sessions.
         retry_attempt = state.get("recovery_attempt", 0)
-        workspace_name = contract.experiment_id if retry_attempt == 0 else f"{contract.experiment_id}-retry{retry_attempt}"
+        workspace_name = (
+            contract.experiment_id
+            if retry_attempt == 0
+            else f"{contract.experiment_id}-retry{retry_attempt}"
+        )
         workspace, parent_commit = self.s.workspace.create(workspace_name, "HEAD")
         source_context = {}
         for relative in contract.allowed_files:
@@ -301,7 +366,14 @@ class AutonomousResearchWorkflow:
         except Exception as error:
             self._event(state, "coder", "patch", "failed", ComponentStatus.FAILED, f"Code Agent call failed: {error}", {"error": str(error)})
             return {"error": str(error)}
-        self._event(state, "coder", "patch", "completed", ComponentStatus.SUCCEEDED, "Patch validated and committed in isolated worktree", {"patch_hash": patch_hash, "commit": commit, "parent_commit": parent_commit, "files": touched})
+        self._event(
+            state, "coder", "patch", "completed", ComponentStatus.SUCCEEDED,
+            "Patch validated and committed in isolated worktree",
+            {
+                "patch_hash": patch_hash, "commit": commit, "parent_commit": parent_commit,
+                "files": touched, "workspace": str(workspace),
+            },
+        )
         return {
             "patch_proposal": proposal.model_dump(mode="json"), "workspace": str(workspace),
             "worktree_commit": commit, "touched_files": touched, "error": "",
@@ -435,11 +507,21 @@ class AutonomousResearchWorkflow:
             self._event(state, "trainer", "execute", "failed", ComponentStatus.FAILED, f"Execution funnel failed: {message}", {"error": message})
             return {"error": message}
 
+    def _run_output(self, state: WorkflowState, contract: ExperimentContract) -> Path:
+        return (
+            self.s.artifacts
+            / "runs"
+            / state["session_id"]
+            / state.get("run_id", contract.experiment_id)
+            / f"attempt-{state.get('recovery_attempt', 0)}"
+            / contract.experiment_id
+        )
+
     async def _execute_tiers(self, state: WorkflowState) -> dict[str, Any]:
         contract = ExperimentContract.model_validate(state["experiment_contract"])
         proposal = PatchProposal.model_validate(state["patch_proposal"])
         workspace = Path(state["workspace"])
-        output = self.s.artifacts / "runs" / contract.experiment_id
+        output = self._run_output(state, contract)
         receipts = []
         tier1 = await self.s.funnel.tier1(workspace, state["touched_files"], proposal.tests, output / "tier1")
         receipts.append(tier1.model_dump(mode="json"))
@@ -452,12 +534,14 @@ class AutonomousResearchWorkflow:
         self._event(state, "trainer", "execute", "tier2", ComponentStatus.SUCCEEDED if tier2.status == "succeeded" else ComponentStatus.FAILED, "Smoke-scale proxy run", {"receipt": receipts[-1]})
         if tier2.status != "succeeded":
             return {"tier_receipts": receipts, "error": tier2.error or "tier2 failed"}
-        if await self._behavior_unchanged_vs_baseline(Path(state["transform_dir"]), output / "tier2", 0):
+        if await self._behavior_unchanged_vs_baseline(
+            state["session_id"], Path(state["transform_dir"]), output / "tier2", 0
+        ):
             message = (
-                "patch produced no measurable change in training behavior: proxy-scale "
-                "validation scores are bit-identical to the unpatched baseline; the new "
-                "capability was likely never wired into the model construction, forward "
-                "pass, or config loss/model selection actually executed by train()"
+                "patch produced no measurable change in ranking behavior: proxy-scale "
+                "within-user validation ordering is identical to the unpatched experiment "
+                "baseline; the new capability was either not executed or cannot change "
+                "GAUC/nDCG@5"
             )
             self._event(state, "phase_guard", "execute", "inert_patch", ComponentStatus.FAILED, message, {"tier2_output": str(output / "tier2")})
             return {"tier_receipts": receipts, "error": message}
@@ -473,11 +557,41 @@ class AutonomousResearchWorkflow:
             return {"tier_receipts": receipts, "error": tier4.error or "tier4 failed"}
         return {"tier_receipts": receipts, "error": ""}
 
-    async def _behavior_unchanged_vs_baseline(self, transform_dir: Path, tier2_output: Path, seed: int) -> bool:
+    @staticmethod
+    def _same_within_user_ranking(
+        users: np.ndarray,
+        baseline_scores: np.ndarray,
+        experiment_scores: np.ndarray,
+    ) -> bool:
+        if baseline_scores.shape != experiment_scores.shape or len(users) != len(baseline_scores):
+            return False
+        groups: dict[str, list[int]] = {}
+        for index, user in enumerate(users.tolist()):
+            groups.setdefault(str(user), []).append(index)
+        for indices in groups.values():
+            if len(indices) < 2:
+                continue
+            values = np.asarray(indices)
+            baseline_order = values[np.argsort(-baseline_scores[values], kind="stable")]
+            experiment_order = values[np.argsort(-experiment_scores[values], kind="stable")]
+            if not np.array_equal(baseline_order, experiment_order):
+                return False
+        return True
+
+    async def _behavior_unchanged_vs_baseline(
+        self,
+        session_id: str,
+        transform_dir: Path,
+        tier2_output: Path,
+        seed: int,
+    ) -> bool:
         key = (str(transform_dir), seed)
         if key not in self._reference_tier2_scores:
             reference_workspace, _ = self.s.workspace.create(f"baseline-reference-{new_id('ref')}", "HEAD")
-            reference_output = self.s.artifacts / "runs" / "_baseline_reference" / "tier2"
+            reference_output = (
+                self.s.artifacts / "runs" / session_id / "_baseline_reference"
+                / new_id("reference") / "tier2"
+            )
             reference_receipt = await self.s.funnel.tier2(
                 reference_workspace, transform_dir,
                 reference_workspace / "configs/experiments/bce_fm.yaml", reference_output, seed,
@@ -497,12 +611,17 @@ class AutonomousResearchWorkflow:
                 f"tier2 succeeded without required artifact {experiment_path}"
             )
         experiment_scores = np.load(experiment_path)
-        return baseline_scores.shape == experiment_scores.shape and np.array_equal(baseline_scores, experiment_scores)
+        with np.load(transform_dir / "valid.npz", allow_pickle=False) as data:
+            users = data["users"][: len(experiment_scores)]
+        return self._same_within_user_ranking(users, baseline_scores, experiment_scores)
 
     async def evaluate(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
-        contract = ExperimentContract.model_validate(state["experiment_contract"])
-        output = self.s.artifacts / "runs" / contract.experiment_id / "tier4/model"
+        tier4 = next(
+            item for item in reversed(state.get("tier_receipts", []))
+            if int(item["tier"]) == 4 and item["status"] == "succeeded"
+        )
+        output = Path(tier4["output_directory"]) / "model"
         scores = np.load(output / "valid_scores.npy")
         with np.load(Path(state["transform_dir"]) / "valid.npz", allow_pickle=False) as data:
             users, videos, labels = data["users"].tolist(), data["videos"].tolist(), data["y"].tolist()
@@ -512,7 +631,10 @@ class AutonomousResearchWorkflow:
             run_id=state["run_id"], prediction_artifact_id=prediction_hash,
             config_hash=canonical_hash(state["experiment_contract"]), users=users, labels=labels, scores=scores,
         )
-        self._event(state, "evaluator", "validation", "metric", ComponentStatus.SUCCEEDED, "Official validation metrics recorded", {"metrics": {"GAUC": receipt.gauc, "nDCG@5": receipt.ndcg_at_5, "primary": receipt.primary}})
+        self.s.ledger.store_metric_receipt(
+            state["session_id"], state["run_id"], receipt.model_dump(mode="json")
+        )
+        self._event(state, "evaluator", "validation", "metric", ComponentStatus.SUCCEEDED, "Official validation metrics recorded", {"metrics": {"GAUC": receipt.gauc, "nDCG@5": receipt.ndcg_at_5, "primary": receipt.primary}, "receipt": receipt.model_dump(mode="json"), "prediction": str(prediction)})
         tier_receipts = state.get("tier_receipts", [])
         resource_totals = {
             "wall_seconds": sum(item.get("wall_seconds", 0.0) for item in tier_receipts),
@@ -523,6 +645,9 @@ class AutonomousResearchWorkflow:
             "retries": state.get("recovery_attempt", 0),
             "manual_interventions": state.get("manual_interventions", 0),
         }
+        self.s.ledger.store_resource_sample(
+            state["session_id"], state["run_id"], resource_totals
+        )
         self._event(state, "trainer", "resources", "usage", ComponentStatus.SUCCEEDED, "Resource usage recorded for this run", {"resources": resource_totals})
         return {"metric_receipt": receipt.model_dump(mode="json")}
 
@@ -533,15 +658,13 @@ class AutonomousResearchWorkflow:
         best = MetricReceipt.model_validate(state["best_metric"])
         parent = MetricReceipt.model_validate(state["parent_metric"])
         updated, decision, converged = self.s.frontier.decide(frontier, receipt, state["run_id"], best, parent)
-        budget_stop = (
-            state["experiment_count"] >= self.s.maximum_experiments
-            or state.get("agent_input_tokens", 0) >= self.s.bedrock_input_limit
-            or state.get("agent_output_tokens", 0) >= self.s.bedrock_output_limit
-        )
+        exhausted = self._budget_exhausted(state)
+        budget_stop = bool(exhausted)
         stop = converged or budget_stop
         if stop:
             updated = self.s.frontier.budget_stop(updated)
-        self._event(state, "watchdog", "decision", "frontier", ComponentStatus.SUCCEEDED if stop else ComponentStatus.READY, f"Experiment {decision}", {"frontier": updated.model_dump(mode="json"), "decision": decision, "converged": converged, "budget_stop": budget_stop, "experiment_id": ExperimentContract.model_validate(state["experiment_contract"]).experiment_id})
+        self.s.ledger.store_frontier(state["session_id"], updated)
+        self._event(state, "watchdog", "decision", "frontier", ComponentStatus.SUCCEEDED if stop else ComponentStatus.READY, f"Experiment {decision}", {"frontier": updated.model_dump(mode="json"), "decision": decision, "converged": converged, "budget_stop": budget_stop, "budget_reason": exhausted, "experiment_id": ExperimentContract.model_validate(state["experiment_contract"]).experiment_id})
         values: dict[str, Any] = {"frontier": updated.model_dump(mode="json"), "stop": stop, "stop_reason": "convergence" if converged else ("budget" if budget_stop else "")}
         if updated.validation_best == state["run_id"]:
             values.update({"best_metric": state["metric_receipt"], "parent_metric": state["metric_receipt"]})
@@ -564,14 +687,32 @@ class AutonomousResearchWorkflow:
         contract = ExperimentContract.model_validate(state["experiment_contract"]) if state.get("experiment_contract") else None
         attempt_limit = contract.recovery_attempt_limit if contract else 1
         receipt = self.s.recovery.recover(state["run_id"], state["error"], attempt, attempt_limit)
+        self.s.ledger.store_recovery_receipt(
+            state["session_id"], state["run_id"], receipt.model_dump(mode="json")
+        )
         self._event(state, "recovery", "recovery", "recovery", ComponentStatus.FAILED if attempt > attempt_limit else ComponentStatus.READY, receipt.action, receipt.model_dump(mode="json"))
         if attempt > attempt_limit or receipt.category == "metric_regression":
             frontier = FrontierState.model_validate(state["frontier"])
             frontier.failed.append(state["run_id"])
+            stop = bool(self._budget_exhausted(state))
+            if stop:
+                frontier = self.s.frontier.budget_stop(frontier)
+                self.s.ledger.store_frontier(state["session_id"], frontier)
+                self._event(
+                    state, "watchdog", "decision", "frontier", ComponentStatus.SUCCEEDED,
+                    "Experiment budget exhausted after failed recovery; validation best locked",
+                    {
+                        "frontier": frontier.model_dump(mode="json"),
+                        "decision": "failed",
+                        "converged": False,
+                        "budget_stop": True,
+                        "experiment_id": contract.experiment_id if contract else None,
+                    },
+                )
             return {
                 "recovery_attempt": attempt, "error": "", "last_execution_error": "",
                 "retry_target": "research", "frontier": frontier.model_dump(mode="json"),
-                "stop": state["experiment_count"] >= self.s.maximum_experiments,
+                "stop": stop, "stop_reason": "budget" if stop else "",
             }
         retry_target = "code" if (receipt.category in self.CODE_LEVEL_CATEGORIES and contract) else "research"
         # Carry the diagnosis forward so the Code Agent is actually told why its
@@ -588,6 +729,8 @@ class AutonomousResearchWorkflow:
         return "stop" if state.get("stop") else "research"
 
     def _route_research(self, state: WorkflowState) -> str:
+        if state.get("stop"):
+            return "stop"
         return "recover" if state.get("error") else "code"
 
     def _route_code(self, state: WorkflowState) -> str:
@@ -612,7 +755,7 @@ class AutonomousResearchWorkflow:
         graph.add_edge("prepare", "profile")
         graph.add_edge("profile", "baseline")
         graph.add_conditional_edges("baseline", self._route_baseline, {"research": "research", "stop": END})
-        graph.add_conditional_edges("research", self._route_research, {"code": "code", "recover": "recover"})
+        graph.add_conditional_edges("research", self._route_research, {"code": "code", "recover": "recover", "stop": END})
         graph.add_conditional_edges("code", self._route_code, {"execute": "execute", "recover": "recover"})
         graph.add_conditional_edges("execute", self._route_execute, {"recover": "recover", "evaluate": "evaluate"})
         graph.add_edge("evaluate", "decide")
@@ -624,13 +767,43 @@ class AutonomousResearchWorkflow:
         initial: WorkflowState = {
             "session_id": session_id, "run_id": "workflow", "status": "running",
             "agent_input_tokens": 0, "agent_output_tokens": 0, "experiment_count": 0,
-            "recovery_attempt": 0, "stop": False,
+            "recovery_attempt": 0, "stop": False, "started_at": time.time(),
         }
+        self.s.ledger.set_session_status(session_id, ComponentStatus.RUNNING)
         checkpoint_path = self.s.ledger.database.with_name("langgraph.sqlite3")
-        async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as saver:
-            await saver.setup()
-            durable_graph = self._build(checkpointer=saver)
-            return await durable_graph.ainvoke(
-                initial,
-                config={"configurable": {"thread_id": session_id}},
+        try:
+            async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as saver:
+                await saver.setup()
+                durable_graph = self._build(checkpointer=saver)
+                result = await durable_graph.ainvoke(
+                    initial,
+                    config={"configurable": {"thread_id": session_id}},
+                )
+            terminal_status = (
+                ComponentStatus.BLOCKED
+                if result.get("stop_reason") == "baseline_gate"
+                else ComponentStatus.SUCCEEDED
             )
+            self.s.ledger.set_session_status(session_id, terminal_status)
+            self._event(
+                result, "watchdog", "workflow", "completed", terminal_status,
+                "Workflow stopped at a safe terminal state",
+                {"stop_reason": result.get("stop_reason", "")},
+            )
+            return result
+        except asyncio.CancelledError:
+            self.s.ledger.set_session_status(session_id, ComponentStatus.FAILED)
+            raise
+        except Exception as error:
+            self.s.ledger.set_session_status(session_id, ComponentStatus.FAILED)
+            self._event(
+                initial, "watchdog", "workflow", "failed", ComponentStatus.FAILED,
+                f"Workflow halted: {type(error).__name__}: {error}",
+                {"error": f"{type(error).__name__}: {error}"},
+            )
+            raise
+        finally:
+            try:
+                await self.s.knowledge.close()
+            except Exception:
+                pass

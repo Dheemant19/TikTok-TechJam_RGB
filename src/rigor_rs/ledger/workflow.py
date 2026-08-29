@@ -129,6 +129,15 @@ class WorkflowLedger:
                 (session_id, ComponentStatus.READY, datetime.now(UTC).isoformat()),
             )
         return session_id
+    def set_session_status(self, session_id: str, status: ComponentStatus) -> None:
+        with self.transaction() as connection:
+            cursor = connection.execute(
+                "UPDATE sessions SET status=? WHERE session_id=?",
+                (status.value, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"unknown session {session_id}")
+
 
     def append_event(
         self, *, session_id: str, run_id: str, component_id: str, execution_id: str,
@@ -161,8 +170,8 @@ class WorkflowLedger:
                  event.previous_event_hash, event.event_hash),
             )
             connection.execute(
-                "UPDATE sessions SET latest_sequence=?,status=? WHERE session_id=?",
-                (sequence, status.value, session_id),
+                "UPDATE sessions SET latest_sequence=? WHERE session_id=?",
+                (sequence, session_id),
             )
         self.bus.publish(event)
         return event
@@ -212,8 +221,10 @@ class WorkflowLedger:
             snapshot.allowed_actions = ["resume", "cancel"]
         elif snapshot.status == ComponentStatus.RUNNING:
             snapshot.allowed_actions = ["pause", "cancel"]
-        elif snapshot.status in {ComponentStatus.SUCCEEDED, ComponentStatus.BLOCKED}:
-            snapshot.allowed_actions = ["package"] if snapshot.frontier.validation_best else []
+        elif snapshot.status == ComponentStatus.SUCCEEDED:
+            snapshot.allowed_actions = ["package"] if snapshot.frontier.locked and snapshot.frontier.validation_best else []
+        elif snapshot.status == ComponentStatus.FAILED:
+            snapshot.allowed_actions = []
         else:
             snapshot.allowed_actions = ["cancel"]
         return snapshot
@@ -256,6 +267,49 @@ class WorkflowLedger:
                 (session_id,),
             ).fetchall()
         return [json.loads(row["contract_json"]) for row in rows]
+    def store_metric_receipt(self, session_id: str, run_id: str, document: dict[str, Any]) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO metric_receipts VALUES(?,?,?,?,?,?)",
+                (
+                    document["receipt_id"], session_id, run_id,
+                    json.dumps(document, sort_keys=True), document["receipt_hash"],
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def store_recovery_receipt(self, session_id: str, run_id: str, document: dict[str, Any]) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO recovery_attempts VALUES(?,?,?,?,?)",
+                (
+                    document["recovery_id"], session_id, run_id,
+                    json.dumps(document, sort_keys=True), datetime.now(UTC).isoformat(),
+                ),
+            )
+
+    def store_resource_sample(self, session_id: str, run_id: str, document: dict[str, Any]) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                "INSERT INTO resource_samples(session_id,run_id,sample_json,occurred_at) VALUES(?,?,?,?)",
+                (session_id, run_id, json.dumps(document, sort_keys=True), datetime.now(UTC).isoformat()),
+            )
+
+    def store_frontier(self, session_id: str, frontier: FrontierState) -> None:
+        roles = {
+            "validation_best": frontier.validation_best,
+            "stable_fallback": frontier.stable_fallback,
+            "accepted_parent": frontier.accepted_parent,
+        }
+        with self.transaction() as connection:
+            connection.execute("UPDATE frontier_entries SET active=0 WHERE session_id=? AND active=1", (session_id,))
+            now = datetime.now(UTC).isoformat()
+            for role, run_id in roles.items():
+                if run_id:
+                    connection.execute(
+                        "INSERT INTO frontier_entries(session_id,run_id,role,active,created_at) VALUES(?,?,?,?,?)",
+                        (session_id, run_id, role, 1, now),
+                    )
 
     def control(self, session_id: str, action: str, expected_sequence: int) -> tuple[bool, str]:
         snapshot = self.snapshot(session_id)
@@ -263,11 +317,19 @@ class WorkflowLedger:
             return False, "stale sequence; reload the authoritative snapshot"
         if action not in snapshot.allowed_actions:
             return False, f"{action} is not allowed while session is {snapshot.status}"
+        next_status = {
+            "pause": ComponentStatus.PAUSED,
+            "resume": ComponentStatus.RUNNING,
+            "cancel": ComponentStatus.FAILED,
+        }.get(action)
         with self.transaction() as connection:
             connection.execute(
                 "INSERT INTO control_requests VALUES(?,?,?,?,?,?,?)",
                 (new_id("control"), session_id, action, expected_sequence, 1, None, datetime.now(UTC).isoformat()),
             )
-            if action == "cancel":
-                connection.execute("UPDATE sessions SET cancelled=1,status=? WHERE session_id=?", (ComponentStatus.FAILED, session_id))
+            if next_status is not None:
+                connection.execute(
+                    "UPDATE sessions SET cancelled=?,status=? WHERE session_id=?",
+                    (1 if action == "cancel" else 0, next_status.value, session_id),
+                )
         return True, "accepted"

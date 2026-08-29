@@ -74,7 +74,18 @@ class WorkflowHost:
     def start(self, challenge: str, budget: str) -> str:
         session_id = self.ledger.create_session()
         workflow = self.workflow_factory(challenge, budget)
-        self.tasks[session_id] = asyncio.create_task(workflow.run(session_id))
+        task = asyncio.create_task(workflow.run(session_id))
+        self.tasks[session_id] = task
+
+        def discard(completed: asyncio.Task[Any]) -> None:
+            self.tasks.pop(session_id, None)
+            if not completed.cancelled():
+                # Retrieve the exception so the event loop does not emit
+                # "Task exception was never retrieved". workflow.run already
+                # records the fatal error and marks the session failed.
+                completed.exception()
+
+        task.add_done_callback(discard)
         return session_id
 
 

@@ -13,6 +13,7 @@ from rigor_rs.ledger.workflow import WorkflowLedger
 def test_snapshot_replay_controls_and_artifact_redaction(tmp_path: Path) -> None:
     ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
     session = ledger.create_session()
+    ledger.set_session_status(session, ComponentStatus.RUNNING)
     ledger.append_event(
         session_id=session, run_id="run", component_id="trainer", execution_id="exec",
         stage="training", event_type="started", status=ComponentStatus.RUNNING,

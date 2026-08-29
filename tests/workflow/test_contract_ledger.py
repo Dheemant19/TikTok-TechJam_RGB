@@ -39,3 +39,21 @@ def test_ledger_is_append_only_hash_chained_and_replayable(tmp_path: Path) -> No
     assert snapshot.latest_sequence == 2
     assert snapshot.metrics["primary"] == 0.6
     assert [event.event_id for event in ledger.events(session, after_sequence=1)] == [second.event_id]
+
+def test_component_events_do_not_overwrite_workflow_lifecycle(tmp_path: Path) -> None:
+    ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
+    session = ledger.create_session()
+    ledger.set_session_status(session, ComponentStatus.RUNNING)
+    ledger.append_event(
+        session_id=session, run_id="run", component_id="data_profiler", execution_id="profile",
+        stage="profile", event_type="completed", status=ComponentStatus.SUCCEEDED,
+        plain_summary="Profile completed",
+    )
+
+    snapshot = ledger.snapshot(session)
+    assert snapshot.status == ComponentStatus.RUNNING
+    assert snapshot.component_states["data_profiler"] == ComponentStatus.SUCCEEDED
+    assert snapshot.allowed_actions == ["pause", "cancel"]
+
+    ledger.set_session_status(session, ComponentStatus.SUCCEEDED)
+    assert ledger.snapshot(session).status == ComponentStatus.SUCCEEDED

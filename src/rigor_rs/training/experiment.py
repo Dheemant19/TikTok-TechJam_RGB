@@ -75,6 +75,9 @@ def resolve_device(requested: str) -> torch.device:
         return torch.device("cuda", index)
     raise ValueError(f"unsupported device {requested!r}; expected auto, cpu, cuda, or cuda:<index>")
 
+def build_model(dimension: int, config: dict) -> torch.nn.Module:
+    return FactorizationMachine(dimension, int(config["model"]["factors"]))
+
 
 def train(transform_dir: Path, config_path: Path, output: Path, max_rows: int | None = None, max_batches: int | None = None, seed: int = 0) -> dict:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
@@ -86,7 +89,7 @@ def train(transform_dir: Path, config_path: Path, output: Path, max_rows: int | 
         torch.cuda.set_device(device)
         torch.cuda.reset_peak_memory_stats(device)
     dimension = int(max(train_data["X"].max(initial=0), valid_data["X"].max(initial=0)) + 1)
-    model = FactorizationMachine(dimension, int(config["model"]["factors"])).to(device)
+    model = build_model(dimension, config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(config["training"]["learning_rate"]), weight_decay=float(config["training"].get("weight_decay", 0.0)))
     batch_size = int(config["training"]["batch_size"])
     loss_name = config["training"]["loss"]
@@ -161,17 +164,52 @@ def train(transform_dir: Path, config_path: Path, output: Path, max_rows: int | 
     (output / "train_receipt.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
+def predict(checkpoint_path: Path, data_path: Path, output_path: Path) -> dict:
+    data = load_npz(data_path)
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    model = build_model(int(payload["dimension"]), payload["config"])
+    model.load_state_dict(payload["state_dict"])
+    model.eval()
+    predictions = []
+    with torch.no_grad():
+        for start in range(0, len(data["X"]), 200_000):
+            predictions.append(
+                model(torch.as_tensor(data["X"][start:start + 200_000], dtype=torch.long)).numpy()
+            )
+    scores = np.concatenate(predictions)
+    if not np.isfinite(scores).all():
+        raise RuntimeError("prediction produced NaN/Inf")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(output_path, scores)
+    return {
+        "status": "succeeded",
+        "rows": len(scores),
+        "checkpoint": str(checkpoint_path),
+        "data": str(data_path),
+        "scores": str(output_path),
+    }
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--transform-dir", type=Path, required=True)
-    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--transform-dir", type=Path)
+    parser.add_argument("--config", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-rows", type=int)
     parser.add_argument("--max-batches", type=int)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--predict-data", type=Path)
+    parser.add_argument("--checkpoint", type=Path)
     args = parser.parse_args()
-    print(json.dumps(train(args.transform_dir, args.config, args.output, args.max_rows, args.max_batches, args.seed), sort_keys=True))
+    if args.predict_data or args.checkpoint:
+        if not args.predict_data or not args.checkpoint:
+            parser.error("--predict-data and --checkpoint must be supplied together")
+        result = predict(args.checkpoint, args.predict_data, args.output)
+    else:
+        if not args.transform_dir or not args.config:
+            parser.error("--transform-dir and --config are required for training")
+        result = train(args.transform_dir, args.config, args.output, args.max_rows, args.max_batches, args.seed)
+    print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == "__main__":
