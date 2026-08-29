@@ -47,3 +47,31 @@ def test_patch_scope_and_git_apply_check(tmp_path: Path) -> None:
             unified_diff="""diff --git a/kuairand-starter-kit/evaluate.py b/kuairand-starter-kit/evaluate.py\n--- a/kuairand-starter-kit/evaluate.py\n+++ b/kuairand-starter-kit/evaluate.py\n@@ -1 +1 @@\n-old\n+new\n""",
             explanation="bad", tests=[],
         ))
+    invalid = PatchProposal(
+        unified_diff=(
+            "diff --git a/model.py b/model.py\n"
+            "--- a/model.py\n"
+            "+++ b/model.py\n"
+            "@@ -1 +1 @@\n"
+            "-LOSS = 'missing'\n"
+            "+LOSS = 'bpr'\n"
+        ),
+        explanation="invalid context",
+        tests=[],
+    )
+    with pytest.raises(IntegrityViolation, match="patch failed git apply --check"):
+        manager.apply(workspace, contract(["model.py"]), invalid)
+    bare_hunk = PatchProposal(
+        unified_diff=(
+            "diff --git a/model.py b/model.py\n"
+            "--- a/model.py\n"
+            "+++ b/model.py\n"
+            "@@\n"
+            "-old\n"
+            "+new\n"
+        ),
+        explanation="invalid hunk",
+        tests=[],
+    )
+    with pytest.raises(IntegrityViolation, match="invalid unified-diff hunk header"):
+        manager.validate_proposal(workspace, contract(["model.py"]), bare_hunk)

@@ -13,6 +13,10 @@ run_harness_checks:
 # The organizer reports FM test primary σ=0.0008 over five unspecified seeds.
 seed_policy:
   seeds: [0, 1, 2, 3, 4]
+
+# Seeds are independent official FM reproductions. Run them concurrently on
+# CPU without changing the model, split, evaluator, seed, or resulting score.
+parallel_seed_workers: 5
 acceptance:
   # 0.002 is the official convergence epsilon, repurposed here as a conservative
   # reproduction tolerance; it equals 2.5 × the published FM test-primary σ.

@@ -26,8 +26,17 @@ def _atomic_json(path: Path, value: Any) -> None:
 
 
 def _artifact(path: Path, media_type: str, *, taint: SplitTaint | None = None, rows: int | None = None, parents: list[str] | None = None) -> ArtifactRef:
+    # Content-addressed: the artifacts table has a UNIQUE(content_hash)
+    # constraint (ledger/workflow.py) and register_artifact uses INSERT OR
+    # IGNORE, so a random artifact_id on a cache-hit re-run of the same
+    # source would silently fail to register under its (unregistered) new
+    # id while the row for its content already exists under the previous
+    # session's id -- leaving the event's referenced artifact 404 in the
+    # observer API. Deriving the id from the content hash makes repeated
+    # profiling of unchanged data idempotent.
+    content_hash = sha256_file(path)
     return ArtifactRef(
-        artifact_id=new_id("artifact"), path=path, content_hash=sha256_file(path), media_type=media_type,
+        artifact_id=f"artifact-{content_hash}", path=path, content_hash=content_hash, media_type=media_type,
         taint=taint, row_count=rows, parent_ids=parents or [],
     )
 

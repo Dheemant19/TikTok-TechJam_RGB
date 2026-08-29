@@ -113,7 +113,7 @@ class MCPBudgetConfig(StrictModel):
 
 class BudgetDocument(StrictModel):
     schema_version: int
-    bedrock: dict[str, Any]
+    azure: dict[str, Any]
     limits: dict[str, int | float]
     mcp: MCPBudgetConfig
     proxy_tier: dict[str, int | float]

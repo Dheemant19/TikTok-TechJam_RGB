@@ -1,36 +1,30 @@
 schema_version: 1
-provider: aws_bedrock
-region_env: AWS_REGION
-service_tier_env: BEDROCK_SERVICE_TIER
+provider: azure_ai_foundry
 
 # Authentication values live only in the repository-root .env file.
-authentication:
-  mode_env: BEDROCK_AUTH_MODE
-  supported_modes:
-    - api_key
-    - aws_profile
-    - default_chain
-  api_key:
-    bearer_token_env: AWS_BEARER_TOKEN_BEDROCK
-  aws_profile:
-    profile_env: AWS_PROFILE
-  default_chain:
-    use_standard_aws_credential_chain: true
-  reject_multiple_active_methods: true
+# Endpoint/key/api_version are read once and shared by both agents; each
+# agent only needs its own deployment name (see research_agent/code_recovery_agent
+# below), since one Azure AI Foundry project can host multiple model deployments.
+endpoint_env: AZURE_FOUNDRY_ENDPOINT
+api_key_env: AZURE_FOUNDRY_API_KEY
+api_version_env: AZURE_FOUNDRY_API_VERSION
 
 research_agent:
-  model_id_env: BEDROCK_RESEARCH_MODEL_ID
+  model_deployment_env: AZURE_RESEARCH_MODEL_DEPLOYMENT
   temperature: 0
-  maximum_output_tokens: 2048
+  reasoning_effort: low
   timeout_seconds: 180
   transient_retry_limit: 2
+  use_responses_api: true
 
 code_recovery_agent:
-  model_id_env: BEDROCK_CODE_MODEL_ID
+  model_deployment_env: AZURE_CODE_MODEL_DEPLOYMENT
   temperature: 0
-  maximum_output_tokens: 6144
+  reasoning_effort: low
   timeout_seconds: 300
   transient_retry_limit: 2
+  # gpt-5.1-codex-mini is Responses-API-only (no Chat Completions support).
+  use_responses_api: true
 
 structured_output:
   require_pydantic_validation: true

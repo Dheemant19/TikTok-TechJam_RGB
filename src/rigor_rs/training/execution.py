@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import signal
+import re
 import sys
 import time
 from pathlib import Path
@@ -127,13 +128,37 @@ class ExecutionFunnel:
         }
         return TierReceipt(**document, receipt_hash=canonical_hash({key: str(value) for key, value in document.items()}))
 
+    @staticmethod
+    def _pytest_targets(workspace: Path, requested: list[str]) -> list[str]:
+        target_pattern = re.compile(
+            r"^tests/[A-Za-z0-9_./-]+(?:::[A-Za-z0-9_.\[\]-]+)*$"
+        )
+        root = workspace.resolve()
+        accepted: list[str] = []
+        for value in requested:
+            words = value.replace("\\", "/").split()
+            if "pytest" in words:
+                words = words[words.index("pytest") + 1:]
+            for word in words:
+                if word.startswith("-") or not target_pattern.fullmatch(word):
+                    continue
+                relative = word.split("::", 1)[0]
+                path = (root / relative).resolve()
+                if root not in path.parents or not path.exists():
+                    continue
+                if word not in accepted:
+                    accepted.append(word)
+        return accepted or ["tests/workflow"]
+
+
     async def tier1(self, workspace: Path, touched_files: list[str], tests: list[str], output: Path) -> TierReceipt:
         self.validator.verify_official_files()
         for relative in touched_files:
             path = workspace / relative
             if path.suffix == ".py":
                 compile(path.read_text(encoding="utf-8"), str(path), "exec")
-        command = [sys.executable, "-m", "pytest", *tests] if tests else [sys.executable, "-m", "compileall", "-q", *touched_files]
+        targets = self._pytest_targets(workspace, tests)
+        command = [sys.executable, "-m", "pytest", *targets]
         return await self._run(1, command, workspace, output, False, min(300, self.timeout_seconds))
 
     async def tier2(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:

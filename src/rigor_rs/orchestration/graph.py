@@ -10,7 +10,7 @@ import numpy as np
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
-from rigor_rs.agents.bedrock import BedrockAgentFactory
+from rigor_rs.agents.azure_foundry import AzureAgentFactory
 from rigor_rs.contract.challenge import ChallengeContract
 from rigor_rs.contract.models import (
     ComponentStatus, DataArtifact, ExperimentContract, FrontierState, MetricReceipt,
@@ -63,7 +63,7 @@ class WorkflowServices:
     profiler: ProfilerService
     preprocessor: PreprocessorService
     baseline: BaselineReproducer
-    agents: BedrockAgentFactory
+    agents: AzureAgentFactory
     knowledge: KnowledgeRuntime
     workspace: WorkspaceManager
     funnel: ExecutionFunnel
@@ -133,7 +133,10 @@ class AutonomousResearchWorkflow:
     async def baseline(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
         self._event(state, "trainer", "baseline", "started", ComponentStatus.RUNNING, "Reproducing official FM baseline on validation")
-        result = self.s.baseline.reproduce(Path(state["transform_dir"]))
+        result = await asyncio.to_thread(
+            self.s.baseline.reproduce,
+            Path(state["transform_dir"]),
+        )
         if result["status"] != "succeeded":
             self._event(state, "phase_guard", "baseline", "integrity_halt", ComponentStatus.BLOCKED, "Official FM baseline reproduction missed tolerance", result)
             return {"baseline_result": result, "error": "baseline reproduction failed", "stop": True, "stop_reason": "baseline_gate"}
@@ -170,14 +173,18 @@ class AutonomousResearchWorkflow:
             "prohibited_files": ["kuairand-starter-kit/evaluate.py", "kuairand-starter-kit/data.py", "kuairand-starter-kit/baseline_scores.json", "runs/", "state/"],
             "fallback_run_id": FrontierState.model_validate(state["frontier"]).stable_fallback,
         }
-        result = await self.s.agents.research(context)
-        contract: ExperimentContract = result.value
-        if any(item not in card.source_ids for item in contract.observed_evidence_ids):
-            raise ValueError("Research Agent cited evidence not supplied by MCP")
+        try:
+            result = await self.s.agents.research(context)
+            contract: ExperimentContract = result.value
+            if any(item not in card.source_ids for item in contract.observed_evidence_ids):
+                raise ValueError("Research Agent cited evidence not supplied by MCP")
+        except Exception as error:
+            self._event(state, "scientist", "research", "failed", ComponentStatus.FAILED, f"Research Agent call failed: {error}", {"error": str(error)})
+            return {"run_id": run_id, "error": str(error), "experiment_count": state.get("experiment_count", 0) + 1}
         self.s.ledger.store_contract(state["session_id"], contract.experiment_id, contract.model_dump(mode="json"))
         self._event(state, "scientist", "research", "plan", ComponentStatus.SUCCEEDED, "One bounded experiment selected", {"contract": contract.model_dump(mode="json"), "usage": result.usage.model_dump()})
         return {
-            "run_id": run_id, "experiment_contract": contract.model_dump(mode="json"),
+            "run_id": run_id, "experiment_contract": contract.model_dump(mode="json"), "error": "",
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
             "experiment_count": state.get("experiment_count", 0) + 1,
@@ -193,21 +200,45 @@ class AutonomousResearchWorkflow:
             path = workspace / relative
             if path.is_file() and path.stat().st_size < 40_000:
                 source_context[relative] = path.read_text(encoding="utf-8", errors="replace")
-        result = await self.s.agents.propose_patch(contract, {"source_context": source_context, "reference_code": ""})
-        proposal: PatchProposal = result.value
+        remaining_output_tokens = max(
+            0,
+            self.s.bedrock_output_limit - state.get("agent_output_tokens", 0),
+        )
+        agent_context = {
+            "source_context": source_context,
+            "reference_code": "",
+            "remaining_output_tokens": remaining_output_tokens,
+        }
         try:
-            _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
-        except Exception as first:
-            repair = await self.s.agents.propose_patch(contract, {"source_context": source_context, "reference_code": "", "apply_error": str(first)})
-            proposal = repair.value
-            result.usage.input_tokens += repair.usage.input_tokens
-            result.usage.output_tokens += repair.usage.output_tokens
-            _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
-        commit = self.s.workspace.commit(workspace, contract.experiment_id)
+            result = await self.s.agents.propose_patch(contract, agent_context)
+            proposal: PatchProposal = result.value
+            try:
+                _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
+            except Exception as first:
+                repair = await self.s.agents.propose_patch(
+                    contract,
+                    {
+                        **agent_context,
+                        "previous_proposal": proposal.model_dump(mode="json"),
+                        "apply_error": str(first),
+                        "remaining_output_tokens": max(
+                            0,
+                            remaining_output_tokens - result.usage.output_tokens,
+                        ),
+                    },
+                )
+                proposal = repair.value
+                result.usage.input_tokens += repair.usage.input_tokens
+                result.usage.output_tokens += repair.usage.output_tokens
+                _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
+            commit = self.s.workspace.commit(workspace, contract.experiment_id)
+        except Exception as error:
+            self._event(state, "coder", "patch", "failed", ComponentStatus.FAILED, f"Code Agent call failed: {error}", {"error": str(error)})
+            return {"error": str(error)}
         self._event(state, "coder", "patch", "completed", ComponentStatus.SUCCEEDED, "Patch validated and committed in isolated worktree", {"patch_hash": patch_hash, "commit": commit, "parent_commit": parent_commit, "files": touched})
         return {
             "patch_proposal": proposal.model_dump(mode="json"), "workspace": str(workspace),
-            "worktree_commit": commit, "touched_files": touched,
+            "worktree_commit": commit, "touched_files": touched, "error": "",
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
         }
@@ -293,10 +324,15 @@ class AutonomousResearchWorkflow:
     async def recover(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
         attempt = state.get("recovery_attempt", 0) + 1
-        contract = ExperimentContract.model_validate(state["experiment_contract"])
-        receipt = self.s.recovery.recover(state["run_id"], state["error"], attempt, contract.recovery_attempt_limit)
-        self._event(state, "recovery", "recovery", "recovery", ComponentStatus.FAILED if attempt > contract.recovery_attempt_limit else ComponentStatus.READY, receipt.action, receipt.model_dump(mode="json"))
-        if attempt > contract.recovery_attempt_limit or receipt.category == "metric_regression":
+        # A Research/Code Agent call can fail before an ExperimentContract
+        # exists (e.g. an Azure AI Foundry rate limit on the very first call
+        # of an iteration); fall back to one bounded attempt rather than
+        # crashing on the missing contract.
+        contract = ExperimentContract.model_validate(state["experiment_contract"]) if state.get("experiment_contract") else None
+        attempt_limit = contract.recovery_attempt_limit if contract else 1
+        receipt = self.s.recovery.recover(state["run_id"], state["error"], attempt, attempt_limit)
+        self._event(state, "recovery", "recovery", "recovery", ComponentStatus.FAILED if attempt > attempt_limit else ComponentStatus.READY, receipt.action, receipt.model_dump(mode="json"))
+        if attempt > attempt_limit or receipt.category == "metric_regression":
             frontier = FrontierState.model_validate(state["frontier"])
             frontier.failed.append(state["run_id"])
             return {"recovery_attempt": attempt, "error": "", "frontier": frontier.model_dump(mode="json"), "stop": state["experiment_count"] >= self.s.maximum_experiments}
@@ -304,6 +340,12 @@ class AutonomousResearchWorkflow:
 
     def _route_baseline(self, state: WorkflowState) -> str:
         return "stop" if state.get("stop") else "research"
+
+    def _route_research(self, state: WorkflowState) -> str:
+        return "recover" if state.get("error") else "code"
+
+    def _route_code(self, state: WorkflowState) -> str:
+        return "recover" if state.get("error") else "execute"
 
     def _route_execute(self, state: WorkflowState) -> str:
         return "recover" if state.get("error") else "evaluate"
@@ -322,8 +364,8 @@ class AutonomousResearchWorkflow:
         graph.add_edge("prepare", "profile")
         graph.add_edge("profile", "baseline")
         graph.add_conditional_edges("baseline", self._route_baseline, {"research": "research", "stop": END})
-        graph.add_edge("research", "code")
-        graph.add_edge("code", "execute")
+        graph.add_conditional_edges("research", self._route_research, {"code": "code", "recover": "recover"})
+        graph.add_conditional_edges("code", self._route_code, {"execute": "execute", "recover": "recover"})
         graph.add_conditional_edges("execute", self._route_execute, {"recover": "recover", "evaluate": "evaluate"})
         graph.add_edge("evaluate", "decide")
         graph.add_conditional_edges("decide", self._route_decide, {"research": "research", "stop": END})

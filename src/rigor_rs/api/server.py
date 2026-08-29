@@ -15,7 +15,7 @@ from rigor_rs.ledger.workflow import WorkflowLedger
 
 
 REDACTED = "Hidden to protect data and credentials"
-_SECRET_KEYS = {"aws_bearer_token_bedrock", "github_token", "openalex_api_key", "password", "secret", "token"}
+_SECRET_KEYS = {"azure_foundry_api_key", "github_token", "openalex_api_key", "password", "secret", "token"}
 _PROTECTED_KEYS = {"test_labels", "validation_labels", "raw_rows", "checkpoint_bytes"}
 
 

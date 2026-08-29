@@ -13,6 +13,8 @@ class RecoveryController:
         "oom": ["halve_micro_batch", "enable_amp", "preserve_effective_batch_with_accumulation", "enable_checkpointing"],
         "timeout": ["profile_bottleneck", "reduce_evaluation_cadence_or_proxy_breadth"],
         "nan_divergence": ["restore_stable_settings", "check_labels_lr_precision_normalization"],
+        "agent_output": ["bounded_structured_output_retry", "restore_stable_fallback"],
+        "code_patch": ["regenerate_standard_git_diff", "abandon_redundant_contract"],
         "transient_external": ["bounded_retry", "local_evidence_or_pause_planning"],
         "metric_regression": ["reject_without_technical_retry"],
         "infrastructure": ["bounded_restart", "restore_stable_fallback"],
@@ -21,6 +23,10 @@ class RecoveryController:
     @staticmethod
     def classify(error: str) -> str:
         value = error.casefold()
+        if any(term in value for term in ("invalid json", "json_invalid", "eof while parsing", "structured output")):
+            return "agent_output"
+        if any(term in value for term in ("patch contains no file changes", "git apply", "patch does not apply", "hunk header")):
+            return "code_patch"
         if any(term in value for term in ("syntaxerror", "importerror", "modulenotfounderror", "config")):
             return "syntax_import_config"
         if any(term in value for term in ("schema", "column", "dtype", "row count", "taint")):
@@ -31,7 +37,7 @@ class RecoveryController:
             return "timeout"
         if any(term in value for term in ("nan", "inf", "diverge")):
             return "nan_divergence"
-        if any(term in value for term in ("429", "503", "connection", "bedrock", "openalex", "github")):
+        if any(term in value for term in ("429", "503", "connection", "rate limit", "throttl", "azure", "openai", "openalex", "github")):
             return "transient_external"
         if "regression" in value:
             return "metric_regression"

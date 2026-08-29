@@ -51,6 +51,12 @@ class WorkspaceManager:
         paths = self.diff_paths(diff)
         if not paths:
             raise IntegrityViolation("patch contains no file changes")
+        hunk_headers = [line for line in diff.splitlines() if line.startswith("@@")]
+        valid_hunk = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@(?: .*)?$")
+        if not hunk_headers or any(not valid_hunk.fullmatch(line) for line in hunk_headers):
+            raise IntegrityViolation(
+                "patch has an invalid unified-diff hunk header; bare @@ is forbidden"
+            )
         PhaseBoundaryValidator.validate_patch_paths(paths, contract.allowed_files)
         for relative in paths:
             target = workspace / relative
@@ -65,7 +71,10 @@ class WorkspaceManager:
         paths = self.validate_proposal(workspace, contract, proposal)
         patch = workspace / "diff.patch"
         patch.write_text(proposal.unified_diff, encoding="utf-8")
-        self._git("apply", "--check", str(patch), cwd=workspace)
+        check = self._git("apply", "--check", str(patch), cwd=workspace, check=False)
+        if check.returncode != 0:
+            detail = (check.stderr or check.stdout).strip()
+            raise IntegrityViolation(f"patch failed git apply --check: {detail}")
         self._git("apply", str(patch), cwd=workspace)
         digest = hashlib.sha256(patch.read_bytes()).hexdigest()
         return patch, digest, paths

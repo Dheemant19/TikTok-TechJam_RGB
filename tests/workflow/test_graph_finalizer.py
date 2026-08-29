@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -19,6 +21,39 @@ def test_langgraph_contains_durable_research_loop() -> None:
     workflow = AutonomousResearchWorkflow(SimpleNamespace())
     nodes = set(workflow.graph.get_graph().nodes)
     assert {"prepare", "profile", "baseline", "research", "code", "execute", "evaluate", "decide", "recover"} <= nodes
+
+
+@pytest.mark.asyncio
+async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, monkeypatch) -> None:
+    def reproduce(_transform_dir):
+        time.sleep(0.2)
+        return {"status": "succeeded", "seeds": [{"metrics": {"primary": 0.6}}]}
+
+    services = SimpleNamespace(
+        baseline=SimpleNamespace(reproduce=reproduce),
+        frontier=SimpleNamespace(
+            register_baseline=lambda _run_id: SimpleNamespace(
+                model_dump=lambda mode: {"validation_best": "B0"}
+            )
+        ),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    started = time.perf_counter()
+    task = asyncio.create_task(
+        workflow.baseline({"session_id": "session", "transform_dir": str(tmp_path)})
+    )
+    await asyncio.sleep(0.02)
+
+    assert time.perf_counter() - started < 0.1
+    assert not task.done()
+    assert (await task)["baseline_result"]["status"] == "succeeded"
 
 
 def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:

@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+import time
 from typing import Annotated, Any
 
 import yaml
 import typer
 import uvicorn
 
-from rigor_rs.agents.bedrock import BedrockAgentFactory
+from rigor_rs.agents.azure_foundry import AzureAgentFactory
 from rigor_rs.api.server import WorkflowHost, create_app
 from rigor_rs.contract.challenge import load_challenge_contract
 from rigor_rs.contract.models import ComponentStatus, DataArtifact, ProfileConfig, SplitTaint, TransformSpec
@@ -54,7 +55,7 @@ def build_workflow(challenge_path: str, budget_path: str, ledger: WorkflowLedger
     budget = load_budget_config(root / budget_path if not Path(budget_path).is_absolute() else Path(budget_path))
     ledger = ledger or WorkflowLedger(root / "state/rigor.sqlite3")
     artifacts = root / "artifacts"
-    agents = BedrockAgentFactory()
+    agents = AzureAgentFactory()
     knowledge = KnowledgeRuntime()
     services = WorkflowServices(
         contract=contract, ledger=ledger,
@@ -102,6 +103,50 @@ def profile(
     receipt = profiler.profile(artifact, ProfileConfig())
     transform = preprocessor.fit_apply(artifact, TransformSpec())
     emit({"status": "completed", "profile": receipt.model_dump(mode="json"), "transform": transform.model_dump(mode="json")})
+
+
+@app.command("baseline-progress")
+def baseline_progress(
+    follow: Annotated[bool, typer.Option("--follow")] = False,
+    interval: Annotated[float, typer.Option("--interval")] = 2.0,
+) -> None:
+    """Print per-seed FM epochs from the newest baseline run."""
+    baseline_root = repository_root() / "artifacts/baseline"
+    last_rendered = ""
+    while True:
+        runs = (
+            sorted(
+                (path for path in baseline_root.glob("B0-*") if path.is_dir()),
+                key=lambda path: path.stat().st_mtime_ns,
+                reverse=True,
+            )
+            if baseline_root.is_dir()
+            else []
+        )
+        if not runs:
+            document: dict[str, Any] = {"status": "waiting", "detail": "no baseline run found"}
+            completed = False
+        else:
+            latest = runs[0]
+            progress = []
+            for path in sorted(latest.glob("progress_seed_*.json")):
+                try:
+                    progress.append(json.loads(path.read_text(encoding="utf-8")))
+                except (OSError, json.JSONDecodeError):
+                    continue
+            completed = (latest / "baseline_receipt.json").is_file()
+            document = {
+                "status": "completed" if completed else "running",
+                "run_directory": str(latest),
+                "seeds": progress,
+            }
+        rendered = json.dumps(document, ensure_ascii=False, sort_keys=True, default=str)
+        if rendered != last_rendered:
+            typer.echo(rendered)
+            last_rendered = rendered
+        if completed or not follow:
+            return
+        time.sleep(max(0.25, interval))
 
 
 @app.command("reproduce-baseline")

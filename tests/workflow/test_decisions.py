@@ -46,3 +46,27 @@ def test_recovery_recipes_are_bounded() -> None:
     assert first.action == "halve_micro_batch"
     assert third.result == "recovery cap exhausted"
     assert regression.result == "reject experiment"
+
+
+def test_truncated_agent_json_uses_agent_output_recovery() -> None:
+    receipt = RecoveryController().recover(
+        "run",
+        "Invalid JSON: EOF while parsing a value [type=json_invalid]",
+        1,
+        2,
+    )
+
+    assert receipt.category == "agent_output"
+    assert receipt.action == "bounded_structured_output_retry"
+
+
+def test_invalid_diff_uses_code_patch_recovery() -> None:
+    receipt = RecoveryController().recover(
+        "run",
+        "patch contains no file changes",
+        1,
+        2,
+    )
+
+    assert receipt.category == "code_patch"
+    assert receipt.action == "regenerate_standard_git_diff"

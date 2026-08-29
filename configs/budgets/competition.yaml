@@ -1,10 +1,11 @@
 schema_version: 1
 
 # Tighter team recommendation for a complete local demo and a bounded research loop.
-# Bedrock calls plan and patch code; model training uses the local machine, not Bedrock.
-bedrock:
-  pricing_region: ap-southeast-2
-  service_tier_env: BEDROCK_SERVICE_TIER
+# Azure AI Foundry calls plan and patch code; model training uses the local machine.
+# This block is cost-tracking documentation only; the fields below are not read by
+# the workflow code (which enforces the token/experiment caps under `limits`).
+azure:
+  pricing_region: southeast-asia
   credit_limit_usd: 100
   allocation_usd:
     research_agent: 25
@@ -23,10 +24,10 @@ limits:
   per_run_timeout_seconds: 5400
   recovery_attempts_per_run: 2
 
-# OpenAlex/GitHub calls are free APIs (no Bedrock $ cost); these bound local
+# OpenAlex/GitHub calls are free APIs (no LLM $ cost); these bound local
 # compute/memory and keep raw tool responses reasonable. The context compiler
-# (configs/agents/bedrock.yaml maximum_evidence_characters/maximum_mcp_evidence_records)
-# separately bounds what actually reaches Bedrock, so these can be generous.
+# (configs/agents/azure_foundry.yaml maximum_evidence_characters/maximum_mcp_evidence_records)
+# separately bounds what actually reaches the agents, so these can be generous.
 mcp:
   per_session:
     outbound_provider_requests: 400

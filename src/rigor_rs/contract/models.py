@@ -176,8 +176,6 @@ class ExperimentContract(StrictModel):
     def bounded_change(self) -> "ExperimentContract":
         if not self.allowed_files:
             raise ValueError("at least one allowed file is required")
-        if len(self.primary_change.split(";")) > 2:
-            raise ValueError("primary_change appears to contain unrelated changes")
         return self
 
 
@@ -189,9 +187,22 @@ class DependencyChange(StrictModel):
 
 
 class PatchProposal(StrictModel):
-    unified_diff: str
+    unified_diff: str = Field(
+        min_length=1,
+        description=(
+            "Raw standard git unified diff containing diff --git, --- a/, +++ b/, "
+            "and complete @@ -OLD_START,OLD_COUNT +NEW_START,NEW_COUNT @@ hunk headers "
+            "with real line numbers; no bare @@, Markdown fences, or custom patch markers."
+        ),
+    )
     dependency_changes: list[DependencyChange] = Field(default_factory=list)
-    tests: list[str] = Field(default_factory=list)
+    tests: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Relative pytest targets only, such as tests/workflow/test_decisions.py "
+            "or a ::test_name node ID; never a python/pytest shell command."
+        ),
+    )
     explanation: str
 
 
