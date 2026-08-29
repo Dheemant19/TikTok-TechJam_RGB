@@ -52,6 +52,9 @@ class WorkflowState(TypedDict, total=False):
     agent_output_tokens: int
     error: str
     recovery_attempt: int
+    last_execution_error: str
+    recovery_action: str
+    retry_target: str
     stop: bool
     stop_reason: str
 
@@ -225,6 +228,7 @@ class AutonomousResearchWorkflow:
         return {
             "run_id": run_id, "experiment_contract": contract.model_dump(mode="json"), "error": "",
             "recovery_attempt": 0,
+            "last_execution_error": "", "recovery_action": "", "retry_target": "",
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
             "experiment_count": state.get("experiment_count", 0) + 1,
@@ -234,7 +238,12 @@ class AutonomousResearchWorkflow:
         await self._control_gate(state)
         contract = ExperimentContract.model_validate(state["experiment_contract"])
         self._event(state, "coder", "patch", "started", ComponentStatus.RUNNING, "Generating isolated code change")
-        workspace, parent_commit = self.s.workspace.create(contract.experiment_id, "HEAD")
+        # A retry for the same contract cannot reuse the previous worktree (it
+        # already exists and still holds the rejected patch). Keep the failed
+        # attempt on disk for audit and branch a fresh one from HEAD.
+        retry_attempt = state.get("recovery_attempt", 0)
+        workspace_name = contract.experiment_id if retry_attempt == 0 else f"{contract.experiment_id}-retry{retry_attempt}"
+        workspace, parent_commit = self.s.workspace.create(workspace_name, "HEAD")
         source_context = {}
         for relative in contract.allowed_files:
             path = workspace / relative
@@ -248,6 +257,8 @@ class AutonomousResearchWorkflow:
             "source_context": source_context,
             "reference_code": "",
             "remaining_output_tokens": remaining_output_tokens,
+            "previous_execution_failure": state.get("last_execution_error") or None,
+            "required_recovery_action": state.get("recovery_action") or None,
         }
         try:
             result = await self.s.agents.propose_patch(contract, agent_context)
@@ -405,6 +416,13 @@ class AutonomousResearchWorkflow:
             values.update({"best_metric": state["metric_receipt"], "parent_metric": state["metric_receipt"]})
         return values
 
+    # A failure in these categories means the *contract* was sound and the
+    # *patch* was wrong, so retrying the patch for the same contract is far
+    # cheaper than discarding a good hypothesis and burning a fresh research
+    # call on a new one -- which is what previously happened, causing the same
+    # inert-patch mistake to repeat indefinitely.
+    CODE_LEVEL_CATEGORIES = frozenset({"behavior_unchanged", "code_patch", "syntax_import_config"})
+
     async def recover(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
         attempt = state.get("recovery_attempt", 0) + 1
@@ -419,8 +437,21 @@ class AutonomousResearchWorkflow:
         if attempt > attempt_limit or receipt.category == "metric_regression":
             frontier = FrontierState.model_validate(state["frontier"])
             frontier.failed.append(state["run_id"])
-            return {"recovery_attempt": attempt, "error": "", "frontier": frontier.model_dump(mode="json"), "stop": state["experiment_count"] >= self.s.maximum_experiments}
-        return {"recovery_attempt": attempt, "error": ""}
+            return {
+                "recovery_attempt": attempt, "error": "", "last_execution_error": "",
+                "retry_target": "research", "frontier": frontier.model_dump(mode="json"),
+                "stop": state["experiment_count"] >= self.s.maximum_experiments,
+            }
+        retry_target = "code" if (receipt.category in self.CODE_LEVEL_CATEGORIES and contract) else "research"
+        # Carry the diagnosis forward so the Code Agent is actually told why its
+        # last patch was rejected. Previously the error was wiped here and the
+        # recovery action existed only as a ledger string no agent ever saw.
+        return {
+            "recovery_attempt": attempt, "error": "",
+            "last_execution_error": state.get("error", "") if retry_target == "code" else "",
+            "recovery_action": receipt.action,
+            "retry_target": retry_target,
+        }
 
     def _route_baseline(self, state: WorkflowState) -> str:
         return "stop" if state.get("stop") else "research"
@@ -438,7 +469,9 @@ class AutonomousResearchWorkflow:
         return "stop" if state.get("stop") else "research"
 
     def _route_recovery(self, state: WorkflowState) -> str:
-        return "stop" if state.get("stop") else "research"
+        if state.get("stop"):
+            return "stop"
+        return "code" if state.get("retry_target") == "code" else "research"
 
     def _build(self, checkpointer=None):
         graph = StateGraph(WorkflowState)
@@ -453,7 +486,7 @@ class AutonomousResearchWorkflow:
         graph.add_conditional_edges("execute", self._route_execute, {"recover": "recover", "evaluate": "evaluate"})
         graph.add_edge("evaluate", "decide")
         graph.add_conditional_edges("decide", self._route_decide, {"research": "research", "stop": END})
-        graph.add_conditional_edges("recover", self._route_recovery, {"research": "research", "stop": END})
+        graph.add_conditional_edges("recover", self._route_recovery, {"research": "research", "code": "code", "stop": END})
         return graph.compile(checkpointer=checkpointer)
 
     async def run(self, session_id: str) -> WorkflowState:

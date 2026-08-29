@@ -187,6 +187,100 @@ def test_recover_node_has_outgoing_edges_back_into_the_loop() -> None:
     edges = {(edge.source, edge.target) for edge in workflow.graph.get_graph().edges}
     assert ("recover", "research") in edges
     assert ("recover", "__end__") in edges
+    # Code-level failures retry the patch for the same contract.
+    assert ("recover", "code") in edges
+
+
+@pytest.mark.asyncio
+async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_research(tmp_path: Path, monkeypatch) -> None:
+    # The inert-patch detector fired correctly three times in a row live, but
+    # recover() wiped the error and always routed back to research, so the Code
+    # Agent was never told why its patch was rejected and each cycle burned a
+    # fresh research call only to repeat the identical config-gating mistake.
+    # A code-level failure must retry `code` for the SAME contract, carrying
+    # the diagnosis forward.
+    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+
+    contract = ExperimentContract(
+        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
+        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+        fallback_run_id="B0", recovery_attempt_limit=2,
+    )
+    inert_error = (
+        "patch produced no measurable change in training behavior: proxy-scale "
+        "validation scores are bit-identical to the unpatched baseline"
+    )
+
+    services = SimpleNamespace(
+        recovery=RecoveryController(), maximum_experiments=10,
+        frontier=SimpleNamespace(),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "s", "run_id": "run-1", "error": inert_error,
+        "experiment_contract": contract.model_dump(mode="json"),
+        "experiment_count": 1, "recovery_attempt": 0,
+        "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+    }
+
+    result = await workflow.recover(state)
+
+    # Retries the patch for the same contract, not a brand-new hypothesis.
+    assert result["retry_target"] == "code"
+    assert workflow._route_recovery({**state, **result}) == "code"
+    # The diagnosis must survive so the Code Agent actually sees it.
+    assert result["last_execution_error"] == inert_error
+    assert result["recovery_action"] == "activate_new_capability_in_config_or_callsites"
+
+
+@pytest.mark.asyncio
+async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path, monkeypatch) -> None:
+    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+
+    contract = ExperimentContract(
+        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
+        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+        fallback_run_id="B0", recovery_attempt_limit=1,
+    )
+    services = SimpleNamespace(recovery=RecoveryController(), maximum_experiments=10, frontier=SimpleNamespace())
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "s", "run_id": "run-1",
+        "error": "patch produced no measurable change in training behavior",
+        "experiment_contract": contract.model_dump(mode="json"),
+        "experiment_count": 1,
+        "recovery_attempt": 1,  # already used the single permitted attempt
+        "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+    }
+
+    result = await workflow.recover(state)
+
+    assert result["retry_target"] == "research"
+    assert workflow._route_recovery({**state, **result}) == "research"
+    assert "run-1" in result["frontier"]["failed"]
+
 
 
 def test_route_recovery_retries_unless_explicitly_stopped() -> None:
