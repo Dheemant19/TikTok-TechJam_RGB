@@ -777,6 +777,12 @@ def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:
     result = finalizer.package(session)
     assert result["test_prediction_passes"] == 1
     assert result["schema_check"]["stdout"] == "✓ ok"
+    finalized = [
+        event for event in ledger.events(session) if event.event_type == "finalized"
+    ]
+    assert [event.component_id for event in finalized] == ["finalizer", "submission"]
+    assert finalized[0].payload["manifest"]["manifest_hash"] == result["manifest_hash"]
+    assert ledger.snapshot(session).finalized
     assert result["event_chain_valid"]
     with pytest.raises(RuntimeError, match="already been finalized"):
         finalizer.package(session)

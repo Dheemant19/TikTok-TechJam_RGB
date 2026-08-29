@@ -14,6 +14,7 @@ import polars as pl
 import torch
 
 from rigor_rs.contract.challenge import ChallengeContract, sha256_file
+from rigor_rs.contract.models import ComponentStatus
 from rigor_rs.integrity.gates import IntegrityViolation
 from rigor_rs.ledger.workflow import WorkflowLedger, canonical_hash, new_id
 from rigor_rs.models.experimental import FactorizationMachine
@@ -246,4 +247,18 @@ class SubmissionFinalizer:
                 (session_id, manifest_hash, str(manifest_path), datetime.now(UTC).isoformat()),
             )
             connection.execute("UPDATE sessions SET finalized=1 WHERE session_id=?", (session_id,))
+        # Plan_Workflow §14.1 requires a one-way finalization event. Without it
+        # a CLI-packaged session stayed "Build Final Package: Waiting" in the
+        # observer forever, and the append-only chain held no record that the
+        # irreversible hidden-test pass had happened.
+        for component, summary in (
+            ("finalizer", "Final package built and schema-checked"),
+            ("submission", f"Predictions written and verified for {len(users):,} test rows"),
+        ):
+            self.ledger.append_event(
+                session_id=session_id, run_id=winner, component_id=component,
+                execution_id=f"finalization-{manifest_hash[:12]}", stage="package",
+                event_type="finalized", status=ComponentStatus.SUCCEEDED,
+                plain_summary=summary, payload={"manifest": manifest},
+            )
         return manifest
