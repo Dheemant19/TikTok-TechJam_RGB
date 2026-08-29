@@ -15,6 +15,7 @@ class RecoveryController:
         "nan_divergence": ["restore_stable_settings", "check_labels_lr_precision_normalization"],
         "agent_output": ["bounded_structured_output_retry", "restore_stable_fallback"],
         "code_patch": ["regenerate_standard_git_diff", "abandon_redundant_contract"],
+        "behavior_unchanged": ["activate_new_capability_in_config_or_callsites", "abandon_redundant_contract"],
         "transient_external": ["bounded_retry", "local_evidence_or_pause_planning"],
         "metric_regression": ["reject_without_technical_retry"],
         "infrastructure": ["bounded_restart", "restore_stable_fallback"],
@@ -27,6 +28,8 @@ class RecoveryController:
             return "agent_output"
         if any(term in value for term in ("patch contains no file changes", "git apply", "patch does not apply", "hunk header")):
             return "code_patch"
+        if "no measurable change in training behavior" in value:
+            return "behavior_unchanged"
         if any(term in value for term in ("syntaxerror", "importerror", "modulenotfounderror", "config")):
             return "syntax_import_config"
         if any(term in value for term in ("schema", "column", "dtype", "row count", "taint")):

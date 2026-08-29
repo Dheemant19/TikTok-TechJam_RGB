@@ -83,3 +83,17 @@ def test_hallucinated_citation_uses_agent_output_recovery() -> None:
     assert receipt.category == "agent_output"
     assert receipt.action == "bounded_structured_output_retry"
     assert receipt.result == "retry permitted"
+
+
+def test_inert_patch_uses_behavior_unchanged_recovery() -> None:
+    receipt = RecoveryController().recover(
+        "run",
+        "patch produced no measurable change in training behavior: proxy-scale "
+        "validation scores are bit-identical to the unpatched baseline",
+        1,
+        1,
+    )
+
+    assert receipt.category == "behavior_unchanged"
+    assert receipt.action == "activate_new_capability_in_config_or_callsites"
+    assert receipt.result == "retry permitted"

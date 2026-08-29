@@ -23,6 +23,112 @@ def test_langgraph_contains_durable_research_loop() -> None:
     assert {"prepare", "profile", "baseline", "research", "code", "execute", "evaluate", "decide", "recover"} <= nodes
 
 
+@pytest.mark.asyncio
+async def test_behavior_unchanged_vs_baseline_detects_dead_patches_and_caches_reference_run(tmp_path: Path) -> None:
+    # Reproduced live: a patch can add a real, working model/loss capability
+    # that compiles, passes tests, and trains, but is never actually wired
+    # into train()'s call sites (e.g. training.loss never flipped in the
+    # experiment config, or a new constructor kwarg never passed). Three
+    # separate experiments this way produced bit-identical metrics. This
+    # check compares each experiment's proxy-scale scores against a lazily
+    # computed, session-cached reference run of the unpatched baseline.
+    transform_dir = tmp_path / "transform"
+    transform_dir.mkdir()
+    reference_scores = np.asarray([0.1, 0.2, 0.3], dtype=np.float32)
+
+    tier2_calls = []
+
+    class FakeWorkspace:
+        def create(self, experiment_id, parent):
+            return tmp_path / "reference_workspace", "commit-hash"
+
+    class FakeFunnel:
+        async def tier2(self, workspace, transform_dir, config, output, seed):
+            tier2_calls.append((workspace, seed))
+            model_dir = output / "model"
+            model_dir.mkdir(parents=True, exist_ok=True)
+            np.save(model_dir / "valid_scores.npy", reference_scores)
+            return SimpleNamespace(status="succeeded")
+
+    services = SimpleNamespace(workspace=FakeWorkspace(), funnel=FakeFunnel(), artifacts=tmp_path / "artifacts")
+    workflow = AutonomousResearchWorkflow(services)
+
+    dead_patch_output = tmp_path / "dead_patch" / "tier2"
+    (dead_patch_output / "model").mkdir(parents=True)
+    np.save(dead_patch_output / "model" / "valid_scores.npy", reference_scores.copy())
+
+    real_patch_output = tmp_path / "real_patch" / "tier2"
+    (real_patch_output / "model").mkdir(parents=True)
+    np.save(real_patch_output / "model" / "valid_scores.npy", np.asarray([0.9, 0.8, 0.7], dtype=np.float32))
+
+    assert await workflow._behavior_unchanged_vs_baseline(transform_dir, dead_patch_output, 0) is True
+    assert await workflow._behavior_unchanged_vs_baseline(transform_dir, real_patch_output, 0) is False
+    # The reference run must be computed exactly once and reused for both checks.
+    assert len(tier2_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_path: Path, monkeypatch) -> None:
+    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
+
+    contract = ExperimentContract(
+        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
+        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+        fallback_run_id="B0", recovery_attempt_limit=1,
+    )
+    proposal = PatchProposal(unified_diff="diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-a\n+b\n", tests=[], explanation="x")
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    tier3_called = {"value": False}
+    scores = np.asarray([0.1, 0.2, 0.3], dtype=np.float32)
+
+    class FakeFunnel:
+        async def tier1(self, *_a, **_k):
+            return SimpleNamespace(status="succeeded", model_dump=lambda mode: {}, error=None)
+
+        async def tier2(self, workspace, transform_dir, config, output, seed):
+            model_dir = output / "model"
+            model_dir.mkdir(parents=True, exist_ok=True)
+            np.save(model_dir / "valid_scores.npy", scores)
+            return SimpleNamespace(status="succeeded", model_dump=lambda mode: {}, error=None)
+
+        async def tier3(self, *_a, **_k):
+            tier3_called["value"] = True
+            return SimpleNamespace(status="succeeded", model_dump=lambda mode: {}, error=None)
+
+    class FakeWorkspace:
+        def create(self, experiment_id, parent):
+            return tmp_path / "reference_workspace", "commit-hash"
+
+    services = SimpleNamespace(
+        workspace=FakeWorkspace(), funnel=FakeFunnel(), artifacts=tmp_path / "artifacts",
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "session-1", "experiment_contract": contract.model_dump(mode="json"),
+        "patch_proposal": proposal.model_dump(mode="json"), "workspace": str(workspace),
+        "touched_files": ["a.py"], "transform_dir": str(tmp_path / "transform"),
+    }
+
+    result = await workflow.execute(state)
+
+    assert not tier3_called["value"]
+    assert "no measurable change in training behavior" in result["error"]
+
+
 def test_recover_node_has_outgoing_edges_back_into_the_loop() -> None:
     # _route_recovery existed but _build() never wired it via
     # add_conditional_edges("recover", ...), so every recovery event -- a

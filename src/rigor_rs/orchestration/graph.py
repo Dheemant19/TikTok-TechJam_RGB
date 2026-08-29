@@ -81,6 +81,13 @@ class AutonomousResearchWorkflow:
     def __init__(self, services: WorkflowServices) -> None:
         self.s = services
         self.graph = self._build()
+        # One proxy-scale reference run per session, computed lazily and
+        # reused for every experiment: cheap enough (tier2 is the fastest
+        # tier) to fund a fast falsification check that a patch which
+        # compiles, passes tests, and trains can still be functionally dead
+        # code (new capability never wired into the actual model/loss call
+        # sites) -- catches this before the expensive tier3/tier4 runs.
+        self._reference_tier2_scores: dict[tuple[str, int], np.ndarray | None] = {}
 
     def _event(self, state: WorkflowState, component: str, stage: str, event_type: str, status: ComponentStatus, summary: str, payload: dict[str, Any] | None = None):
         return self.s.ledger.append_event(
@@ -294,6 +301,15 @@ class AutonomousResearchWorkflow:
         self._event(state, "trainer", "execute", "tier2", ComponentStatus.SUCCEEDED if tier2.status == "succeeded" else ComponentStatus.FAILED, "Smoke-scale proxy run", {"receipt": receipts[-1]})
         if tier2.status != "succeeded":
             return {"tier_receipts": receipts, "error": tier2.error or "tier2 failed"}
+        if await self._behavior_unchanged_vs_baseline(Path(state["transform_dir"]), output / "tier2", 0):
+            message = (
+                "patch produced no measurable change in training behavior: proxy-scale "
+                "validation scores are bit-identical to the unpatched baseline; the new "
+                "capability was likely never wired into the model construction, forward "
+                "pass, or config loss/model selection actually executed by train()"
+            )
+            self._event(state, "phase_guard", "execute", "inert_patch", ComponentStatus.FAILED, message, {"tier2_output": str(output / "tier2")})
+            return {"tier_receipts": receipts, "error": message}
         tier3 = await self.s.funnel.tier3(workspace, Path(state["transform_dir"]), config, output / "tier3", 0)
         receipts.append(tier3.model_dump(mode="json"))
         self._event(state, "trainer", "execute", "tier3", ComponentStatus.SUCCEEDED if tier3.status == "succeeded" else ComponentStatus.FAILED, "Bounded proxy-scale run", {"receipt": receipts[-1]})
@@ -305,6 +321,25 @@ class AutonomousResearchWorkflow:
         if tier4.status != "succeeded":
             return {"tier_receipts": receipts, "error": tier4.error or "tier4 failed"}
         return {"tier_receipts": receipts, "error": ""}
+
+    async def _behavior_unchanged_vs_baseline(self, transform_dir: Path, tier2_output: Path, seed: int) -> bool:
+        key = (str(transform_dir), seed)
+        if key not in self._reference_tier2_scores:
+            reference_workspace, _ = self.s.workspace.create(f"baseline-reference-{new_id('ref')}", "HEAD")
+            reference_output = self.s.artifacts / "runs" / "_baseline_reference" / "tier2"
+            reference_receipt = await self.s.funnel.tier2(
+                reference_workspace, transform_dir,
+                reference_workspace / "configs/experiments/bce_fm.yaml", reference_output, seed,
+            )
+            self._reference_tier2_scores[key] = (
+                np.load(reference_output / "model" / "valid_scores.npy")
+                if reference_receipt.status == "succeeded" else None
+            )
+        baseline_scores = self._reference_tier2_scores[key]
+        if baseline_scores is None:
+            return False
+        experiment_scores = np.load(tier2_output / "model" / "valid_scores.npy")
+        return baseline_scores.shape == experiment_scores.shape and np.array_equal(baseline_scores, experiment_scores)
 
     async def evaluate(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
