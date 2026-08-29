@@ -24,6 +24,56 @@ def test_langgraph_contains_durable_research_loop() -> None:
     assert {"prepare", "profile", "baseline", "research", "code", "execute", "evaluate", "decide", "recover"} <= nodes
 
 
+def test_training_entrypoint_guard_rejects_truncated_valid_python(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    experiment = workspace / "src/rigor_rs/training/experiment.py"
+    experiment.parent.mkdir(parents=True)
+    experiment.write_text(
+        "def train():\n"
+        "    checkpoint = 'checkpoint.pt'\n"
+        "    scores = 'valid_scores.npy'\n"
+        "    receipt = 'train_receipt.json'\n",
+        encoding="utf-8",
+    )
+    reverted = {"value": False}
+    workflow = AutonomousResearchWorkflow(
+        SimpleNamespace(
+            workspace=SimpleNamespace(
+                revert=lambda _workspace: reverted.__setitem__("value", True)
+            )
+        )
+    )
+
+    with pytest.raises(ValueError, match="missing top-level functions.*main"):
+        workflow._verify_training_entrypoint(workspace)
+
+    assert reverted["value"]
+
+
+def test_training_entrypoint_guard_accepts_executable_contract(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    experiment = workspace / "src/rigor_rs/training/experiment.py"
+    experiment.parent.mkdir(parents=True)
+    experiment.write_text(
+        "def train():\n"
+        "    return ('checkpoint.pt', 'valid_scores.npy', 'train_receipt.json')\n\n"
+        "def main():\n"
+        "    train()\n\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n",
+        encoding="utf-8",
+    )
+    workflow = AutonomousResearchWorkflow(
+        SimpleNamespace(
+            workspace=SimpleNamespace(
+                revert=lambda _workspace: pytest.fail("valid entrypoint must not revert")
+            )
+        )
+    )
+
+    workflow._verify_training_entrypoint(workspace)
+
+
 @pytest.mark.asyncio
 async def test_behavior_unchanged_vs_baseline_detects_dead_patches_and_caches_reference_run(tmp_path: Path) -> None:
     # Reproduced live: a patch can add a real, working model/loss capability

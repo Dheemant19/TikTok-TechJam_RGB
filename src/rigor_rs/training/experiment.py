@@ -52,12 +52,39 @@ def bpr_pairs(users: np.ndarray, labels: np.ndarray, rng: np.random.Generator, l
     return np.asarray(positives), np.asarray(negatives)
 
 
+def resolve_device(requested: str) -> torch.device:
+    value = requested.strip().lower()
+    if value == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if value == "cpu":
+        return torch.device("cpu")
+    if value == "cuda" or value.startswith("cuda:"):
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                f"device={requested!r} requires CUDA, but this PyTorch build cannot access a CUDA GPU "
+                f"(torch={torch.__version__}, torch.version.cuda={torch.version.cuda!r}). "
+                "Install the project-pinned CUDA wheel and verify the NVIDIA driver."
+            )
+        device = torch.device(value)
+        index = device.index if device.index is not None else torch.cuda.current_device()
+        if index >= torch.cuda.device_count():
+            raise RuntimeError(
+                f"device={requested!r} selects GPU index {index}, but only "
+                f"{torch.cuda.device_count()} CUDA device(s) are visible"
+            )
+        return torch.device("cuda", index)
+    raise ValueError(f"unsupported device {requested!r}; expected auto, cpu, cuda, or cuda:<index>")
+
+
 def train(transform_dir: Path, config_path: Path, output: Path, max_rows: int | None = None, max_batches: int | None = None, seed: int = 0) -> dict:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     set_deterministic(seed)
     train_data = load_npz(transform_dir / "train.npz", max_rows)
     valid_data = load_npz(transform_dir / "valid.npz", max_rows)
-    device = torch.device("cuda" if torch.cuda.is_available() and config.get("device", "auto") != "cpu" else "cpu")
+    device = resolve_device(str(config.get("device", "auto")))
+    if device.type == "cuda":
+        torch.cuda.set_device(device)
+        torch.cuda.reset_peak_memory_stats(device)
     dimension = int(max(train_data["X"].max(initial=0), valid_data["X"].max(initial=0)) + 1)
     model = FactorizationMachine(dimension, int(config["model"]["factors"])).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(config["training"]["learning_rate"]), weight_decay=float(config["training"].get("weight_decay", 0.0)))
@@ -123,10 +150,13 @@ def train(transform_dir: Path, config_path: Path, output: Path, max_rows: int | 
     np.save(output / "valid_scores.npy", scores)
     result = {
         "status": "succeeded", "loss": loss_name, "seed": seed, "device": str(device),
+        "device_name": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+        "cuda_version": torch.version.cuda if device.type == "cuda" else None,
+        "compute_capability": list(torch.cuda.get_device_capability(device)) if device.type == "cuda" else None,
         "rows_train": len(train_data["y"]), "rows_valid": len(valid_data["y"]),
         "parameters": sum(parameter.numel() for parameter in model.parameters()),
         "best_primary": best_primary, "history": history, "wall_seconds": time.perf_counter() - started,
-        "peak_gpu_memory_mb": torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else None,
+        "peak_gpu_memory_mb": torch.cuda.max_memory_allocated(device) / 1024 / 1024 if device.type == "cuda" else None,
     }
     (output / "train_receipt.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result

@@ -10,4 +10,4 @@ training:
   batch_size: 8192
   epochs: 20
   patience: 3
-device: auto
+device: cuda

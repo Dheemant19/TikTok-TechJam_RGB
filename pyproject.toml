@@ -25,7 +25,7 @@ dependencies = [
   "nvidia-ml-py>=13,<14",
   "python-dotenv>=1.1,<2",
   "PyYAML>=6.0,<7",
-  "torch>=2.7,<3",
+  "torch==2.11.0+cu128",
   "typer>=0.20,<1",
   "uvicorn[standard]>=0.35,<1",
 ]
@@ -42,6 +42,14 @@ rigor-rs-mcp = "rigor_rs.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rigor_rs"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [tool.pytest.ini_options]
 addopts = "-q"

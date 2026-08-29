@@ -84,6 +84,42 @@ class ExecutionFunnel:
         self.timeout_seconds = timeout_seconds
         self.proxy_config = proxy_config
         self.validator = PhaseBoundaryValidator(contract)
+    _REQUIRED_TRAINING_ARTIFACTS = (
+        "model/checkpoint.pt",
+        "model/valid_scores.npy",
+        "model/train_receipt.json",
+    )
+
+    @staticmethod
+    def _rehash_receipt(document: dict[str, Any]) -> TierReceipt:
+        return TierReceipt(
+            **document,
+            receipt_hash=canonical_hash({key: str(value) for key, value in document.items()}),
+        )
+
+    def _validate_training_artifacts(self, receipt: TierReceipt) -> TierReceipt:
+        if receipt.status != "succeeded":
+            return receipt
+        missing = [
+            relative
+            for relative in self._REQUIRED_TRAINING_ARTIFACTS
+            if not (receipt.output_directory / relative).is_file()
+        ]
+        if not missing:
+            return receipt
+        message = (
+            "training process exited with code 0 but did not produce required artifacts: "
+            + ", ".join(missing)
+            + ". The training module may have been truncated or its main entrypoint may not have run."
+        )
+        with receipt.stderr_path.open("a", encoding="utf-8") as stream:
+            if receipt.stderr_path.stat().st_size:
+                stream.write("\n")
+            stream.write(message + "\n")
+        document = receipt.model_dump(exclude={"receipt_hash"})
+        document.update(status="failed", comparable=False, error=message)
+        return self._rehash_receipt(document)
+
 
     async def _run(self, tier: int, command: list[str], cwd: Path, output: Path, comparable: bool, timeout: int) -> TierReceipt:
         output.mkdir(parents=True, exist_ok=True)
@@ -126,7 +162,7 @@ class ExecutionFunnel:
             "stdout_path": stdout_path, "stderr_path": stderr_path, "output_directory": output,
             "error": (stdout.decode(errors="replace") + stderr.decode(errors="replace"))[-4000:] if status != "succeeded" else None,
         }
-        return TierReceipt(**document, receipt_hash=canonical_hash({key: str(value) for key, value in document.items()}))
+        return self._rehash_receipt(document)
 
     @staticmethod
     def _pytest_targets(workspace: Path, requested: list[str]) -> list[str]:
@@ -165,7 +201,7 @@ class ExecutionFunnel:
             "stdout_path": stdout_path, "stderr_path": stderr_path, "output_directory": output,
             "error": message[-4000:],
         }
-        return TierReceipt(**document, receipt_hash=canonical_hash({key: str(value) for key, value in document.items()}))
+        return self._rehash_receipt(document)
 
     async def tier1(self, workspace: Path, touched_files: list[str], tests: list[str], output: Path) -> TierReceipt:
         self.validator.verify_official_files()
@@ -186,12 +222,15 @@ class ExecutionFunnel:
 
     async def tier2(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:
         command = [sys.executable, "-m", "rigor_rs.training.experiment", "--transform-dir", str(transform_dir), "--config", str(config), "--output", str(output / "model"), "--max-rows", "100000", "--max-batches", "100", "--seed", str(seed)]
-        return await self._run(2, command, workspace, output, False, min(900, self.timeout_seconds))
+        receipt = await self._run(2, command, workspace, output, False, min(900, self.timeout_seconds))
+        return self._validate_training_artifacts(receipt)
 
     async def tier3(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:
         command = [sys.executable, "-m", "rigor_rs.training.experiment", "--transform-dir", str(transform_dir), "--config", str(config), "--output", str(output / "model"), "--max-rows", str(int(self.proxy_config["maximum_rows"])), "--seed", str(seed)]
-        return await self._run(3, command, workspace, output, False, min(int(self.proxy_config["maximum_wall_seconds"]), self.timeout_seconds))
+        receipt = await self._run(3, command, workspace, output, False, min(int(self.proxy_config["maximum_wall_seconds"]), self.timeout_seconds))
+        return self._validate_training_artifacts(receipt)
 
     async def tier4(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:
         command = [sys.executable, "-m", "rigor_rs.training.experiment", "--transform-dir", str(transform_dir), "--config", str(config), "--output", str(output / "model"), "--seed", str(seed)]
-        return await self._run(4, command, workspace, output, True, self.timeout_seconds)
+        receipt = await self._run(4, command, workspace, output, True, self.timeout_seconds)
+        return self._validate_training_artifacts(receipt)

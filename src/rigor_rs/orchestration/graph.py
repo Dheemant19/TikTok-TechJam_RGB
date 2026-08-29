@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import json
 import re
 from dataclasses import dataclass
@@ -268,6 +269,7 @@ class AutonomousResearchWorkflow:
             activated: str | None = None
             try:
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
+                self._verify_training_entrypoint(workspace)
                 activated = self._activate_patch_capability(workspace)
             except Exception as first:
                 repair = await self.s.agents.propose_patch(
@@ -286,6 +288,7 @@ class AutonomousResearchWorkflow:
                 result.usage.input_tokens += repair.usage.input_tokens
                 result.usage.output_tokens += repair.usage.output_tokens
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
+                self._verify_training_entrypoint(workspace)
                 activated = self._activate_patch_capability(workspace)
             if activated:
                 touched = sorted({*touched, "configs/experiments/bce_fm.yaml"})
@@ -305,6 +308,61 @@ class AutonomousResearchWorkflow:
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
         }
+
+    def _verify_training_entrypoint(self, workspace: Path) -> None:
+        """Reject a syntactically valid replacement that silently stops training."""
+        relative = "src/rigor_rs/training/experiment.py"
+        experiment = workspace / relative
+        if not experiment.is_file():
+            return
+        source = experiment.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(experiment))
+        functions = {
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        has_main_guard = any(
+            isinstance(node, ast.If)
+            and isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name)
+            and node.test.left.id == "__name__"
+            and len(node.test.ops) == 1
+            and isinstance(node.test.ops[0], ast.Eq)
+            and len(node.test.comparators) == 1
+            and isinstance(node.test.comparators[0], ast.Constant)
+            and node.test.comparators[0].value == "__main__"
+            and any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "main"
+                for call in ast.walk(node)
+            )
+            for node in tree.body
+        )
+        required_artifacts = {"checkpoint.pt", "valid_scores.npy", "train_receipt.json"}
+        string_literals = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        missing_functions = sorted({"train", "main"} - functions)
+        missing_artifacts = sorted(required_artifacts - string_literals)
+        if not missing_functions and not missing_artifacts and has_main_guard:
+            return
+        self.s.workspace.revert(workspace)
+        problems = []
+        if missing_functions:
+            problems.append(f"missing top-level functions {missing_functions}")
+        if not has_main_guard:
+            problems.append("missing __main__ guard that calls main()")
+        if missing_artifacts:
+            problems.append(f"missing required artifact writes {missing_artifacts}")
+        raise ValueError(
+            f"{relative} no longer satisfies the executable training contract: "
+            + "; ".join(problems)
+            + ". Preserve the complete module and make a surgical change instead of replacing it with a truncated file."
+        )
 
     _LOSS_BRANCH_PATTERN = re.compile(r'loss_name\s*==\s*["\']([^"\']+)["\']')
 
@@ -424,14 +482,21 @@ class AutonomousResearchWorkflow:
                 reference_workspace, transform_dir,
                 reference_workspace / "configs/experiments/bce_fm.yaml", reference_output, seed,
             )
+            reference_scores = reference_output / "model" / "valid_scores.npy"
             self._reference_tier2_scores[key] = (
-                np.load(reference_output / "model" / "valid_scores.npy")
-                if reference_receipt.status == "succeeded" else None
+                np.load(reference_scores)
+                if reference_receipt.status == "succeeded" and reference_scores.is_file()
+                else None
             )
         baseline_scores = self._reference_tier2_scores[key]
         if baseline_scores is None:
             return False
-        experiment_scores = np.load(tier2_output / "model" / "valid_scores.npy")
+        experiment_path = tier2_output / "model" / "valid_scores.npy"
+        if not experiment_path.is_file():
+            raise RuntimeError(
+                f"tier2 succeeded without required artifact {experiment_path}"
+            )
+        experiment_scores = np.load(experiment_path)
         return baseline_scores.shape == experiment_scores.shape and np.array_equal(baseline_scores, experiment_scores)
 
     async def evaluate(self, state: WorkflowState) -> dict[str, Any]:

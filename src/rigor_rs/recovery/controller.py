@@ -26,7 +26,10 @@ class RecoveryController:
         value = error.casefold()
         if any(term in value for term in ("invalid json", "json_invalid", "eof while parsing", "structured output", "cited evidence not supplied")):
             return "agent_output"
-        if any(term in value for term in ("patch contains no file changes", "git apply", "patch does not apply", "hunk header")):
+        if any(term in value for term in (
+            "patch contains no file changes", "git apply", "patch does not apply", "hunk header",
+            "did not produce required artifacts", "main entrypoint may not have run",
+        )):
             return "code_patch"
         if "no measurable change in training behavior" in value:
             return "behavior_unchanged"
