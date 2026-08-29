@@ -165,7 +165,15 @@ class AutonomousResearchWorkflow:
         self._event(state, "knowledge_mcp", "research", "completed", ComponentStatus.SUCCEEDED, "Research evidence selected", {"evidence_ids": card.source_ids, "source_mode": card.meta.source_mode, "supporting": [item.model_dump(mode="json") for item in card.supporting], "contradicting": [item.model_dump(mode="json") for item in card.contradicting], "missing_evidence": card.missing_evidence})
         context = {
             "challenge": self.s.contract.public_summary(), "profile": profile,
-            "runs": [], "frontier": state["frontier"],
+            "runs": [
+                {
+                    "experiment_id": item.get("experiment_id"),
+                    "hypothesis": item.get("hypothesis"),
+                    "primary_change": item.get("primary_change"),
+                }
+                for item in self.s.ledger.list_contracts(state["session_id"])
+            ],
+            "frontier": state["frontier"],
             "remaining_budget": {
                 "experiments": self.s.maximum_experiments - state.get("experiment_count", 0),
                 "bedrock_input_tokens": self.s.bedrock_input_limit - state.get("agent_input_tokens", 0),
@@ -183,11 +191,15 @@ class AutonomousResearchWorkflow:
                 raise ValueError("Research Agent cited evidence not supplied by MCP")
         except Exception as error:
             self._event(state, "scientist", "research", "failed", ComponentStatus.FAILED, f"Research Agent call failed: {error}", {"error": str(error)})
-            return {"run_id": run_id, "error": str(error), "experiment_count": state.get("experiment_count", 0) + 1}
+            return {
+                "run_id": run_id, "error": str(error), "recovery_attempt": 0,
+                "experiment_count": state.get("experiment_count", 0) + 1,
+            }
         self.s.ledger.store_contract(state["session_id"], contract.experiment_id, contract.model_dump(mode="json"))
         self._event(state, "scientist", "research", "plan", ComponentStatus.SUCCEEDED, "One bounded experiment selected", {"contract": contract.model_dump(mode="json"), "usage": result.usage.model_dump()})
         return {
             "run_id": run_id, "experiment_contract": contract.model_dump(mode="json"), "error": "",
+            "recovery_attempt": 0,
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
             "experiment_count": state.get("experiment_count", 0) + 1,

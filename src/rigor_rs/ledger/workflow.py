@@ -249,6 +249,14 @@ class WorkflowLedger:
             )
         return content_hash
 
+    def list_contracts(self, session_id: str) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT contract_json FROM experiment_contracts WHERE session_id=? ORDER BY created_at",
+                (session_id,),
+            ).fetchall()
+        return [json.loads(row["contract_json"]) for row in rows]
+
     def control(self, session_id: str, action: str, expected_sequence: int) -> tuple[bool, str]:
         snapshot = self.snapshot(session_id)
         if expected_sequence != snapshot.latest_sequence:

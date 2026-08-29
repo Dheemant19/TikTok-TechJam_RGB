@@ -186,9 +186,11 @@ class AzureAgentFactory:
                 "The official FM already learns every pairwise interaction among user_id, video_id, author_id, tab, "
                 "and dur_bucket; therefore proposing user_id x tab, user_id x item, or another interaction among those "
                 "existing fields is a no-op. Static-feature expansion and factor-count scaling are organizer-tested "
-                "dead ends. Prefer a loss-alignment, sequential-history, auxiliary-signal, watch-time, or temporal "
-                "change that is not already present. Never propose hidden-test access, a blind sweep, or multiple "
-                "unrelated changes. Return only the validated ExperimentContract schema."
+                "dead ends. `runs` lists every hypothesis and primary_change already attempted this session, in any "
+                "outcome; never propose a primary_change describing the same mechanism as one already listed there. "
+                "Prefer a loss-alignment, sequential-history, auxiliary-signal, watch-time, or temporal change that "
+                "is not already present or already attempted. Never propose hidden-test access, a blind sweep, or "
+                "multiple unrelated changes. Return only the validated ExperimentContract schema."
             )),
             HumanMessage(content=json.dumps(bounded, ensure_ascii=False)),
         ]

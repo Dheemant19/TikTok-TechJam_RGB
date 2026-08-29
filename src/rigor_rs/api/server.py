@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -15,13 +16,26 @@ from rigor_rs.ledger.workflow import WorkflowLedger
 
 
 REDACTED = "Hidden to protect data and credentials"
-_SECRET_KEYS = {"azure_foundry_api_key", "github_token", "openalex_api_key", "password", "secret", "token"}
+# Specific compound field names: substring match is safe, these are too
+# distinctive to collide with an unrelated field.
+_SECRET_KEY_SUBSTRINGS = {"azure_foundry_api_key", "github_token", "openalex_api_key"}
+# Generic single words: substring matching here previously redacted innocuous
+# fields like bedrock_input_tokens/bedrock_output_tokens (an LLM usage count,
+# not a credential) purely because "tokens" contains "token". Require a whole
+# word match instead.
+_SECRET_WORDS = {"password", "secret", "token"}
 _PROTECTED_KEYS = {"test_labels", "validation_labels", "raw_rows", "checkpoint_bytes"}
 
 
 def redact(value: Any, key: str = "") -> Any:
     lowered = key.casefold()
-    if lowered in _PROTECTED_KEYS or any(secret in lowered for secret in _SECRET_KEYS):
+    words = re.findall(r"[a-z0-9]+", lowered)
+    is_secret = (
+        lowered in _PROTECTED_KEYS
+        or any(secret in lowered for secret in _SECRET_KEY_SUBSTRINGS)
+        or any(word in _SECRET_WORDS for word in words)
+    )
+    if is_secret:
         return REDACTED
     if isinstance(value, dict):
         return {item_key: redact(item_value, item_key) for item_key, item_value in value.items()}

@@ -42,3 +42,15 @@ def test_snapshot_replay_controls_and_artifact_redaction(tmp_path: Path) -> None
     assert accepted.status_code == 200
     stale = client.post(f"/api/v1/sessions/{session}/resume", json={"expected_sequence": sequence})
     assert stale.status_code == 409
+
+
+def test_redact_does_not_false_positive_on_token_count_fields() -> None:
+    from rigor_rs.api.server import redact
+
+    resources = {"bedrock_input_tokens": 6859, "bedrock_output_tokens": 9603, "wall_seconds": 74.4}
+    result = redact(resources)
+
+    assert result["bedrock_input_tokens"] == 6859
+    assert result["bedrock_output_tokens"] == 9603
+    assert redact("must-not-leak", key="AWS_BEARER_TOKEN_BEDROCK") == REDACTED
+    assert redact("secret-value", key="github_token") == REDACTED
