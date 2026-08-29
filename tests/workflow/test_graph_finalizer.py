@@ -191,6 +191,81 @@ def test_recover_node_has_outgoing_edges_back_into_the_loop() -> None:
     assert ("recover", "code") in edges
 
 
+def test_activation_selects_the_loss_branch_the_patch_introduced(tmp_path: Path) -> None:
+    # Observed live on every cycle: the agent implemented a real BPR loss behind
+    # a brand-new `loss_name == "bpr_longview"` branch while leaving
+    # configs/experiments/bce_fm.yaml at loss: bce, so the new code was
+    # unreachable. Two rounds of explicit prompting plus feeding the exact
+    # diagnosis back did not stop it, so the switch is thrown deterministically.
+    workspace = tmp_path / "ws"
+    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "configs/experiments").mkdir(parents=True)
+    experiment = workspace / "src/rigor_rs/training/experiment.py"
+    config = workspace / "configs/experiments/bce_fm.yaml"
+
+    head_source = 'if loss_name == "bpr":\n    pass\n'
+    experiment.write_text('if loss_name == "bpr_longview":\n    pass\n', encoding="utf-8")
+    config.write_text("# keep this comment\ntraining:\n  loss: bce\n  epochs: 20\n", encoding="utf-8")
+
+    services = SimpleNamespace(workspace=SimpleNamespace(
+        file_at_head=lambda _ws, _rel: head_source,
+        revert=lambda _ws: pytest.fail("an unambiguous activation must not revert"),
+    ))
+    workflow = AutonomousResearchWorkflow(services)
+
+    assert workflow._activate_patch_capability(workspace) == "bpr_longview"
+    updated = config.read_text(encoding="utf-8")
+    assert "loss: bpr_longview" in updated
+    # Comments and sibling keys must survive the in-place edit.
+    assert "# keep this comment" in updated
+    assert "epochs: 20" in updated
+
+    # Already-selected: nothing further to do.
+    assert workflow._activate_patch_capability(workspace) is None
+
+
+def test_activation_ignores_patches_that_add_no_loss_branch(tmp_path: Path) -> None:
+    # A pure architecture change must not be touched just because HEAD already
+    # carries its own already-unselected branch.
+    workspace = tmp_path / "ws2"
+    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "configs/experiments").mkdir(parents=True)
+    source = 'if loss_name == "bpr":\n    pass\n'
+    (workspace / "src/rigor_rs/training/experiment.py").write_text(source, encoding="utf-8")
+    config = workspace / "configs/experiments/bce_fm.yaml"
+    config.write_text("training:\n  loss: bce\n", encoding="utf-8")
+
+    services = SimpleNamespace(workspace=SimpleNamespace(
+        file_at_head=lambda _ws, _rel: source,
+        revert=lambda _ws: pytest.fail("must not revert an unrelated patch"),
+    ))
+    workflow = AutonomousResearchWorkflow(services)
+
+    assert workflow._activate_patch_capability(workspace) is None
+    assert "loss: bce" in config.read_text(encoding="utf-8")
+
+
+def test_activation_raises_when_multiple_new_branches_are_ambiguous(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws3"
+    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "configs/experiments").mkdir(parents=True)
+    (workspace / "src/rigor_rs/training/experiment.py").write_text(
+        'if loss_name == "a":\n    pass\nif loss_name == "b":\n    pass\n', encoding="utf-8"
+    )
+    (workspace / "configs/experiments/bce_fm.yaml").write_text("training:\n  loss: bce\n", encoding="utf-8")
+
+    reverted = {"value": False}
+    services = SimpleNamespace(workspace=SimpleNamespace(
+        file_at_head=lambda _ws, _rel: "",
+        revert=lambda _ws: reverted.__setitem__("value", True),
+    ))
+    workflow = AutonomousResearchWorkflow(services)
+
+    with pytest.raises(ValueError, match="ambiguous activation"):
+        workflow._activate_patch_capability(workspace)
+    assert reverted["value"], "must revert so the repaired patch still applies"
+
+
 @pytest.mark.asyncio
 async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_research(tmp_path: Path, monkeypatch) -> None:
     # The inert-patch detector fired correctly three times in a row live, but

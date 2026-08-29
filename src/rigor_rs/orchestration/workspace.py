@@ -93,6 +93,13 @@ class WorkspaceManager:
         digest = hashlib.sha256(patch.read_bytes()).hexdigest()
         return patch, digest, paths
 
+    def revert(self, workspace: Path) -> None:
+        self._git("checkout", "--", ".", cwd=workspace, check=False)
+
+    def file_at_head(self, workspace: Path, relative: str) -> str:
+        result = self._git("show", f"HEAD:{relative}", cwd=workspace, check=False)
+        return result.stdout if result.returncode == 0 else ""
+
     def commit(self, workspace: Path, experiment_id: str) -> str:
         self._git("add", "-A", cwd=workspace)
         self._git("-c", "user.name=RIGOR-RS", "-c", "user.email=local@rigor-rs.invalid", "commit", "-m", f"experiment {experiment_id}", cwd=workspace)

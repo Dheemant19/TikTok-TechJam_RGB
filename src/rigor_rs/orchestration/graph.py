@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
 import numpy as np
+import yaml
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
@@ -263,8 +265,10 @@ class AutonomousResearchWorkflow:
         try:
             result = await self.s.agents.propose_patch(contract, agent_context)
             proposal: PatchProposal = result.value
+            activated: str | None = None
             try:
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
+                activated = self._activate_patch_capability(workspace)
             except Exception as first:
                 repair = await self.s.agents.propose_patch(
                     contract,
@@ -282,6 +286,14 @@ class AutonomousResearchWorkflow:
                 result.usage.input_tokens += repair.usage.input_tokens
                 result.usage.output_tokens += repair.usage.output_tokens
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
+                activated = self._activate_patch_capability(workspace)
+            if activated:
+                touched = sorted({*touched, "configs/experiments/bce_fm.yaml"})
+                self._event(
+                    state, "coder", "patch", "activation", ComponentStatus.SUCCEEDED,
+                    f"Selected the loss branch this patch introduced: training.loss={activated}",
+                    {"activated_loss": activated},
+                )
             commit = self.s.workspace.commit(workspace, contract.experiment_id)
         except Exception as error:
             self._event(state, "coder", "patch", "failed", ComponentStatus.FAILED, f"Code Agent call failed: {error}", {"error": str(error)})
@@ -293,6 +305,60 @@ class AutonomousResearchWorkflow:
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
         }
+
+    _LOSS_BRANCH_PATTERN = re.compile(r'loss_name\s*==\s*["\']([^"\']+)["\']')
+
+    def _activate_patch_capability(self, workspace: Path) -> str | None:
+        """Deterministically select the loss branch a patch just introduced.
+
+        train() picks its loss branch by comparing `loss_name` (read from
+        configs/experiments/bce_fm.yaml) against string literals, so a patch
+        adding `loss_name == "X"` without setting training.loss to X is dead
+        code. This happened on every cycle live: the agent implemented a real
+        BPR loss behind a brand-new "bpr_longview" branch and left the config at
+        "bce". Two rounds of increasingly explicit prompt instructions -- plus
+        feeding the exact diagnosis back -- did not stop it, so the switch is
+        thrown here instead of asked for. Activating the branch the agent just
+        wrote is faithful execution of the contract's declared primary_change,
+        not a new experiment, and it is logged for audit.
+
+        Only branches this patch *introduces* count, so an architecture-only
+        patch (which leaves HEAD's own already-unselected branches alone) is
+        untouched. Exactly one new branch is unambiguous and is activated; more
+        than one is genuinely ambiguous and is raised for agent repair.
+        """
+        relative = "src/rigor_rs/training/experiment.py"
+        experiment = workspace / relative
+        config_path = workspace / "configs/experiments/bce_fm.yaml"
+        if not experiment.is_file() or not config_path.is_file():
+            return None
+        patched = set(self._LOSS_BRANCH_PATTERN.findall(experiment.read_text(encoding="utf-8")))
+        original = set(self._LOSS_BRANCH_PATTERN.findall(self.s.workspace.file_at_head(workspace, relative)))
+        introduced = patched - original
+        if not introduced:
+            return None
+        config_text = config_path.read_text(encoding="utf-8")
+        training = (yaml.safe_load(config_text) or {}).get("training", {}) or {}
+        if str(training.get("loss", "")) in patched:
+            return None
+        if len(introduced) > 1:
+            self.s.workspace.revert(workspace)
+            raise ValueError(
+                f"ambiguous activation: this patch adds {sorted(introduced)} loss branches to train() but "
+                f"configs/experiments/bce_fm.yaml selects none of them. Set training.loss to exactly the "
+                f"branch this experiment should run, in this same patch."
+            )
+        branch = introduced.pop()
+        # Replace the value in place rather than round-tripping the YAML, so the
+        # file's comments and layout survive.
+        updated, count = re.subn(r"(?m)^(\s*loss:\s*).*$", lambda m: f"{m.group(1)}{branch}", config_text, count=1)
+        if count == 0:
+            self.s.workspace.revert(workspace)
+            raise ValueError(
+                f"cannot activate {branch!r}: configs/experiments/bce_fm.yaml has no training.loss line to set."
+            )
+        config_path.write_text(updated, encoding="utf-8")
+        return branch
 
     async def execute(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
