@@ -695,13 +695,59 @@ async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, m
 
 
 @pytest.mark.asyncio
+async def test_baseline_runs_label_shuffle_control_and_halts_when_suspicious(tmp_path: Path, monkeypatch) -> None:
+    # Plan_Workflow §5.3 requires the label-shuffle negative control inside the
+    # run. It previously only existed in the `reproduce-baseline` CLI, so the
+    # "Check Data Safety" component never executed during `run`.
+    from rigor_rs.contract.models import MetricReceipt
+
+    receipt = MetricReceipt(
+        receipt_id="m", run_id="harness", prediction_artifact_id="memory", evaluator_hash="h",
+        config_hash="c", gauc=0.5, ndcg_at_5=0.45, primary=0.475, users=2, rows=4,
+        comparable=False, scope="validation", receipt_hash="rh",
+    )
+    events: list[tuple[str, str]] = []
+    services = SimpleNamespace(
+        baseline=SimpleNamespace(
+            reproduce=lambda _dir: {"status": "succeeded", "seeds": [{"metrics": {"run_id": "B0-seed-0", "primary": 0.6}}]},
+            harness_checks=lambda _dir: {"random": receipt},
+            label_shuffle_control=lambda _dir: {"passed": False, "bound": 0.4953, "receipt": receipt.model_dump(mode="json")},
+        ),
+        frontier=SimpleNamespace(),
+        ledger=SimpleNamespace(store_metric_receipt=lambda *_a: None, store_frontier=lambda *_a: None),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(
+        workflow, "_event",
+        lambda _state, component, _stage, event_type, *_args, **_kwargs: events.append((component, event_type)),
+    )
+
+    result = await workflow.baseline({"session_id": "s", "transform_dir": str(tmp_path)})
+
+    assert ("phase_guard", "integrity_halt") in events
+    assert result["stop"] is True
+    assert result["stop_reason"] == "baseline_gate"
+    assert "sanity" in result["error"]
+
+
+
+@pytest.mark.asyncio
 async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, monkeypatch) -> None:
     def reproduce(_transform_dir):
         time.sleep(0.2)
         return {"status": "succeeded", "seeds": [{"metrics": {"run_id": "B0-seed-0", "primary": 0.6}}]}
 
     services = SimpleNamespace(
-        baseline=SimpleNamespace(reproduce=reproduce),
+        baseline=SimpleNamespace(
+            reproduce=reproduce,
+            harness_checks=lambda _dir: {},
+            label_shuffle_control=lambda _dir: {"passed": True, "bound": 0.4953},
+        ),
         frontier=SimpleNamespace(
             register_baseline=lambda _run_id: SimpleNamespace(
                 model_dump=lambda mode: {"validation_best": "B0"}

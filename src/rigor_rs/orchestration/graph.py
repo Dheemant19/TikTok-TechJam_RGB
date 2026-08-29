@@ -159,6 +159,32 @@ class AutonomousResearchWorkflow:
             self._event(state, "phase_guard", "baseline", "integrity_halt", ComponentStatus.BLOCKED, "Official FM baseline reproduction missed tolerance", result)
             return {"baseline_result": result, "error": "baseline reproduction failed", "stop": True, "stop_reason": "baseline_gate"}
         metrics = result["seeds"][0]["metrics"]
+        # Plan_Workflow §5.3: the label-shuffle negative control and the
+        # organizer random/popularity harness references are part of the run,
+        # not a separate manual CLI step. Without this the "Check Data Safety"
+        # component never executed during `run` at all.
+        transform_dir = Path(state["transform_dir"])
+        harness = await asyncio.to_thread(self.s.baseline.harness_checks, transform_dir)
+        shuffle = await asyncio.to_thread(self.s.baseline.label_shuffle_control, transform_dir)
+        sanity = {
+            "harness": {name: receipt.model_dump(mode="json") for name, receipt in harness.items()},
+            "label_shuffle": shuffle,
+        }
+        if not shuffle["passed"]:
+            self._event(
+                state, "phase_guard", "baseline", "integrity_halt", ComponentStatus.BLOCKED,
+                "Label-shuffle negative control scored above the random bound; halting before novel experiments",
+                sanity,
+            )
+            return {
+                "baseline_result": result, "error": "pipeline sanity check failed",
+                "stop": True, "stop_reason": "baseline_gate",
+            }
+        self._event(
+            state, "phase_guard", "baseline", "sanity_checks", ComponentStatus.SUCCEEDED,
+            "Pipeline sanity checks passed: shuffled training labels score no better than random",
+            sanity,
+        )
         frontier = self.s.frontier.register_baseline("B0")
         for seed_result in result["seeds"]:
             metric = seed_result["metrics"]
