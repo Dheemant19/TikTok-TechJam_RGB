@@ -1,87 +1,79 @@
-import type { CSSProperties } from "react";
-import { DEMO_EXPERIMENTS } from "../data/demoFixture";
+import { useMemo, type CSSProperties } from "react";
+import { selectExperiments } from "../liveworkflow/selectors";
+import { useRunStore } from "../liveworkflow/runStore";
 
 const STATUS_LABEL: Record<string, string> = {
   baseline: "Official baseline",
   running: "Running",
   rejected: "Rejected",
-  accepted: "Accepted — current best",
+  ambiguous: "Ambiguous (within noise)",
+  accepted: "Accepted, current best",
+  failed: "Failed",
 };
 
 const STATUS_COLOR: Record<string, string> = {
   baseline: "var(--text-1)",
-  running: "var(--status-success)",
+  running: "var(--status-running)",
   rejected: "var(--status-attention)",
+  ambiguous: "var(--status-attention)",
   accepted: "var(--status-success)",
+  failed: "var(--status-failed)",
 };
 
+function formatMetric(value: number | null): string {
+  return value === null ? "-" : value.toFixed(4);
+}
+
 export function Experiments() {
-  const baseline = DEMO_EXPERIMENTS.find((e) => e.status === "baseline")!;
+  const events = useRunStore((state) => state.events);
+  const rows = useMemo(() => selectExperiments(events), [events]);
+  const baseline = rows.find((row) => row.status === "baseline");
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
-      <h1 style={{ fontSize: 18, marginBottom: "var(--space-1)" }}>Experiments</h1>
+      <h1 style={{ fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 560, letterSpacing: "-0.012em", marginBottom: "var(--space-2)" }}>Experiments</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
-        Every run compared against the official FM baseline ({baseline.primary.toFixed(4)} primary), not an
-        intermediate best.
+        {baseline
+          ? `Every run compared against the official FM baseline (${formatMetric(baseline.primary)} primary), not an intermediate best.`
+          : "The official FM baseline has not been reproduced yet in this session."}
       </p>
 
-      <div style={cardStyle}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "var(--text-2)" }}>
-              <th scope="col" style={th}>
-                Run
-              </th>
-              <th scope="col" style={th}>
-                GAUC
-              </th>
-              <th scope="col" style={th}>
-                nDCG@5
-              </th>
-              <th scope="col" style={th}>
-                Primary
-              </th>
-              <th scope="col" style={th}>
-                Δ vs. baseline
-              </th>
-              <th scope="col" style={th}>
-                Status
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {DEMO_EXPERIMENTS.map((e) => {
-              const delta = e.primary !== null ? e.primary - baseline.primary : null;
-              return (
-                <tr key={e.id}>
-                  <td style={td}>{e.label}</td>
-                  <td className="mono tabular" style={td}>
-                    {e.gauc?.toFixed(4) ?? "—"}
-                  </td>
-                  <td className="mono tabular" style={td}>
-                    {e.ndcg5?.toFixed(4) ?? "—"}
-                  </td>
-                  <td className="mono tabular" style={td}>
-                    {e.primary?.toFixed(4) ?? "—"}
-                  </td>
-                  <td
-                    className="mono tabular"
-                    style={{ ...td, color: delta === null ? "var(--text-2)" : delta > 0 ? "var(--status-success)" : "var(--text-1)" }}
-                  >
-                    {delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta.toFixed(4)}`}
-                  </td>
-                  <td style={{ ...td, color: STATUS_COLOR[e.status] }}>{STATUS_LABEL[e.status]}</td>
+      {rows.length === 0 ? (
+        <div style={{ ...cardStyle, marginTop: "var(--space-6)", textAlign: "center", color: "var(--text-2)", fontSize: 12.5, padding: "var(--space-5)" }}>
+          No experiments recorded yet. Start a run from Live Workflow to populate this page.
+        </div>
+      ) : (
+        <div style={cardStyle}>
+          <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                <th style={th}>Experiment</th>
+                <th style={th}>GAUC</th>
+                <th style={th}>nDCG@5</th>
+                <th style={th}>Primary</th>
+                <th style={th}>Evidence Source</th>
+                <th style={th}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td style={td} className="mono">{row.label}</td>
+                  <td style={td} className="mono tabular">{formatMetric(row.gauc)}</td>
+                  <td style={td} className="mono tabular">{formatMetric(row.ndcg5)}</td>
+                  <td style={td} className="mono tabular">{formatMetric(row.primary)}</td>
+                  <td style={td}>{row.evidenceSource ?? "-"}</td>
+                  <td style={{ ...td, color: STATUS_COLOR[row.status] }}>{STATUS_LABEL[row.status]}</td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <p style={{ fontSize: 11.5, color: "var(--text-2)", marginTop: "var(--space-4)" }}>
-        Convergence rule: stop when validation fails to improve by more than ε = 0.002 for N = 3 consecutive
-        iterations. Small movements within seed noise (σ = 0.0008) are treated as unconfirmed.
+        Convergence rule: stop when validation fails to improve by more than epsilon = 0.002 for N = 3 consecutive
+        iterations. Small movements within seed noise (sigma = 0.0008) are treated as unconfirmed.
       </p>
     </div>
   );
@@ -95,5 +87,5 @@ const cardStyle: CSSProperties = {
   boxShadow: "var(--shadow-card)",
   padding: "var(--space-2) var(--space-5)",
 };
-const th: CSSProperties = { padding: "var(--space-3) var(--space-4) var(--space-3) 0", borderBottom: "1px solid var(--border)" };
+const th: CSSProperties = { textAlign: "left", padding: "var(--space-3) var(--space-4) var(--space-3) 0", borderBottom: "1px solid var(--border)" };
 const td: CSSProperties = { padding: "var(--space-3) var(--space-4) var(--space-3) 0", borderBottom: "1px solid var(--surface-2)" };

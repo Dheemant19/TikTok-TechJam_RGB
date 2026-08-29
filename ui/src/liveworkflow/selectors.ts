@@ -12,6 +12,25 @@ function stringField(record: JsonRecord | undefined, key: string): string | null
   return typeof value === "string" ? value : null;
 }
 
+const TRUST_TIER_LABEL: Record<string, string> = { curated: "Curated bank", discovered: "OpenAlex" };
+
+/** Papers ingested via search_evidence() carry a trust_tier of either
+ * "curated" (the seed bank) or "discovered" (currently only ever populated
+ * by the OpenAlex provider; see RetrievalService.search_evidence). GitHub
+ * is not itself a retrieval source for a citation -- it is per-paper code
+ * metadata attached during ingestion -- so it is reported as a separate
+ * annotation, not a trust_tier value. */
+function paperProvenance(paper: JsonRecord | undefined): { tierLabel: string; hasGithubCode: boolean; githubUrl: string | null } {
+  const tier = stringField(paper, "trust_tier");
+  const code = asArray(field(paper, "code")) ?? [];
+  const firstRepository = code.length > 0 ? asRecord(code[0]) : undefined;
+  return {
+    tierLabel: tier ? TRUST_TIER_LABEL[tier] ?? tier : "Unknown",
+    hasGithubCode: code.length > 0,
+    githubUrl: stringField(firstRepository, "repository_url"),
+  };
+}
+
 export interface ExperimentRow {
   id: string;
   label: string;
@@ -19,6 +38,25 @@ export interface ExperimentRow {
   ndcg5: number | null;
   primary: number | null;
   status: "baseline" | "accepted" | "rejected" | "ambiguous" | "failed" | "running";
+  evidenceSource: string | null;
+}
+
+/** Summarizes where a research() cycle's cited evidence came from -- the set
+ * of trust tiers among its supporting/contradicting papers (Curated bank vs
+ * OpenAlex), plus whether any of them carry an attached GitHub implementation. */
+function evidenceSourceSummary(payload: JsonRecord | undefined): string {
+  const tiers = new Set<string>();
+  let hasGithubCode = false;
+  for (const kind of ["supporting", "contradicting"] as const) {
+    for (const raw of asArray(field(payload, kind)) ?? []) {
+      const { tierLabel, hasGithubCode: itemHasCode } = paperProvenance(asRecord(field(asRecord(raw), "paper")));
+      tiers.add(tierLabel);
+      hasGithubCode = hasGithubCode || itemHasCode;
+    }
+  }
+  if (tiers.size === 0) return "No evidence cited";
+  const label = [...tiers].sort().join(" + ");
+  return hasGithubCode ? `${label} (+ GitHub code)` : label;
 }
 
 const DECISION_STATUS: Record<string, ExperimentRow["status"]> = {
@@ -53,6 +91,7 @@ export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
       ndcg5: average("ndcg_at_5"),
       primary: average("primary"),
       status: "baseline",
+      evidenceSource: null,
     });
   }
 
@@ -61,6 +100,11 @@ export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
     if (event.component_id !== "evaluator" || event.event_type !== "metric") continue;
     const metrics = asRecord(field(asRecord(event.payload), "metrics"));
     metricByRun.set(event.run_id, { gauc: numberField(metrics, "GAUC"), ndcg5: numberField(metrics, "nDCG@5"), primary: numberField(metrics, "primary") });
+  }
+  const evidenceSourceByRun = new Map<string, string>();
+  for (const event of events) {
+    if (event.component_id !== "knowledge_mcp" || event.event_type !== "completed") continue;
+    evidenceSourceByRun.set(event.run_id, evidenceSourceSummary(asRecord(event.payload)));
   }
 
   for (const event of events) {
@@ -76,6 +120,7 @@ export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
       ndcg5: metrics?.ndcg5 ?? null,
       primary: metrics?.primary ?? null,
       status: DECISION_STATUS[decision] ?? "running",
+      evidenceSource: evidenceSourceByRun.get(event.run_id) ?? null,
     });
   }
   return rows;
@@ -86,6 +131,9 @@ export interface ResearchEvidenceCard {
   title: string;
   relevanceNotes: string;
   sourceMode: string;
+  trustTierLabel: string;
+  hasGithubCode: boolean;
+  githubUrl: string | null;
   kind: "supporting" | "contradicting";
 }
 
@@ -105,11 +153,15 @@ export function selectResearchEvidence(events: RunEventDTO[]): { cards: Research
         const paper = asRecord(field(item, "paper"));
         const paperId = stringField(paper, "paper_id");
         if (!paperId) continue;
+        const { tierLabel, hasGithubCode, githubUrl } = paperProvenance(paper);
         cards.push({
           id: paperId,
           title: stringField(paper, "title") ?? paperId,
           relevanceNotes: stringField(paper, "relevance_notes") ?? "",
           sourceMode,
+          trustTierLabel: tierLabel,
+          hasGithubCode,
+          githubUrl,
           kind,
         });
       }
