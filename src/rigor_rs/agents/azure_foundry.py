@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from difflib import unified_diff
 import os
@@ -149,6 +150,21 @@ class AzureAgentFactory:
             raise RuntimeError("Azure Foundry response exceeded the remaining LLM output token budget")
         return AgentUsage(input_tokens=int(input_tokens), output_tokens=int(output_tokens), model_id=model_id)
 
+    @staticmethod
+    async def _invoke(runnable: Any, prompt: list[Any], config: AgentConfig) -> Any:
+        # The SDK's own `timeout`/`max_retries` govern well-formed HTTP failures, but a
+        # hung TCP read or a streaming edge case can bypass that entirely and block the
+        # single-threaded event loop forever, freezing the whole workflow with no error
+        # event. Enforce an explicit outer bound covering every internal SDK retry so a
+        # stuck call always raises and reaches the existing recovery path.
+        bound = config.timeout_seconds * (config.transient_retry_limit + 1) + 30
+        try:
+            return await asyncio.wait_for(runnable.ainvoke(prompt), timeout=bound)
+        except asyncio.TimeoutError as error:
+            raise TimeoutError(
+                f"Azure Foundry call to {config.model_deployment_env} did not respond within {bound}s"
+            ) from error
+
     async def research(self, context: dict[str, Any]) -> StructuredAgentResult:
         config = self.config.research_agent
         remaining_output_tokens = int(context["remaining_budget"]["bedrock_output_tokens"])
@@ -179,7 +195,7 @@ class AzureAgentFactory:
         runnable = self._chat(config, remaining_output_tokens).with_structured_output(
             ExperimentContract, include_raw=True, strict=True
         )
-        response = await runnable.ainvoke(prompt)
+        response = await self._invoke(runnable, prompt, config)
         if response.get("parsing_error") or response.get("parsed") is None:
             raise RuntimeError(f"Research Agent structured output failed: {response.get('parsing_error')}")
         return StructuredAgentResult(
@@ -269,7 +285,7 @@ class AzureAgentFactory:
         runnable = self._chat(config, remaining_output_tokens).with_structured_output(
             FileReplacementProposal, include_raw=True, strict=True
         )
-        response = await runnable.ainvoke(prompt)
+        response = await self._invoke(runnable, prompt, config)
         if response.get("parsing_error") or response.get("parsed") is None:
             raise RuntimeError(f"Code Agent structured output failed: {response.get('parsing_error')}")
         draft: FileReplacementProposal = response["parsed"]
@@ -304,7 +320,7 @@ class AzureAgentFactory:
         runnable = self._chat(config, remaining_output_tokens).with_structured_output(
             RecoveryDiagnosis, include_raw=True, strict=True
         )
-        response = await runnable.ainvoke(prompt)
+        response = await self._invoke(runnable, prompt, config)
         if response.get("parsing_error") or response.get("parsed") is None:
             raise RuntimeError(f"Recovery structured output failed: {response.get('parsing_error')}")
         return StructuredAgentResult(

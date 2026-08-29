@@ -54,12 +54,13 @@ class RetrievalService:
     def _meta(
         self, request_id: str, cache_status: CacheStatus, source_mode: SourceMode,
         papers: list[PaperRecord], warnings: list[str] | None = None, error: ToolError | None = None,
+        session_id: str | None = None, experiment_id: str | None = None,
     ) -> ResponseMeta:
         return ResponseMeta(
             request_id=request_id, cache_status=cache_status, source_mode=source_mode,
             selected_record_ids=[paper.paper_id for paper in papers],
             provenance=[self.provenance(paper) for paper in papers],
-            cap_usage=self.budgets.usage(self.session_id, self.experiment_id),
+            cap_usage=self.budgets.usage(session_id or self.session_id, experiment_id or self.experiment_id),
             warnings=warnings or [], error=error,
         )
 
@@ -149,12 +150,13 @@ class RetrievalService:
 
     async def search_evidence(
         self, query: str, semantic: bool = True, filters: EvidenceFilters | None = None,
-        max_results: int = 8,
+        max_results: int = 8, session_id: str | None = None, experiment_id: str | None = None,
     ) -> EvidenceSearchResult:
+        sid, eid = session_id or self.session_id, experiment_id or self.experiment_id
         if not query.strip() or max_results < 1 or max_results > self.config.retrieval.maximum_search_results:
             request_id = self.request_id()
             error = ToolError(code="invalid_request", message="query and max_results are outside configured limits")
-            return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.BYPASS, SourceMode.LOCAL, [], error=error), results=[])
+            return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.BYPASS, SourceMode.LOCAL, [], error=error, session_id=sid, experiment_id=eid), results=[])
         request_id = self.request_id()
         key, canonical_request = canonical_cache_key("hybrid", query, filters, date.today(), max_results)
         cached = self.cache.get(key)
@@ -167,14 +169,14 @@ class RetrievalService:
             characters = len(json.dumps(cached, ensure_ascii=False))
             try:
                 self.budgets.consume(
-                    session_id=self.session_id, experiment_id=self.experiment_id, provider="cache", request_id=request_id,
+                    session_id=sid, experiment_id=eid, provider="cache", request_id=request_id,
                     documents=len(results), characters=characters,
                 )
             except BudgetExceeded as error:
                 tool_error = ToolError(code="budget_exhausted", message=str(error))
-                return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.HIT, SourceMode.CACHE, [], error=tool_error), results=[])
+                return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.HIT, SourceMode.CACHE, [], error=tool_error, session_id=sid, experiment_id=eid), results=[])
             papers = [item.paper for item in results]
-            return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.HIT, SourceMode.CACHE, papers), results=results)
+            return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.HIT, SourceMode.CACHE, papers, session_id=sid, experiment_id=eid), results=results)
         matches = self._local_matches(query, semantic, filters, max_results)
         source_mode = SourceMode.LOCAL
         warnings: list[str] = []
@@ -188,10 +190,10 @@ class RetrievalService:
         # mutually-exclusive result sets.
         if self.openalex:
             try:
-                self.budgets.ensure_outbound_available(self.session_id, self.experiment_id)
+                self.budgets.ensure_outbound_available(sid, eid)
                 provider_result = await self.openalex.search(query, filters, max_results)
                 self.budgets.consume(
-                    session_id=self.session_id, experiment_id=self.experiment_id, provider="openalex", request_id=request_id,
+                    session_id=sid, experiment_id=eid, provider="openalex", request_id=request_id,
                     outbound=provider_result.attempts, documents=len(provider_result.records),
                     retries=max(0, provider_result.attempts - 1), errors=int(provider_result.error is not None),
                 )
@@ -210,10 +212,10 @@ class RetrievalService:
                 tool_error = ToolError(code="budget_exhausted", message=str(error))
                 warnings.append(str(error))
                 source_mode = SourceMode.LOCAL_FALLBACK
-        # Never cache a failed/budget-exhausted fetch: doing so would permanently serve
-        # an empty result for up to cache_ttl_seconds even after budget resets or the
-        # provider recovers.
-        if tool_error is None:
+        # Never cache a failed/budget-exhausted fetch, or a genuine zero-match result:
+        # doing so would permanently serve an empty result for up to cache_ttl_seconds
+        # even after the corpus grows via ingestion or the provider recovers.
+        if tool_error is None and matches:
             cache_payload = {"results": [
                 {"paper_id": item.paper.paper_id, "score": item.score, "match_reasons": item.match_reasons}
                 for item in matches
@@ -225,14 +227,14 @@ class RetrievalService:
         ], ensure_ascii=False))
         try:
             self.budgets.consume(
-                session_id=self.session_id, experiment_id=self.experiment_id, provider="local", request_id=request_id,
+                session_id=sid, experiment_id=eid, provider="local", request_id=request_id,
                 documents=len(matches), characters=characters,
             )
         except BudgetExceeded as error:
             tool_error = ToolError(code="budget_exhausted", message=str(error))
-            return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.MISS, source_mode, [], warnings, tool_error), results=[])
+            return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.MISS, source_mode, [], warnings, tool_error, session_id=sid, experiment_id=eid), results=[])
         papers = [item.paper for item in matches]
-        return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.MISS, source_mode, papers, warnings, tool_error), results=matches)
+        return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.MISS, source_mode, papers, warnings, tool_error, session_id=sid, experiment_id=eid), results=matches)
 
     async def get_paper_result(self, paper_id: str) -> tuple[ResponseMeta, PaperRecord | None]:
         request_id = self.request_id()
@@ -361,8 +363,13 @@ class RetrievalService:
             cap_usage=self.budgets.usage(self.session_id, self.experiment_id), warnings=warnings, error=tool_error,
         ), work_id=work_id, direction=direction, citations=limited_citations)
 
-    async def research_card(self, hypothesis: str, max_evidence: int = 6) -> ResearchCard:
-        search = await self.search_evidence(hypothesis, True, None, max_evidence)
+    async def research_card(
+        self, hypothesis: str, max_evidence: int = 6,
+        session_id: str | None = None, experiment_id: str | None = None,
+    ) -> ResearchCard:
+        search = await self.search_evidence(
+            hypothesis, True, None, max_evidence, session_id=session_id, experiment_id=experiment_id,
+        )
         contradiction_terms = ("regression", "conflict", "bias", "limitation", "negative", "fails")
         contradicting = [item for item in search.results if any(term in item.paper.relevance_notes.casefold() for term in contradiction_terms)]
         supporting = [item for item in search.results if item not in contradicting]

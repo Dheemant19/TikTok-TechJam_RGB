@@ -154,7 +154,10 @@ class AutonomousResearchWorkflow:
         self._event(state, "knowledge_mcp", "research", "started", ComponentStatus.RUNNING, "Finding research evidence")
         profile_path = Path(state["profile_receipt"]["profile"]["path"])
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
-        card = await self.s.knowledge.retrieval.research_card("improve within-user GAUC and nDCG@5 for long_view", 6)
+        card = await self.s.knowledge.retrieval.research_card(
+            "improve within-user GAUC and nDCG@5 for long_view", 6,
+            session_id=state["session_id"], experiment_id=run_id,
+        )
         evidence = [{
             "paper_id": item.paper.paper_id, "title": item.paper.title,
             "relevance_notes": item.paper.relevance_notes, "content_hash": item.paper.content_hash,

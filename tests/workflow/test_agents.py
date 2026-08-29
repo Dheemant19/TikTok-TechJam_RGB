@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -64,3 +66,45 @@ def test_file_replacements_generate_valid_unified_diff() -> None:
     assert "@@ -1 +1 @@" in proposal.unified_diff
     assert "-LOSS = 'bce'" in proposal.unified_diff
     assert "+LOSS = 'bpr'" in proposal.unified_diff
+
+
+@pytest.mark.asyncio
+async def test_invoke_raises_on_hung_call_instead_of_blocking_forever(monkeypatch) -> None:
+    config = azure_foundry.AgentConfig(
+        model_deployment_env="AZURE_RESEARCH_MODEL_DEPLOYMENT",
+        temperature=0,
+        timeout_seconds=180,
+        transient_retry_limit=2,
+    )
+
+    class HungRunnable:
+        async def ainvoke(self, _prompt):
+            await asyncio.sleep(3600)
+
+    async def fake_wait_for(coro, timeout):
+        # Real hang scenario: assert the outer bound covers every internal SDK
+        # retry (timeout_seconds * (transient_retry_limit + 1) + margin), then
+        # simulate the timeout firing without actually sleeping in the test.
+        assert timeout == 180 * 3 + 30
+        coro.close()
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(azure_foundry.asyncio, "wait_for", fake_wait_for)
+
+    with pytest.raises(TimeoutError, match="did not respond within"):
+        await azure_foundry.AzureAgentFactory._invoke(HungRunnable(), [], config)
+
+
+def test_hung_call_timeout_classifies_as_transient_external_for_bounded_retry() -> None:
+    from rigor_rs.recovery.controller import RecoveryController
+
+    receipt = RecoveryController().recover(
+        "run",
+        "Azure Foundry call to AZURE_RESEARCH_MODEL_DEPLOYMENT did not respond within 30s",
+        1,
+        2,
+    )
+
+    assert receipt.category == "transient_external"
+    assert receipt.action == "bounded_retry"
+    assert receipt.result == "retry permitted"

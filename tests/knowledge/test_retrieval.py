@@ -40,6 +40,44 @@ async def test_exact_semantic_and_filtered_search_are_stable(retrieval) -> None:
 
 
 @pytest.mark.asyncio
+async def test_zero_match_query_is_never_cached(retrieval) -> None:
+    # A query that genuinely finds nothing right now must stay re-queryable
+    # instead of permanently freezing an empty result for cache_ttl_seconds
+    # while the corpus keeps growing via ingestion elsewhere.
+    first = await retrieval.search_evidence(
+        "zzz_no_such_term_xyz_unmatched", semantic=False, max_results=5,
+    )
+    second = await retrieval.search_evidence(
+        "zzz_no_such_term_xyz_unmatched", semantic=False, max_results=5,
+    )
+
+    assert first.results == []
+    assert first.meta.cache_status == CacheStatus.MISS
+    assert second.results == []
+    assert second.meta.cache_status == CacheStatus.MISS
+
+
+
+@pytest.mark.asyncio
+async def test_search_evidence_isolates_budget_by_explicit_session_and_experiment(retrieval) -> None:
+    # KnowledgeRuntime previously hardcoded session_id/experiment_id to the
+    # literal "standalone" for every real workflow run, so every session's
+    # research calls shared one permanent budget bucket that never reset and
+    # eventually silently zeroed out evidence for every future experiment.
+    before = retrieval.budgets.usage("standalone", "standalone")
+    await retrieval.search_evidence(
+        "pairwise ranking", semantic=False, max_results=3,
+        session_id="session-A", experiment_id="experiment-A",
+    )
+
+    after_standalone = retrieval.budgets.usage("standalone", "standalone")
+    after_scoped = retrieval.budgets.usage("session-A", "experiment-A")
+    assert after_standalone.session_provider_requests == before.session_provider_requests
+    assert after_standalone.session_documents == before.session_documents
+    assert after_scoped.session_documents > 0
+
+
+@pytest.mark.asyncio
 async def test_context_rejects_unknown_citations(retrieval) -> None:
     result = await retrieval.search_evidence("pairwise ranking", max_results=4)
     context = compile_evidence_context(result, 4, 20_000)
