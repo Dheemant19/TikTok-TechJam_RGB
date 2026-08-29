@@ -157,7 +157,13 @@ class ExperimentContract(StrictModel):
     experiment_id: str
     parent_run_id: str
     hypothesis: str = Field(min_length=20)
-    observed_evidence_ids: list[str]
+    observed_evidence_ids: list[str] = Field(
+        description=(
+            "Each entry must be copied verbatim from one supplied evidence item's "
+            "paper_id field (e.g. 'arxiv:1205.2618'), never a content_hash, title, "
+            "or any other value."
+        ),
+    )
     primary_change: str
     allowed_files: list[str]
     prohibited_files: list[str]

@@ -158,10 +158,21 @@ class AutonomousResearchWorkflow:
             "improve within-user GAUC and nDCG@5 for long_view", 6,
             session_id=state["session_id"], experiment_id=run_id,
         )
+        # content_hash is deliberately excluded here: sending it as a sibling
+        # hash-like field next to paper_id caused the model to periodically
+        # cite content_hash instead of paper_id (reproduced live: ~40% of
+        # calls). alias_to_paper_id still lets a genuine same-item mix-up
+        # (paper_id vs content_hash) self-correct instead of burning a full
+        # recovery retry, without accepting any value not traceable to a
+        # real supplied evidence item.
         evidence = [{
             "paper_id": item.paper.paper_id, "title": item.paper.title,
-            "relevance_notes": item.paper.relevance_notes, "content_hash": item.paper.content_hash,
+            "relevance_notes": item.paper.relevance_notes,
         } for item in [*card.supporting, *card.contradicting]]
+        alias_to_paper_id = {
+            item.paper.content_hash: item.paper.paper_id
+            for item in [*card.supporting, *card.contradicting]
+        }
         self._event(state, "knowledge_mcp", "research", "completed", ComponentStatus.SUCCEEDED, "Research evidence selected", {"evidence_ids": card.source_ids, "source_mode": card.meta.source_mode, "supporting": [item.model_dump(mode="json") for item in card.supporting], "contradicting": [item.model_dump(mode="json") for item in card.contradicting], "missing_evidence": card.missing_evidence})
         context = {
             "challenge": self.s.contract.public_summary(), "profile": profile,
@@ -187,8 +198,15 @@ class AutonomousResearchWorkflow:
         try:
             result = await self.s.agents.research(context)
             contract: ExperimentContract = result.value
-            if any(item not in card.source_ids for item in contract.observed_evidence_ids):
-                raise ValueError("Research Agent cited evidence not supplied by MCP")
+            cited = [alias_to_paper_id.get(item, item) for item in contract.observed_evidence_ids]
+            unresolved = [item for item in cited if item not in card.source_ids]
+            if unresolved:
+                raise ValueError(
+                    f"Research Agent cited evidence not supplied by MCP: {unresolved} "
+                    f"(valid ids: {card.source_ids})"
+                )
+            if cited != contract.observed_evidence_ids:
+                contract = contract.model_copy(update={"observed_evidence_ids": cited})
         except Exception as error:
             self._event(state, "scientist", "research", "failed", ComponentStatus.FAILED, f"Research Agent call failed: {error}", {"error": str(error)})
             return {

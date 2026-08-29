@@ -122,6 +122,140 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
 
 
 @pytest.mark.asyncio
+async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: Path, monkeypatch) -> None:
+    # Reproduced live against Azure: the model periodically cites a paper's
+    # content_hash instead of its paper_id when both are sent as sibling
+    # hash-like fields on the same evidence item (~40% of live calls). Fixed
+    # by (a) no longer sending content_hash to the model at all, and (b)
+    # auto-correcting a content_hash citation back to its real paper_id
+    # instead of burning a full recovery retry on an unambiguous mix-up.
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+
+    paper = SimpleNamespace(paper_id="arxiv:1205.2618", title="BPR", relevance_notes="pairwise ranking", content_hash="deadbeef" * 8)
+    match = SimpleNamespace(paper=paper, model_dump=lambda mode: {"paper_id": paper.paper_id})
+
+    class FakeCard:
+        supporting = [match]
+        contradicting: list = []
+        source_ids = [paper.paper_id]
+        meta = SimpleNamespace(source_mode="cache")
+        missing_evidence: list = []
+
+    class FakeRetrieval:
+        async def research_card(self, *_args, **_kwargs):
+            return FakeCard()
+
+    seen_contexts = []
+
+    class FakeAgents:
+        async def research(self, context):
+            seen_contexts.append(context)
+            from rigor_rs.agents.azure_foundry import AgentUsage
+            from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+            contract = ExperimentContract(
+                experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+                observed_evidence_ids=[paper.content_hash], primary_change="swap to BPR", allowed_files=["a.py"],
+                prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+                falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+                comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+                budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+                fallback_run_id="B0", recovery_attempt_limit=1,
+            )
+            return SimpleNamespace(value=contract, usage=AgentUsage(input_tokens=10, output_tokens=10, model_id="fake"))
+
+    services = SimpleNamespace(
+        knowledge=SimpleNamespace(retrieval=FakeRetrieval()),
+        agents=FakeAgents(),
+        contract=SimpleNamespace(public_summary=lambda: {}),
+        maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
+        ledger=SimpleNamespace(list_contracts=lambda _sid: [], store_contract=lambda *_a, **_k: None),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "session-1",
+        "profile_receipt": {"profile": {"path": str(profile_path)}},
+        "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+        "experiment_count": 0, "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
+    }
+
+    result = await workflow.research(state)
+
+    assert result["error"] == ""
+    assert result["experiment_contract"]["observed_evidence_ids"] == [paper.paper_id]
+    assert "content_hash" not in seen_contexts[-1]["evidence"][0]
+
+
+@pytest.mark.asyncio
+async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, monkeypatch) -> None:
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+
+    paper = SimpleNamespace(paper_id="arxiv:1205.2618", title="BPR", relevance_notes="pairwise ranking", content_hash="deadbeef" * 8)
+    match = SimpleNamespace(paper=paper, model_dump=lambda mode: {"paper_id": paper.paper_id})
+
+    class FakeCard:
+        supporting = [match]
+        contradicting: list = []
+        source_ids = [paper.paper_id]
+        meta = SimpleNamespace(source_mode="cache")
+        missing_evidence: list = []
+
+    class FakeRetrieval:
+        async def research_card(self, *_args, **_kwargs):
+            return FakeCard()
+
+    class FakeAgents:
+        async def research(self, context):
+            from rigor_rs.agents.azure_foundry import AgentUsage
+            from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+            contract = ExperimentContract(
+                experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+                observed_evidence_ids=["fabricated-paper-id"], primary_change="swap to BPR", allowed_files=["a.py"],
+                prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+                falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+                comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+                budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+                fallback_run_id="B0", recovery_attempt_limit=1,
+            )
+            return SimpleNamespace(value=contract, usage=AgentUsage(input_tokens=10, output_tokens=10, model_id="fake"))
+
+    services = SimpleNamespace(
+        knowledge=SimpleNamespace(retrieval=FakeRetrieval()),
+        agents=FakeAgents(),
+        contract=SimpleNamespace(public_summary=lambda: {}),
+        maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
+        ledger=SimpleNamespace(list_contracts=lambda _sid: [], store_contract=lambda *_a, **_k: None),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "session-1",
+        "profile_receipt": {"profile": {"path": str(profile_path)}},
+        "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+        "experiment_count": 0, "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
+    }
+
+    result = await workflow.research(state)
+
+    assert "fabricated-paper-id" in result["error"]
+    assert paper.paper_id in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, monkeypatch) -> None:
     def reproduce(_transform_dir):
         time.sleep(0.2)
