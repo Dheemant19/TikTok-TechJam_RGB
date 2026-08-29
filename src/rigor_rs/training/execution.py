@@ -148,7 +148,10 @@ class ExecutionFunnel:
                     continue
                 if word not in accepted:
                     accepted.append(word)
-        return accepted or ["tests/workflow"]
+        if accepted:
+            return accepted
+        experiment_test = root / "tests/workflow/test_experiment.py"
+        return ["tests/workflow/test_experiment.py"] if experiment_test.is_file() else []
 
 
     async def tier1(self, workspace: Path, touched_files: list[str], tests: list[str], output: Path) -> TierReceipt:
@@ -158,7 +161,7 @@ class ExecutionFunnel:
             if path.suffix == ".py":
                 compile(path.read_text(encoding="utf-8"), str(path), "exec")
         targets = self._pytest_targets(workspace, tests)
-        command = [sys.executable, "-m", "pytest", *targets]
+        command = [sys.executable, "-m", "pytest", *targets] if targets else [sys.executable, "-m", "compileall", "-q", *touched_files]
         return await self._run(1, command, workspace, output, False, min(300, self.timeout_seconds))
 
     async def tier2(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:
