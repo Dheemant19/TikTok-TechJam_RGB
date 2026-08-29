@@ -4,7 +4,7 @@
 // liveworkflow/runStore.ts and liveworkflow/laneData.ts instead of here.
 
 export const DEMO_TIMELINE = [
-  { t: "T+00:55", component: "coder", action: "Applied code diff", outcome: "Ready for smoke test", duration: "—" },
+  { t: "T+00:55", component: "coder", action: "Applied code diff", outcome: "Ready for smoke test", duration: "Not recorded" },
   { t: "T+00:52", component: "pruner", action: "Ran fast safety tests", outcome: "Passed", duration: "3s" },
   { t: "T+00:41", component: "coder", action: "Wrote code change", outcome: "1 file, 61 lines", duration: "11s" },
   { t: "T+00:33", component: "scientist", action: "Selected next experiment", outcome: "BPR pairwise loss", duration: "8s" },
@@ -16,9 +16,9 @@ export const DEMO_TIMELINE = [
 
 export const DEMO_EXPERIMENTS = [
   { id: "official-fm", label: "Official FM Baseline", gauc: 0.661, ndcg5: 0.5282, primary: 0.5946, status: "baseline" as const },
-  { id: "exp-001", label: "exp-001 — +CWM static features", gauc: 0.6598, ndcg5: 0.528, primary: 0.594, status: "rejected" as const },
-  { id: "exp-002", label: "exp-002 — capacity sweep k=16", gauc: 0.6602, ndcg5: 0.5273, primary: 0.5938, status: "rejected" as const },
-  { id: "exp-003", label: "exp-003 — BPR pairwise loss", gauc: null, ndcg5: null, primary: null, status: "running" as const },
+  { id: "exp-001", label: "exp-001: +CWM static features", gauc: 0.6598, ndcg5: 0.528, primary: 0.594, status: "rejected" as const },
+  { id: "exp-002", label: "exp-002: capacity sweep k=16", gauc: 0.6602, ndcg5: 0.5273, primary: 0.5938, status: "rejected" as const },
+  { id: "exp-003", label: "exp-003: BPR pairwise loss", gauc: null, ndcg5: null, primary: null, status: "running" as const },
 ];
 
 export const DEMO_RESOURCES = {

@@ -1,16 +1,28 @@
+import { useMemo } from "react";
 import { GROUP_LABELS, GROUP_ORDER, NODES } from "../data/nodeRegistry";
-import { laneColorFor } from "../liveworkflow/laneData";
+import { computeInitialPositions, laneColorFor } from "../liveworkflow/laneData";
 import { statusMeta } from "../liveworkflow/NodeCard";
 import { useRunStore } from "../liveworkflow/runStore";
 import { useFlipInspector } from "../liveworkflow/useFlipInspector";
-import { InspectorPanel } from "../liveworkflow/InspectorPanel";
+import { StageFocusView } from "../liveworkflow/StageFocusView";
 
 // Accessible fallback for reduced motion and narrow screens: the same data as
-// the 2D canvas, as a keyboard- and screen-reader-navigable list. The
-// inspector still opens (as a bottom sheet), just without a card to morph from.
+// the 2D canvas, as a keyboard- and screen-reader-navigable list. Stage focus
+// opens from a synthetic lower-edge origin and uses the same stacked layout.
 export function StageListFallback({ reducedMotion }: { reducedMotion: boolean }) {
   const nodeStatus = useRunStore((s) => s.nodeStatus);
-  const { selectedId, overlayRect, overlayOpen, openNode, closeInspector } = useFlipInspector(reducedMotion);
+  const nodeElapsed = useRunStore((s) => s.nodeElapsed);
+  const positions = useMemo(() => computeInitialPositions(), []);
+  const {
+    selectedId,
+    previousNodeId,
+    overlayRect,
+    overlayOpen,
+    phase,
+    openNode,
+    navigateNode,
+    closeInspector,
+  } = useFlipInspector(reducedMotion);
 
   return (
     <div style={{ overflowY: "auto", padding: "var(--space-4)", flex: 1 }}>
@@ -37,7 +49,7 @@ export function StageListFallback({ reducedMotion }: { reducedMotion: boolean })
                 <li key={n.id}>
                   <button
                     onClick={() =>
-                      openNode(n.id, { left: 0, top: window.innerHeight, width: window.innerWidth, height: 0 })
+                      openNode(n.id, { left: 0, top: Math.max(0, window.innerHeight - 1), width: window.innerWidth, height: 1 })
                     }
                     aria-pressed={isSelected}
                     style={{
@@ -74,14 +86,19 @@ export function StageListFallback({ reducedMotion }: { reducedMotion: boolean })
         </section>
       ))}
 
-      <InspectorPanel
+      <StageFocusView
         nodeId={selectedId}
-        status={selectedId ? nodeStatus[selectedId] : "waiting"}
-        overlayRect={overlayRect}
+        previousNodeId={previousNodeId}
+        phase={phase}
         overlayOpen={overlayOpen}
+        overlayRect={overlayRect}
+        positions={positions}
+        nodeStatus={nodeStatus}
+        nodeElapsed={nodeElapsed}
         reducedMotion={reducedMotion}
         isNarrow
         onClose={closeInspector}
+        onNavigate={navigateNode}
       />
     </div>
   );

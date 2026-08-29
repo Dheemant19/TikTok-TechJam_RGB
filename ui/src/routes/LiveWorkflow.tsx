@@ -1,5 +1,4 @@
 import { LiveWorkflowCanvas } from "../liveworkflow/LiveWorkflowCanvas";
-import { DemoBanner } from "../components/DemoBanner";
 import { StageListFallback } from "../components/StageListFallback";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -10,12 +9,11 @@ export function LiveWorkflow() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <DemoBanner />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {isNarrow ? (
           <StageListFallback reducedMotion={reducedMotion} />
         ) : (
-          <LiveWorkflowCanvas reducedMotion={reducedMotion} isNarrow={false} />
+          <LiveWorkflowCanvas reducedMotion={reducedMotion} isNarrow={false} idleEdgeSpeed={3} />
         )}
       </div>
     </div>

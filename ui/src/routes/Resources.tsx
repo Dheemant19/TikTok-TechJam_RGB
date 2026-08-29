@@ -1,20 +1,22 @@
-import type { CSSProperties } from "react";
-import { DEMO_RESOURCES } from "../data/demoFixture";
+import { useMemo, type CSSProperties } from "react";
+import { selectResources } from "../liveworkflow/selectors";
+import { useRunStore } from "../liveworkflow/runStore";
 
-function formatDuration(seconds: number) {
+function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   return `${h}h ${m}m`;
 }
 
 export function Resources() {
-  const r = DEMO_RESOURCES;
-  const totalTokens = r.llmInputTokens + r.llmOutputTokens;
-  const inputShare = r.llmInputTokens / totalTokens;
+  const events = useRunStore((state) => state.events);
+  const resources = useMemo(() => selectResources(events), [events]);
+  const totalTokens = resources.bedrockInputTokens + resources.bedrockOutputTokens;
+  const inputShare = totalTokens > 0 ? resources.bedrockInputTokens / totalTokens : 0;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
-      <h1 style={{ fontSize: 18, marginBottom: "var(--space-1)" }}>Resources</h1>
+      <h1 style={{ fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 560, letterSpacing: "-0.012em", marginBottom: "var(--space-2)" }}>Resources</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
         Cumulative usage since the first agent action, tracked alongside the metric score, not as a footnote.
       </p>
@@ -34,61 +36,35 @@ export function Resources() {
       >
         <tbody>
           <tr>
-            <th scope="row" style={rowLabel}>
-              LLM tokens
-            </th>
+            <td style={rowLabel}>LLM tokens</td>
             <td style={rowValueCell}>
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-                <div style={{ flex: 1, background: "var(--ink-2)", borderRadius: "var(--radius-sm)", height: 8, overflow: "hidden", display: "flex" }}>
-                  <div style={{ width: `${inputShare * 100}%`, background: "var(--status-success)" }} />
-                  <div style={{ width: `${(1 - inputShare) * 100}%`, background: "var(--status-attention)" }} />
-                </div>
-                <span className="mono tabular" style={{ fontSize: 13, minWidth: 84, textAlign: "right" }}>
-                  {totalTokens.toLocaleString()}
-                </span>
+              <div className="mono tabular" style={{ marginBottom: "var(--space-2)" }}>
+                {resources.bedrockInputTokens.toLocaleString()} in / {resources.bedrockOutputTokens.toLocaleString()} out ({totalTokens.toLocaleString()} total)
               </div>
-              <p style={{ fontSize: 11, color: "var(--text-2)", margin: "var(--space-1) 0 0" }}>
-                {r.llmInputTokens.toLocaleString()} in · {r.llmOutputTokens.toLocaleString()} out
-              </p>
+              <div style={{ height: 6, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden", maxWidth: 320 }}>
+                <div style={{ height: "100%", width: `${inputShare * 100}%`, background: "var(--status-running-dot)" }} />
+              </div>
             </td>
           </tr>
           <tr>
-            <th scope="row" style={rowLabel}>
-              GPU-hours
-            </th>
-            <td style={rowValueCell}>
-              <span className="mono tabular" style={{ fontSize: 13 }}>
-                {r.gpuHours.toFixed(1)}
-              </span>
-            </td>
+            <td style={rowLabel}>GPU / CPU wall time</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">{formatDuration(resources.wallSeconds)}</td>
           </tr>
           <tr>
-            <th scope="row" style={rowLabel}>
-              Wall-clock time
-            </th>
-            <td style={rowValueCell}>
-              <span className="mono tabular" style={{ fontSize: 13 }}>
-                {formatDuration(r.wallClockSeconds)}
-              </span>
-            </td>
+            <td style={rowLabel}>Peak GPU memory</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">{resources.peakGpuMemoryMb === null ? "Not measured (no GPU detected)" : `${resources.peakGpuMemoryMb.toFixed(0)} MB`}</td>
           </tr>
           <tr>
-            <th scope="row" style={rowLabel}>
-              Manual interventions
-            </th>
-            <td style={rowValueCell}>
-              <span
-                className="mono tabular"
-                style={{ fontSize: 13, color: r.manualInterventions === 0 ? "var(--status-success)" : "var(--status-attention)" }}
-              >
-                {r.manualInterventions}
-              </span>
-              <p style={{ fontSize: 11, color: "var(--text-2)", margin: "var(--space-1) 0 0" }}>
-                {r.manualInterventions === 0
-                  ? "Target met: zero required human intervention so far."
-                  : "Each intervention is counted and explained in the ledger."}
-              </p>
-            </td>
+            <td style={rowLabel}>Peak RSS memory</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">{resources.peakRssMb.toFixed(0)} MB</td>
+          </tr>
+          <tr>
+            <td style={rowLabel}>Recovery retries</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">{resources.retries}</td>
+          </tr>
+          <tr>
+            <td style={rowLabel}>Manual interventions</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">{resources.manualInterventions}</td>
           </tr>
         </tbody>
       </table>

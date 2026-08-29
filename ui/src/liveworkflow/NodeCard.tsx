@@ -1,5 +1,9 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { NodeDef, NodeStatus } from "../data/nodeRegistry";
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
+import { GROUP_LABELS, NodeDef, NodeStatus } from "../data/nodeRegistry";
 import { laneColorFor, laneIndex, shapeStyle, NODE_W, NODE_H, Vec2 } from "./laneData";
 
 interface StatusMeta {
@@ -9,9 +13,15 @@ interface StatusMeta {
 }
 
 const STATUS_MAP: Record<string, StatusMeta> = {
-  waiting: { text: "Waiting", color: "#94a3b8", dot: "#cbd5e1" },
-  running: { text: "Running", color: "#2563eb", dot: "#3b82f6" },
-  succeeded: { text: "Succeeded", color: "#16a34a", dot: "#22c55e" },
+  waiting: { text: "Waiting", color: "var(--status-waiting)", dot: "var(--status-waiting-dot)" },
+  ready: { text: "Ready", color: "var(--status-running)", dot: "var(--status-running-dot)" },
+  running: { text: "Running", color: "var(--status-running)", dot: "var(--status-running-dot)" },
+  succeeded: { text: "Succeeded", color: "var(--status-success)", dot: "var(--status-success-dot)" },
+  failed: { text: "Failed", color: "var(--status-failed)", dot: "var(--status-failed-dot)" },
+  rejected: { text: "Rejected", color: "var(--status-attention)", dot: "var(--status-attention-dot)" },
+  paused: { text: "Paused", color: "var(--status-attention)", dot: "var(--status-attention-dot)" },
+  skipped: { text: "Skipped", color: "var(--status-waiting)", dot: "var(--status-waiting-dot)" },
+  blocked: { text: "Blocked", color: "var(--status-failed)", dot: "var(--status-failed-dot)" },
 };
 
 export function statusMeta(status: NodeStatus, isRecovery?: boolean): StatusMeta {
@@ -26,113 +36,140 @@ interface Props {
   status: NodeStatus;
   elapsedMs: number;
   reducedMotion: boolean;
-  onPointerDownCard: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  isDragging: boolean;
+  isSelected: boolean;
+  mode?: "canvas" | "focus" | "context";
+  interactive?: boolean;
+  size?: { width: number; minHeight: number };
+  onPointerDownCard?: (e: ReactPointerEvent<HTMLButtonElement>) => void;
   onOpen: (rect: DOMRect) => void;
 }
 
-export function NodeCard({ node, position, status, elapsedMs, reducedMotion, onPointerDownCard, onOpen }: Props) {
+type NodeStyle = CSSProperties & {
+  "--node-a": string;
+  "--node-b": string;
+  "--node-shadow": string;
+  "--rest-tilt": string;
+};
+
+export const FOCUS_NODE_W = 340;
+export const FOCUS_NODE_H = 204;
+
+// A small, deterministic per-card lean, fixed to the node id so it never
+// shifts on re-render. It reads as a set of hand-placed index cards rather
+// than a machine-perfect grid. Kept well under a degree; hover motion dominates.
+function restTiltFor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  const deg = ((hash % 100) / 100 - 0.5) * 0.7;
+  return `${deg.toFixed(2)}deg`;
+}
+
+export function NodeCard({
+  node,
+  position,
+  status,
+  elapsedMs,
+  reducedMotion,
+  isDragging,
+  isSelected,
+  mode = "canvas",
+  interactive = true,
+  size,
+  onPointerDownCard,
+  onOpen,
+}: Props) {
   const colors = laneColorFor(node);
   const isRunning = status === "running";
   const st = statusMeta(status, node.isRecovery);
+  const laneLabel = GROUP_LABELS[node.group];
 
-  const cardStyle: CSSProperties = {
+  const cardStyle: NodeStyle = {
     position: "absolute",
     left: position.x,
     top: position.y,
-    width: NODE_W,
-    minHeight: NODE_H,
-    background: "#fff",
-    borderRadius: 18,
-    cursor: "pointer",
-    touchAction: "none",
-    border: node.isRecovery ? "2px dashed rgba(148,163,184,.6)" : "1px solid rgba(15,23,42,.06)",
-    boxShadow: isRunning
-      ? undefined
-      : `0 10px 26px -12px rgba(15,23,42,.18), 0 0 0 2px ${colors.shadow}, 0 0 18px 1px ${colors.shadow}`,
-    animation: isRunning && !reducedMotion ? "runGlow 1.4s ease-in-out infinite" : "none",
-    transition: "box-shadow .25s ease, transform .3s cubic-bezier(.2,.8,.2,1)",
-    opacity: status === "waiting" && node.isRecovery ? 0.75 : 1,
+    width: size?.width ?? (mode === "focus" ? FOCUS_NODE_W : NODE_W),
+    minHeight: size?.minHeight ?? (mode === "focus" ? FOCUS_NODE_H : NODE_H),
+    "--node-a": colors.a,
+    "--node-b": colors.b,
+    "--node-shadow": colors.shadow,
+    "--rest-tilt": restTiltFor(node.id),
+    opacity: mode === "canvas" && isSelected ? 0 : status === "waiting" && node.isRecovery ? 0.76 : 1,
+    pointerEvents: mode === "canvas" && isSelected ? "none" : undefined,
   };
 
   const badgeStyle: CSSProperties = {
-    position: "absolute",
-    top: -14,
-    left: 16,
-    width: 44,
-    height: 44,
-    background: `linear-gradient(135deg, ${colors.a}, ${colors.b})`,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: `0 8px 18px -4px ${colors.shadow}`,
     ...shapeStyle(node.group, node.isRecovery),
   };
 
   const monogramStyle: CSSProperties = {
-    color: "#fff",
-    fontWeight: 800,
-    fontSize: 13,
-    letterSpacing: "-.02em",
     transform: laneIndex(node.group) === 2 && !node.isRecovery ? "rotate(-45deg)" : "none",
   };
 
+  const resetTilt = (element: HTMLButtonElement) => {
+    element.style.setProperty("--tilt-x", "0deg");
+    element.style.setProperty("--tilt-y", "0deg");
+    element.style.setProperty("--sheen-x", "50%");
+    element.style.setProperty("--sheen-y", "50%");
+  };
+
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-label={`${node.label}, ${st.text}`}
+    <button
+      type="button"
+      aria-label={`${laneLabel}: ${node.label}, ${st.text}. Open stage evidence.`}
+      data-node-id={node.id}
+      aria-hidden={!interactive || (mode === "context" && isSelected) ? true : undefined}
+      tabIndex={!interactive || (mode === "context" && isSelected) ? -1 : undefined}
+      className={`workflow-node workflow-node--${mode} ${isRunning ? "is-running" : ""} ${node.isRecovery ? "is-recovery" : ""} ${isDragging ? "is-dragging" : ""}`}
       style={cardStyle}
       onPointerDown={onPointerDownCard}
-      onClick={(e: ReactMouseEvent<HTMLDivElement>) => onOpen(e.currentTarget.getBoundingClientRect())}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen(e.currentTarget.getBoundingClientRect());
-        }
+      onClick={(e: ReactMouseEvent<HTMLButtonElement>) => {
+        if (interactive) onOpen(e.currentTarget.getBoundingClientRect());
       }}
-      onMouseEnter={(e) => {
-        if (reducedMotion) return;
-        e.currentTarget.style.transform = "perspective(900px) rotateX(-3deg) rotateY(3deg) translateY(-5px) scale(1.015)";
-        e.currentTarget.style.boxShadow = `0 22px 44px -14px ${colors.shadow}`;
+      onPointerMove={(event) => {
+        if (mode === "context" || reducedMotion || event.pointerType !== "mouse" || event.buttons) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const px = (event.clientX - rect.left) / rect.width;
+        const py = (event.clientY - rect.top) / rect.height;
+        event.currentTarget.style.setProperty("--tilt-x", `${(0.5 - py) * 13}deg`);
+        event.currentTarget.style.setProperty("--tilt-y", `${(px - 0.5) * 15}deg`);
+        event.currentTarget.style.setProperty("--sheen-x", `${px * 100}%`);
+        event.currentTarget.style.setProperty("--sheen-y", `${py * 100}%`);
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "none";
-        e.currentTarget.style.boxShadow = cardStyle.boxShadow ?? "";
-      }}
-      onFocus={(e) => {
-        e.currentTarget.style.outline = "2px solid #3b82f6";
-        e.currentTarget.style.outlineOffset = "3px";
-      }}
-      onBlur={(e) => {
-        e.currentTarget.style.outline = "none";
-      }}
+      onPointerLeave={(event) => resetTilt(event.currentTarget)}
+      onBlur={(event) => resetTilt(event.currentTarget)}
     >
-      <div style={badgeStyle}>
+      <span className="workflow-node__edge" aria-hidden="true" />
+      <span className="workflow-node__sheen" aria-hidden="true" />
+      <span className="workflow-node__badge" style={badgeStyle} aria-hidden="true">
         <span style={monogramStyle}>{node.mono}</span>
-      </div>
-      <div style={{ padding: "44px 16px 14px 16px" }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", letterSpacing: "-.01em" }}>{node.label}</div>
-        <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, marginTop: 2 }}>{node.archLabel}</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>
-          <span
-            aria-hidden
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: st.dot,
-              flexShrink: 0,
-              animation: isRunning && !reducedMotion ? "pulseDot 1s ease-in-out infinite" : "none",
-            }}
-          />
-          <span style={{ fontSize: 12, fontWeight: 700, color: st.color }}>{st.text}</span>
-          {isRunning && (
-            <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, fontFamily: "var(--font-mono)", marginLeft: "auto" }}>
-              {(elapsedMs / 1000).toFixed(1)}s
+      </span>
+
+      <span className="workflow-node__body">
+        <span className="workflow-node__title">{node.label}</span>
+        <span className="workflow-node__role">{node.archLabel}</span>
+
+        <span className="workflow-node__footer">
+          <span className="workflow-node__status" style={{ color: st.color }}>
+            <span
+              className={`workflow-node__status-dot ${isRunning ? "is-live" : ""}`}
+              style={{ background: st.dot }}
+              aria-hidden="true"
+            />
+            {st.text}
+          </span>
+          {isRunning ? (
+            <span className="workflow-node__elapsed mono tabular">{(elapsedMs / 1000).toFixed(1)}s</span>
+          ) : (
+            <span className="workflow-node__inspect" aria-hidden="true">
+              Inspect
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                <path d="M3 8h9M9 4.5 12.5 8 9 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </span>
           )}
-        </div>
-      </div>
-    </div>
+        </span>
+      </span>
+    </button>
   );
 }

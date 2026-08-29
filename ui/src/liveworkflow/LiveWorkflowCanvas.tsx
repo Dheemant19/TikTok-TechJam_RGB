@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { NODES } from "../data/nodeRegistry";
-import { computeInitialPositions, contentBounds, Vec2 } from "./laneData";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { GROUP_LABELS, GROUP_ORDER, NODES } from "../data/nodeRegistry";
+import { computeInitialPositions, contentBounds, laneColorFor, NODE_H, NODE_W, Vec2 } from "./laneData";
 import { NodeCard } from "./NodeCard";
 import { EdgesLayer } from "./EdgesLayer";
-import { InspectorPanel } from "./InspectorPanel";
+import { StageFocusView } from "./StageFocusView";
 import { useRunStore } from "./runStore";
 import { useFlipInspector } from "./useFlipInspector";
+import { CanvasPulseField } from "../components/CanvasPulseField";
 
 interface DragInfo {
   id: string;
@@ -13,6 +14,13 @@ interface DragInfo {
   startY: number;
   origX: number;
   origY: number;
+  moved: boolean;
+}
+interface GroupDragInfo {
+  group: string;
+  startX: number;
+  startY: number;
+  origins: Record<string, Vec2>;
   moved: boolean;
 }
 interface PanInfo {
@@ -25,20 +33,77 @@ interface PanInfo {
 interface Props {
   reducedMotion: boolean;
   isNarrow: boolean;
+  /** Multiplier: 0.5 = slower, 1 = default, 2 = faster. */
+  idleEdgeSpeed?: number;
 }
 
-export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
+function LaneScaffold({
+  positions,
+  draggingGroup,
+  onGroupPointerDown,
+}: {
+  positions: Record<string, Vec2>;
+  draggingGroup: string | null;
+  onGroupPointerDown: (group: string, e: ReactPointerEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div className="lane-scaffolds" aria-hidden="true">
+      {GROUP_ORDER.map((group) => {
+        const nodes = NODES.filter((node) => node.group === group);
+        const xs = nodes.map((node) => positions[node.id].x);
+        const ys = nodes.map((node) => positions[node.id].y);
+        const color = laneColorFor(nodes[0]);
+        const style = {
+          left: Math.min(...xs) - 22,
+          top: Math.min(...ys) - 58,
+          width: Math.max(...xs) - Math.min(...xs) + NODE_W + 44,
+          height: Math.max(...ys) - Math.min(...ys) + NODE_H + 80,
+          "--lane-rule": color.b,
+        } as CSSProperties;
+        return (
+          <div
+            key={group}
+            className={`lane-scaffold ${draggingGroup === group ? "is-dragging" : ""}`}
+            style={style}
+            onPointerDown={(e) => onGroupPointerDown(group, e)}
+          >
+            <strong>{GROUP_LABELS[group]}</strong>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function LiveWorkflowCanvas({ reducedMotion, isNarrow, idleEdgeSpeed = 1 }: Props) {
   const [positions, setPositions] = useState<Record<string, Vec2>>(() => computeInitialPositions());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [draggingGroup, setDraggingGroup] = useState<string | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const { selectedId, overlayRect, overlayOpen, openNode, closeInspector } = useFlipInspector(reducedMotion);
+  const {
+    selectedId,
+    previousNodeId,
+    overlayRect,
+    overlayOpen,
+    phase,
+    openNode,
+    navigateNode,
+    closeInspector,
+  } = useFlipInspector(reducedMotion);
+  const clampedIdleEdgeSpeed = Math.min(4, Math.max(0.25, idleEdgeSpeed));
+  const canvasStyle = {
+    "--idle-edge-duration": `${14 / clampedIdleEdgeSpeed}s`,
+    "--idle-arrow-duration": `${3.6 / clampedIdleEdgeSpeed}s`,
+  } as CSSProperties;
 
   const nodeStatus = useRunStore((s) => s.nodeStatus);
   const nodeElapsed = useRunStore((s) => s.nodeElapsed);
 
   const dragInfo = useRef<DragInfo | null>(null);
-  const panInfo = useRef<PanInfo | null>(null);
+  const groupDragInfo = useRef<GroupDragInfo | null>(null);
   const suppressClick = useRef(false);
+  const panInfo = useRef<PanInfo | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
@@ -61,7 +126,11 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
     if (!info) return;
     const dx = (e.clientX - info.startX) / zoom;
     const dy = (e.clientY - info.startY) / zoom;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) info.moved = true;
+    if (!info.moved) {
+      if (Math.abs(dx) <= 4 && Math.abs(dy) <= 4) return;
+      info.moved = true;
+      setDraggingId(info.id);
+    }
     setPositions((prev) => ({ ...prev, [info.id]: { x: info.origX + dx, y: info.origY + dy } }));
   };
   const handleDragUp = () => {
@@ -74,12 +143,54 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
       }, 50);
     }
     dragInfo.current = null;
+    setDraggingId(null);
   };
-  const startDrag = (id: string, e: ReactPointerEvent<HTMLDivElement>) => {
+  const startDrag = (id: string, e: ReactPointerEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     dragInfo.current = { id, startX: e.clientX, startY: e.clientY, origX: positions[id].x, origY: positions[id].y, moved: false };
     window.addEventListener("pointermove", handleDragMove);
     window.addEventListener("pointerup", handleDragUp);
+  };
+
+  const handleGroupDragMove = (e: PointerEvent) => {
+    const info = groupDragInfo.current;
+    if (!info) return;
+    const dx = (e.clientX - info.startX) / zoom;
+    const dy = (e.clientY - info.startY) / zoom;
+    if (!info.moved) {
+      if (Math.abs(dx) <= 4 && Math.abs(dy) <= 4) return;
+      info.moved = true;
+      setDraggingGroup(info.group);
+    }
+    setPositions((prev) => {
+      const next = { ...prev };
+      for (const [id, origin] of Object.entries(info.origins)) {
+        next[id] = { x: origin.x + dx, y: origin.y + dy };
+      }
+      return next;
+    });
+  };
+  const handleGroupDragUp = () => {
+    window.removeEventListener("pointermove", handleGroupDragMove);
+    window.removeEventListener("pointerup", handleGroupDragUp);
+    if (groupDragInfo.current?.moved) {
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 50);
+    }
+    groupDragInfo.current = null;
+    setDraggingGroup(null);
+  };
+  const startGroupDrag = (group: string, e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const origins: Record<string, Vec2> = {};
+    for (const node of NODES) {
+      if (node.group === group) origins[node.id] = positions[node.id];
+    }
+    groupDragInfo.current = { group, startX: e.clientX, startY: e.clientY, origins, moved: false };
+    window.addEventListener("pointermove", handleGroupDragMove);
+    window.addEventListener("pointerup", handleGroupDragUp);
   };
 
   const handlePanMove = (e: PointerEvent) => {
@@ -102,6 +213,8 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
     () => () => {
       window.removeEventListener("pointermove", handleDragMove);
       window.removeEventListener("pointerup", handleDragUp);
+      window.removeEventListener("pointermove", handleGroupDragMove);
+      window.removeEventListener("pointerup", handleGroupDragUp);
       window.removeEventListener("pointermove", handlePanMove);
       window.removeEventListener("pointerup", handlePanUp);
     },
@@ -140,13 +253,16 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
   };
 
   return (
-    <div style={{ position: "relative", flex: 1, minWidth: 0, overflow: "hidden" }}>
+    <div className="workflow-canvas-shell">
       <div
         ref={canvasRef}
-        style={{ position: "absolute", inset: 0, cursor: "grab" }}
+        className="workflow-canvas"
+        style={canvasStyle}
         onPointerDown={onCanvasPointerDown}
       >
-        <div style={{ position: "absolute", left: 0, top: 0, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
+        <CanvasPulseField reducedMotion={reducedMotion} />
+        <div className="workflow-world" style={{ position: "absolute", left: 0, top: 0, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
+          <LaneScaffold positions={positions} draggingGroup={draggingGroup} onGroupPointerDown={startGroupDrag} />
           <EdgesLayer positions={positions} nodeStatus={nodeStatus} nodeElapsed={nodeElapsed} reducedMotion={reducedMotion} />
           {NODES.map((node) => (
             <NodeCard
@@ -156,6 +272,8 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
               status={nodeStatus[node.id]}
               elapsedMs={nodeElapsed[node.id] || 0}
               reducedMotion={reducedMotion}
+              isDragging={draggingId === node.id || draggingGroup === node.group}
+              isSelected={selectedId === node.id && overlayOpen}
               onPointerDownCard={(e) => startDrag(node.id, e)}
               onOpen={(rect) => handleOpen(node.id, rect)}
             />
@@ -163,14 +281,30 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow }: Props) {
         </div>
       </div>
 
-      <InspectorPanel
+      <div className="workflow-canvas__hint" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+          <path d="M5.2 6.5V4.3a1 1 0 0 1 2 0v1.3-2a1 1 0 1 1 2 0v2-1.1a1 1 0 1 1 2 0v1.9-.6a1 1 0 1 1 2 0v2.8c0 3.2-1.7 5.1-4.7 5.1H7.1c-1.5 0-2.5-.7-3.4-1.8L2 9.8a1.1 1.1 0 0 1 1.7-1.4l1.5 1.5V6.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Drag canvas · scroll to zoom · select a stage
+      </div>
+
+      <div className="workflow-canvas__zoom mono tabular" aria-label={`Canvas zoom ${Math.round(zoom * 100)} percent`}>
+        {Math.round(zoom * 100)}%
+      </div>
+
+      <StageFocusView
         nodeId={selectedId}
-        status={selectedId ? nodeStatus[selectedId] : "waiting"}
-        overlayRect={overlayRect}
+        previousNodeId={previousNodeId}
+        phase={phase}
         overlayOpen={overlayOpen}
+        overlayRect={overlayRect}
+        positions={positions}
+        nodeStatus={nodeStatus}
+        nodeElapsed={nodeElapsed}
         reducedMotion={reducedMotion}
         isNarrow={isNarrow}
         onClose={closeInspector}
+        onNavigate={navigateNode}
       />
     </div>
   );

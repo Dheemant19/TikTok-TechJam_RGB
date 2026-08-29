@@ -1,11 +1,13 @@
 :root {
-  /* ground -- matches the design handoff's neutral palette exactly */
-  --surface-0: #f4f6fa; /* page / canvas background */
-  --surface-1: #ffffff; /* cards, panels, toolbar */
-  --surface-2: #f8fafc; /* raised / hover surface, fact cards */
-  --border: rgba(15, 23, 42, 0.06);
-  --border-strong: rgba(15, 23, 42, 0.14);
-  --grid-dot: #d9dfe9;
+  /* ground */
+  --surface-0: #eef2f6; /* page / canvas background */
+  --surface-1: #fffefa; /* cards, panels, toolbar */
+  --surface-2: #f5f7f8; /* raised / hover surface, fact cards */
+  --border: rgba(19, 42, 67, 0.11);
+  --border-strong: rgba(19, 42, 67, 0.2);
+  --grid-dot: #cbd4de;
+  --wash-1: rgba(31, 79, 138, 0.09);
+  --wash-2: rgba(124, 91, 179, 0.065);
 
   /* legacy aliases kept so existing components using --ink-* still resolve
      correctly to the light surfaces above */
@@ -16,30 +18,69 @@
   --ink-4: var(--border-strong);
 
   /* text */
-  --text-0: #0f172a; /* primary */
-  --text-1: #334155; /* secondary / body */
-  --text-2: #94a3b8; /* tertiary / muted */
+  --text-0: #132a43; /* primary */
+  --text-1: #405367; /* secondary / body */
+  --text-2: #64748b; /* tertiary / muted, AA on white */
 
-  /* primary interactive color -- indigo blue, matches the handoff's buttons */
-  --primary: #3b82f6;
-  --primary-dim: #2563eb;
-  --primary-tint: #eff6ff;
+  /* primary interactive color -- indigo blue */
+  --primary: #1f4f8a;
+  --primary-dim: #173a68;
+  --primary-tint: #eaf1f8;
 
-  /* one identity color per pipeline lane (gradient a->b), from the handoff */
-  --group-data: #06b6d4;
-  --group-research: #8b5cf6;
-  --group-code: #f59e0b;
-  --group-train: #f43f5e;
-  --group-decide: #3b82f6;
+  /* one identity gradient (a -> b) per pipeline lane, plus a resting shadow
+     tint and a text-safe tone, each themeable independently of surfaces */
+  --group-data-a: #39aabd;
+  --group-data-b: #0f8fa4;
+  --group-data-shadow: rgba(15, 143, 164, 0.24);
+  --group-data-text: #0c7181;
+  --group-research-a: #9a78ca;
+  --group-research-b: #7c5bb3;
+  --group-research-shadow: rgba(124, 91, 179, 0.24);
+  --group-research-text: #60418f;
+  --group-code-a: #d79554;
+  --group-code-b: #b66420;
+  --group-code-shadow: rgba(182, 100, 32, 0.24);
+  --group-code-text: #8f4d18;
+  --group-train-a: #dc7183;
+  --group-train-b: #c95167;
+  --group-train-shadow: rgba(201, 81, 103, 0.24);
+  --group-train-text: #a03e51;
+  --group-decide-a: #4f76a4;
+  --group-decide-b: #1f4f8a;
+  --group-decide-shadow: rgba(31, 79, 138, 0.24);
+  --group-decide-text: #173a68;
 
-  /* universal status indicators */
-  --status-success: #22c55e;
-  --status-success-glow: rgba(34, 197, 94, 0.35);
-  --status-attention: #f59e0b;
-  --status-attention-glow: rgba(245, 158, 11, 0.35);
-  --status-failed: #ef4444;
+  /* status: independent of lane identity, shown as a dot + short text */
+  --status-waiting: #64748b;
+  --status-waiting-dot: #b7c0cd;
+  --status-running: #1f4f8a;
+  --status-running-dot: #2d6da8;
+  --status-success: #18735b;
+  --status-success-dot: #279576;
+  --status-success-glow: rgba(39, 149, 118, 0.28);
+  --status-attention: #a65d1f;
+  --status-attention-dot: #cf7a30;
+  --status-attention-glow: rgba(207, 122, 48, 0.28);
+  --status-failed: #b23b43;
+  --status-failed-dot: #d14e57;
+
+  /* the process-flow signal: what moves along an active edge, kept distinct
+     from every lane's own resting identity color */
+  --flow-a: #f0a63e;
+  --flow-b: #c9711a;
+  --flow-glow: rgba(201, 113, 26, 0.4);
+
+  /* demo-data banner: a warm, distinctly non-lane amber, so it never gets
+     mistaken for a status or lane color */
+  --banner-a: #f4efe6;
+  --banner-b: #faf8f3;
+  --banner-border: rgba(113, 83, 46, 0.12);
+  --banner-text: #815426;
+  --banner-body: #5b6470;
+  --primary-muted: color-mix(in srgb, var(--primary) 55%, var(--surface-2));
 
   --font-ui: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 
   --space-1: 0.25rem;
@@ -51,19 +92,91 @@
   --space-7: 3rem;
   --space-8: 4rem;
 
-  --radius-sm: 10px;
+  --radius-sm: 9px;
   --radius-md: 12px;
-  --radius-lg: 18px;
+  --radius-lg: 16px;
 
-  --shadow-card: 0 10px 26px -12px rgba(15, 23, 42, 0.18);
-  --shadow-card-lifted: 0 50px 110px -24px rgba(15, 23, 42, 0.5);
+  --shadow-card: 0 14px 34px -22px rgba(19, 42, 67, 0.42);
+  --shadow-card-lifted: 0 48px 100px -34px rgba(19, 42, 67, 0.62);
 
-  --ease-instrument: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-instrument: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 120ms;
   --dur-med: 320ms;
   --dur-camera: 900ms;
 
   color-scheme: light;
+}
+
+/* Dark mode: a genuine second world, not an inverted filter. Deep charcoal-
+   navy grounds, lane and status hues lifted in lightness (never saturation)
+   to hold contrast without reading as neon. */
+:root[data-theme="dark"] {
+  --surface-0: #0d1117;
+  --surface-1: #161b23;
+  --surface-2: #1c222b;
+  --border: rgba(226, 232, 240, 0.09);
+  --border-strong: rgba(226, 232, 240, 0.17);
+  --grid-dot: rgba(226, 232, 240, 0.16);
+  --wash-1: rgba(91, 143, 214, 0.14);
+  --wash-2: rgba(156, 124, 212, 0.12);
+
+  --text-0: #eef2f7;
+  --text-1: #aab4c4;
+  --text-2: #7b8698;
+
+  --primary: #5b8fd6;
+  --primary-dim: #305082;
+  --primary-tint: rgba(91, 143, 214, 0.16);
+
+  --group-data-a: #5fc7d6;
+  --group-data-b: #2fa8ba;
+  --group-data-shadow: rgba(47, 168, 186, 0.32);
+  --group-data-text: #7fd3e0;
+  --group-research-a: #bda3e6;
+  --group-research-b: #9c7cd4;
+  --group-research-shadow: rgba(156, 124, 212, 0.32);
+  --group-research-text: #c7b2ec;
+  --group-code-a: #e6ac6e;
+  --group-code-b: #cf8636;
+  --group-code-shadow: rgba(207, 134, 54, 0.32);
+  --group-code-text: #edc08d;
+  --group-train-a: #ea9aab;
+  --group-train-b: #d5758c;
+  --group-train-shadow: rgba(213, 117, 140, 0.32);
+  --group-train-text: #f0b4c1;
+  --group-decide-a: #7fa3d4;
+  --group-decide-b: #5680bb;
+  --group-decide-shadow: rgba(86, 128, 187, 0.32);
+  --group-decide-text: #a8c2e6;
+
+  --status-waiting: #7b8698;
+  --status-waiting-dot: #4c5566;
+  --status-running: #5b8fd6;
+  --status-running-dot: #6fa0e0;
+  --status-success: #3fbb92;
+  --status-success-dot: #4fd1a6;
+  --status-success-glow: rgba(63, 187, 146, 0.3);
+  --status-attention: #d99a52;
+  --status-attention-dot: #e6ac6e;
+  --status-attention-glow: rgba(217, 154, 82, 0.3);
+  --status-failed: #e0707a;
+  --status-failed-dot: #e88b93;
+
+  --flow-a: #f2b45e;
+  --flow-b: #dd8f2e;
+  --flow-glow: rgba(221, 143, 46, 0.45);
+
+  --banner-a: #241d12;
+  --banner-b: #1c1712;
+  --banner-border: rgba(230, 172, 110, 0.22);
+  --banner-text: #e6ac6e;
+  --banner-body: #b8ab97;
+  --primary-muted: color-mix(in srgb, var(--primary) 45%, var(--surface-2));
+
+  --shadow-card: 0 14px 34px -20px rgba(0, 0, 0, 0.55);
+  --shadow-card-lifted: 0 48px 100px -30px rgba(0, 0, 0, 0.65);
+
+  color-scheme: dark;
 }
 
 @media (prefers-reduced-motion: reduce) {

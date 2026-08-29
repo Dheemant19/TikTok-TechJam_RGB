@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import { TopToolbar } from "./components/TopToolbar";
 import { LiveWorkflow } from "./routes/LiveWorkflow";
@@ -7,11 +8,16 @@ import { ResearchLibrary } from "./routes/ResearchLibrary";
 import { Resources } from "./routes/Resources";
 import { FinalPackage } from "./routes/FinalPackage";
 import { AutonomyLog } from "./routes/AutonomyLog";
+import { useRunStore } from "./liveworkflow/runStore";
 
 export function App() {
+  useEffect(() => {
+    void useRunStore.getState().bootstrap();
+  }, []);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <TopToolbar />
+      <TopToolbar pillFluidity={0.7} />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         <Routes>
           <Route path="/" element={<LiveWorkflow />} />

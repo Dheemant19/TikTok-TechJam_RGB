@@ -10,11 +10,11 @@ export interface LaneColor {
 
 // Indexed to match GROUP_ORDER: data, research, code, train, decide.
 export const LANE_COLORS: LaneColor[] = [
-  { a: "#22d3ee", b: "#06b6d4", shadow: "rgba(6,182,212,.32)", text: "#0e7490" },
-  { a: "#a78bfa", b: "#8b5cf6", shadow: "rgba(139,92,246,.32)", text: "#6d28d9" },
-  { a: "#fbbf24", b: "#f59e0b", shadow: "rgba(245,158,11,.32)", text: "#b45309" },
-  { a: "#fb7185", b: "#f43f5e", shadow: "rgba(244,63,94,.32)", text: "#be123c" },
-  { a: "#60a5fa", b: "#3b82f6", shadow: "rgba(59,130,246,.32)", text: "#1d4ed8" },
+  { a: "var(--group-data-a)", b: "var(--group-data-b)", shadow: "var(--group-data-shadow)", text: "var(--group-data-text)" },
+  { a: "var(--group-research-a)", b: "var(--group-research-b)", shadow: "var(--group-research-shadow)", text: "var(--group-research-text)" },
+  { a: "var(--group-code-a)", b: "var(--group-code-b)", shadow: "var(--group-code-shadow)", text: "var(--group-code-text)" },
+  { a: "var(--group-train-a)", b: "var(--group-train-b)", shadow: "var(--group-train-shadow)", text: "var(--group-train-text)" },
+  { a: "var(--group-decide-a)", b: "var(--group-decide-b)", shadow: "var(--group-decide-shadow)", text: "var(--group-decide-text)" },
 ];
 export const RECOVERY_COLOR = LANE_COLORS[3];
 
@@ -216,7 +216,7 @@ export const NODE_DETAILS: Record<string, NodeDetail> = {
     ],
     input: [{ label: "Trigger", value: "Training failure or divergence signal" }],
     output: [{ label: "Restored state", value: "Last stable checkpoint (if activated)" }],
-    history: [{ attempt: 0, status: "Standby", time: "—", note: "Not activated this run", dotColor: "#94a3b8" }],
+    history: [{ attempt: 0, status: "Standby", time: "Not recorded", note: "Not activated this run", dotColor: "#94a3b8" }],
   },
   evaluator: {
     summary: "Scores the trained model on the held-out validation split using the authoritative evaluation code. This is the only source of truth for metrics.",
@@ -245,7 +245,7 @@ export const NODE_DETAILS: Record<string, NodeDetail> = {
       { label: "Metrics", value: "From Score on Validation" },
       { label: "Budget state", value: "From budget_config.yaml" },
     ],
-    output: [{ label: "Decision", value: "Continue — new best accepted" }],
+    output: [{ label: "Decision", value: "Continue. New best accepted." }],
     history: [{ attempt: 1, status: "Succeeded", time: "09:24:22", note: "Decision recorded", dotColor: "#22c55e" }],
   },
   ledger: {
@@ -257,7 +257,7 @@ export const NODE_DETAILS: Record<string, NodeDetail> = {
       { label: "Tamper checks", value: "Hash-chained" },
     ],
     input: [{ label: "Run events", value: "From all pipeline stages" }],
-    output: [{ label: "Event log", value: "13 events, sequence 1–13" }],
+    output: [{ label: "Event log", value: "13 events, sequence 1 to 13" }],
     history: [{ attempt: 1, status: "Succeeded", time: "09:24:30", note: "Run evidence saved", dotColor: "#22c55e" }],
   },
   finalizer: {
@@ -270,7 +270,7 @@ export const NODE_DETAILS: Record<string, NodeDetail> = {
     ],
     input: [{ label: "Best checkpoint", value: "Validation-best" }],
     output: [{ label: "Package", value: "Prediction schema checked, manifest hashed" }],
-    history: [{ attempt: 0, status: "Waiting", time: "—", note: "Awaiting convergence or stop", dotColor: "#94a3b8" }],
+    history: [{ attempt: 0, status: "Waiting", time: "Not recorded", note: "Awaiting convergence or stop", dotColor: "#94a3b8" }],
   },
   submission: {
     summary: "The final, one-way artifact produced by this run. Once built, this boundary cannot be reopened by the UI.",
@@ -282,7 +282,7 @@ export const NODE_DETAILS: Record<string, NodeDetail> = {
     ],
     input: [{ label: "Final package", value: "From Build Final Package" }],
     output: [{ label: "Predictions", value: "Pending finalization" }],
-    history: [{ attempt: 0, status: "Waiting", time: "—", note: "Pipeline not yet finalized", dotColor: "#94a3b8" }],
+    history: [{ attempt: 0, status: "Waiting", time: "Not recorded", note: "Pipeline not yet finalized", dotColor: "#94a3b8" }],
   },
 };
 

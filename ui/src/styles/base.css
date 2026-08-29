@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./experience.css";
 
 * {
   box-sizing: border-box;
@@ -15,17 +16,19 @@ body {
   background-color: var(--ink-0);
   color: var(--text-0);
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   /* A soft two-tone wash (echoing the lane blues/violets) under the dot grid,
-     so the canvas reads as more than flat white -- still light, never dark. */
-  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px),
-    radial-gradient(circle at 12% 8%, rgba(59, 130, 246, 0.07), transparent 42%),
-    radial-gradient(circle at 88% 92%, rgba(139, 92, 246, 0.06), transparent 42%);
-  background-size: 22px 22px, auto, auto;
+     so the canvas reads as more than flat color in either theme. */
+  background-image: radial-gradient(var(--grid-dot) 0.9px, transparent 0.9px),
+    radial-gradient(circle at 11% 5%, var(--wash-1), transparent 34%),
+    radial-gradient(circle at 88% 96%, var(--wash-2), transparent 36%);
+  background-size: 24px 24px, auto, auto;
   background-repeat: repeat, no-repeat, no-repeat;
+  background-attachment: fixed, fixed, fixed;
   overscroll-behavior: none;
+  transition: background-color 260ms ease;
 }
 
 a {
@@ -38,7 +41,7 @@ a:hover {
 }
 
 ::selection {
-  background: var(--status-success);
+  background: var(--primary);
   color: #fff;
 }
 
@@ -52,8 +55,11 @@ a:hover {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #d8dce3;
+  background: var(--border-strong);
   border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-2);
 }
 
 code,
@@ -82,6 +88,10 @@ button {
   to {
     stroke-dashoffset: -24;
   }
+}
+@keyframes signalBreathe {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.28); }
 }
 @keyframes runGlow {
   0%,
