@@ -124,7 +124,7 @@ class ExecutionFunnel:
             "command": command, "return_code": process.returncode, "wall_seconds": time.perf_counter() - started,
             "peak_rss_mb": monitor.peak_rss / 1024 / 1024, "peak_gpu_memory_mb": monitor.peak_gpu,
             "stdout_path": stdout_path, "stderr_path": stderr_path, "output_directory": output,
-            "error": stderr.decode(errors="replace")[-4000:] if status != "succeeded" else None,
+            "error": (stdout.decode(errors="replace") + stderr.decode(errors="replace"))[-4000:] if status != "succeeded" else None,
         }
         return TierReceipt(**document, receipt_hash=canonical_hash({key: str(value) for key, value in document.items()}))
 
