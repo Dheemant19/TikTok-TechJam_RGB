@@ -408,7 +408,7 @@ async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path
     )
     services = SimpleNamespace(
         recovery=RecoveryController(), maximum_experiments=10, frontier=SimpleNamespace(),
-        bedrock_input_limit=10_000, bedrock_output_limit=10_000, total_wall_seconds=0,
+        bedrock_input_limit=10_000, bedrock_output_limit=10_000, total_wall_seconds=0, total_gpu_hours=0.0,
         ledger=SimpleNamespace(store_recovery_receipt=lambda *_args: None),
     )
     workflow = AutonomousResearchWorkflow(services)
@@ -444,7 +444,7 @@ async def test_research_stops_at_budget_instead_of_looping_forever(monkeypatch) 
     locked = {}
     services = SimpleNamespace(
         maximum_experiments=1, bedrock_input_limit=10_000, bedrock_output_limit=10_000,
-        total_wall_seconds=0,
+        total_wall_seconds=0, total_gpu_hours=0.0,
         frontier=SimpleNamespace(budget_stop=lambda state: state.model_copy(update={"locked": True})),
         ledger=SimpleNamespace(store_frontier=lambda _session, frontier: locked.update(value=frontier.locked)),
         knowledge=SimpleNamespace(),
@@ -531,6 +531,7 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
         agents=FakeAgents(),
         contract=SimpleNamespace(public_summary=lambda: {}),
         maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
+        total_wall_seconds=0, total_gpu_hours=0.0,
         ledger=SimpleNamespace(list_contracts=lambda _sid: [prior_contract], store_contract=lambda *_a, **_k: None),
     )
     workflow = AutonomousResearchWorkflow(services)
@@ -608,6 +609,7 @@ async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: 
         agents=FakeAgents(),
         contract=SimpleNamespace(public_summary=lambda: {}),
         maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
+        total_wall_seconds=0, total_gpu_hours=0.0,
         ledger=SimpleNamespace(list_contracts=lambda _sid: [], store_contract=lambda *_a, **_k: None),
     )
     workflow = AutonomousResearchWorkflow(services)
@@ -671,6 +673,7 @@ async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, m
         agents=FakeAgents(),
         contract=SimpleNamespace(public_summary=lambda: {}),
         maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
+        total_wall_seconds=0, total_gpu_hours=0.0,
         ledger=SimpleNamespace(list_contracts=lambda _sid: [], store_contract=lambda *_a, **_k: None),
     )
     workflow = AutonomousResearchWorkflow(services)

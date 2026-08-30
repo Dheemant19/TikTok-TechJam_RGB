@@ -176,6 +176,7 @@ export function selectResearchEvidence(events: RunEventDTO[]): { cards: Research
 
 export interface ResourceSummary {
   wallSeconds: number;
+  gpuHours: number | null;
   peakRssMb: number;
   peakGpuMemoryMb: number | null;
   bedrockInputTokens: number;
@@ -187,9 +188,15 @@ export interface ResourceSummary {
 /** Sums every recorded resource-usage receipt (one per completed experiment
  * run) into the cumulative totals the Resources page shows, matching the
  * `ResourceTotals` contract (contract/models.py) rather than inventing a
- * separate frontend accounting scheme. */
+ * separate frontend accounting scheme.
+ *
+ * `gpuHours` stays null until at least one receipt carries a measured value,
+ * so an unobservable GPU reads as "not measured" instead of as zero usage.
+ * `manualInterventions` is authoritative from the session snapshot; the
+ * frontend no longer adds its own per-control-event tally on top, which
+ * double-counted every pause/resume/cancel. */
 export function selectResources(events: RunEventDTO[]): ResourceSummary {
-  const totals: ResourceSummary = { wallSeconds: 0, peakRssMb: 0, peakGpuMemoryMb: null, bedrockInputTokens: 0, bedrockOutputTokens: 0, retries: 0, manualInterventions: 0 };
+  const totals: ResourceSummary = { wallSeconds: 0, gpuHours: null, peakRssMb: 0, peakGpuMemoryMb: null, bedrockInputTokens: 0, bedrockOutputTokens: 0, retries: 0, manualInterventions: 0 };
   for (const event of events) {
     if (event.component_id === "trainer" && event.event_type === "usage") {
       const resources = asRecord(field(asRecord(event.payload), "resources"));
@@ -197,12 +204,13 @@ export function selectResources(events: RunEventDTO[]): ResourceSummary {
       totals.peakRssMb = Math.max(totals.peakRssMb, numberField(resources, "peak_rss_mb") ?? 0);
       const gpu = numberField(resources, "peak_gpu_memory_mb");
       if (gpu !== null) totals.peakGpuMemoryMb = Math.max(totals.peakGpuMemoryMb ?? 0, gpu);
+      const gpuHours = numberField(resources, "gpu_hours");
+      if (gpuHours !== null) totals.gpuHours = (totals.gpuHours ?? 0) + gpuHours;
       totals.bedrockInputTokens = numberField(resources, "bedrock_input_tokens") ?? totals.bedrockInputTokens;
       totals.bedrockOutputTokens = numberField(resources, "bedrock_output_tokens") ?? totals.bedrockOutputTokens;
       totals.retries = numberField(resources, "retries") ?? totals.retries;
       totals.manualInterventions = numberField(resources, "manual_interventions") ?? totals.manualInterventions;
     }
-    if (event.event_type.startsWith("control_")) totals.manualInterventions += 1;
   }
   return totals;
 }

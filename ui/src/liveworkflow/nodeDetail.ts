@@ -1,4 +1,4 @@
-import { asArray, asRecord, field } from "../api/json";
+import { asArray, asNumber, asRecord, field } from "../api/json";
 import type { JsonRecord, JsonValue } from "../api/types";
 import { REDACTED_LABEL } from "../api/types";
 import type { NodeDef } from "../data/nodeRegistry";
@@ -32,6 +32,7 @@ function scalarText(value: JsonValue | undefined, fallback = "Not yet available"
   return fallback;
 }
 
+
 function latestPayload(state: NodeRuntimeState): JsonRecord | undefined {
   const last = state.events[state.events.length - 1];
   return last ? asRecord(last.payload) : undefined;
@@ -47,18 +48,43 @@ function metricsFacts(metrics: JsonRecord | undefined): Fact[] {
 }
 
 const BUILDERS: Record<string, (state: NodeRuntimeState) => Partial<NodeDetail>> = {
-  train_data: (state) => ({
-    output: [{ label: "Status", value: state.events.length ? "Split contract locked for this session" : "Waiting for session start" }],
-  }),
+  train_data: (state) => {
+    const payload = latestPayload(state);
+    const splits = asRecord(field(payload, "splits"));
+    const sourceHash = field(payload, "source_hash");
+    if (!payload || !splits) return {};
+    return {
+      facts: Object.entries(splits).map(([name, range]) => ({
+        label: `${name} dates`,
+        value: scalarText(range as JsonValue),
+      })),
+      output: [
+        { label: "Status", value: "Split contract locked for this session" },
+        {
+          label: "Source hash",
+          // Shorten a real hash only; slicing the fallback string produced the
+          // truncated "Not yet availabl" in the stage card.
+          value: typeof sourceHash === "string" ? sourceHash.slice(0, 16) : scalarText(sourceHash),
+          mono: true,
+        },
+      ],
+    };
+  },
   data_profiler: (state) => {
     const payload = latestPayload(state);
     const profileReceipt = asRecord(field(payload, "profile"));
     const transform = asRecord(field(payload, "transform"));
+    // TransformReceipt.receipt is itself the artifact reference, so the hash
+    // lives one level up from where this previously looked (receipt.receipt),
+    // which always rendered "Not yet available" even on a successful profile.
     const receipt = asRecord(field(transform, "receipt"));
-    const receiptArtifact = asRecord(field(receipt, "receipt"));
-    const receiptHash = scalarText(field(receiptArtifact, "content_hash")).slice(0, 16);
+    const materializations = asRecord(field(transform, "materializations"));
+    const rawReceiptHash = field(receipt, "content_hash");
+    const receiptHash = typeof rawReceiptHash === "string" ? rawReceiptHash.slice(0, 16) : scalarText(rawReceiptHash);
     return {
       facts: [
+        { label: "Train rows", value: scalarText(field(asRecord(field(materializations, "train")), "row_count")) },
+        { label: "Validation rows", value: scalarText(field(asRecord(field(materializations, "valid")), "row_count")) },
         { label: "Cache hit", value: scalarText(field(profileReceipt, "cache_hit")) },
         { label: "Transform receipt hash", value: receiptHash },
       ],
@@ -71,10 +97,19 @@ const BUILDERS: Record<string, (state: NodeRuntimeState) => Partial<NodeDetail>>
     };
   },
   phase_guard: (state) => {
-    const halt = state.events.find((event) => event.component_id === "phase_guard");
+    // Distinguish a real integrity halt from a passing sanity-check event.
+    // Matching on component_id alone reported "Integrity halt triggered" for a
+    // run whose label-shuffle control had actually passed.
+    const halt = state.events.find((event) => event.event_type === "integrity_halt");
+    const checks = state.events.find((event) => event.event_type === "sanity_checks");
+    const result = halt
+      ? "Integrity halt triggered"
+      : checks
+        ? "Pipeline sanity checks passed"
+        : "Not yet evaluated";
     return {
-      facts: [{ label: "Result", value: halt ? "Integrity halt triggered" : state.status === "succeeded" ? "All checks passed" : "Not yet evaluated" }],
-      output: halt ? [{ label: "Reason", value: halt.plain_summary }] : [{ label: "Decision", value: state.status === "succeeded" ? "Approved to continue" : "Pending" }],
+      facts: [{ label: "Result", value: result }],
+      output: [{ label: halt ? "Reason" : "Decision", value: (halt ?? checks)?.plain_summary ?? "Pending" }],
     };
   },
   knowledge_mcp: (state) => {
@@ -139,8 +174,14 @@ const BUILDERS: Record<string, (state: NodeRuntimeState) => Partial<NodeDetail>>
     return {
       facts: [
         { label: "Tiers recorded", value: String(receipts.length) },
-        { label: "Peak GPU memory", value: resources ? scalarText(field(resources, "peak_gpu_memory_mb")) + " MB" : "Not yet available" },
-        { label: "Wall seconds", value: last ? scalarText(field(last, "wall_seconds")) : "Not yet available" },
+        { label: "GPU-hours", value: resources ? scalarText(field(resources, "gpu_hours")) : "Not calculated yet" },
+        {
+          label: "Peak GPU memory",
+          value: asNumber(field(resources, "peak_gpu_memory_mb")) === undefined
+            ? "Not measured"
+            : `${scalarText(field(resources, "peak_gpu_memory_mb"))} MB`,
+        },
+        { label: "Wall seconds", value: last ? scalarText(field(last, "wall_seconds")) : "Not calculated yet" },
       ],
       output: [{ label: "Checkpoint", value: REDACTED_LABEL }],
     };
@@ -189,17 +230,23 @@ const BUILDERS: Record<string, (state: NodeRuntimeState) => Partial<NodeDetail>>
   },
 };
 
+const NOT_CALCULATED = "Not calculated yet";
+
 export function buildNodeDetail(node: NodeDef, states: Record<string, NodeRuntimeState>, staticDetail: NodeDetail): NodeDetail {
   const state = states[node.id];
-  if (!state) return staticDetail;
-  const overrides = BUILDERS[node.id]?.(state);
-  const history = historyFrom(state);
-  if (!overrides) return { ...staticDetail, history };
+  const history = state ? historyFrom(state) : [];
+  const overrides = state ? BUILDERS[node.id]?.(state) : undefined;
+  // Live values only. When a stage has produced nothing yet, say so instead of
+  // falling back to static placeholder numbers -- an unrun evaluator must never
+  // display a GAUC, and an unrun data stage must never display a row count.
+  // staticDetail carries architectural description only.
+  const facts = overrides?.facts?.length ? overrides.facts : [{ label: "Status", value: NOT_CALCULATED }];
+  const output = overrides?.output?.length ? overrides.output : [{ label: "Output", value: NOT_CALCULATED }];
   return {
     summary: staticDetail.summary,
-    facts: overrides.facts && overrides.facts.length > 0 ? overrides.facts : staticDetail.facts,
+    facts,
     input: staticDetail.input,
-    output: overrides.output && overrides.output.length > 0 ? overrides.output : staticDetail.output,
+    output,
     history,
   };
 }

@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import psutil
 import torch
 import pytest
 
@@ -178,3 +179,72 @@ def test_checkpoint_prediction_uses_training_model_contract(tmp_path: Path) -> N
         expected = model(torch.as_tensor(features, dtype=torch.long)).numpy()
     assert receipt["rows"] == 2
     np.testing.assert_allclose(np.load(output), expected)
+
+
+def test_gpu_seconds_stay_null_when_nvml_cannot_observe_the_device() -> None:
+    # GPU-hours must be measured, never invented. When NVML is unavailable the
+    # value stays null so the UI reads "not measured" rather than "0 hours".
+    from rigor_rs.training.execution import ResourceMonitor
+
+    monitor = object.__new__(ResourceMonitor)
+    monitor.process = psutil.Process()
+    monitor.peak_rss = 0
+    monitor.peak_gpu = None
+    monitor.gpu_seconds = None
+    monitor._last_sample = None
+    monitor._nvml_ready = False
+
+    monitor.sample()
+    monitor.sample()
+
+    assert monitor.gpu_seconds is None
+    assert monitor.peak_gpu is None
+    assert monitor.peak_rss > 0
+
+
+def test_gpu_seconds_accumulate_only_while_the_process_holds_the_device(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import rigor_rs.training.execution as execution
+
+    monitor = object.__new__(execution.ResourceMonitor)
+    monitor.process = psutil.Process()
+    monitor.peak_rss = 0
+    monitor.peak_gpu = None
+    monitor.gpu_seconds = 0.0
+    monitor._last_sample = None
+    monitor._nvml_ready = True
+
+    active = {"value": False}
+    clock = {"value": 100.0}
+    monkeypatch.setattr(execution.time, "monotonic", lambda: clock["value"])
+    monkeypatch.setattr(
+        execution,
+        "pynvml",
+        SimpleNamespace(
+            nvmlDeviceGetCount=lambda: 1,
+            nvmlDeviceGetHandleByIndex=lambda _index: object(),
+            # usedGpuMemory=None reproduces Windows/WDDM, where per-process
+            # memory accounting is unavailable but presence in the compute list
+            # still proves the device was in use.
+            nvmlDeviceGetComputeRunningProcesses=lambda _handle: (
+                [SimpleNamespace(pid=monitor.process.pid, usedGpuMemory=None)] if active["value"] else []
+            ),
+        ),
+    )
+
+    monitor.sample()
+    clock["value"] += 5.0
+    monitor.sample()
+    assert monitor.gpu_seconds == 0.0
+
+    active["value"] = True
+    clock["value"] += 4.0
+    monitor.sample()
+    assert monitor.gpu_seconds == 4.0
+    assert monitor.peak_gpu is None
+
+    active["value"] = False
+    clock["value"] += 7.0
+    monitor.sample()
+    assert monitor.gpu_seconds == 4.0

@@ -58,6 +58,7 @@ export interface SessionSnapshotDTO {
   frontier: FrontierStateDTO;
   finalized: boolean;
   cancelled: boolean;
+  manual_interventions: number;
 }
 
 export interface SessionListItem {

@@ -10,9 +10,13 @@ function formatDuration(seconds: number): string {
 
 export function Resources() {
   const events = useRunStore((state) => state.events);
+  const snapshot = useRunStore((state) => state.snapshot);
   const resources = useMemo(() => selectResources(events), [events]);
   const totalTokens = resources.bedrockInputTokens + resources.bedrockOutputTokens;
   const inputShare = totalTokens > 0 ? resources.bedrockInputTokens / totalTokens : 0;
+  // The server counts interventions in its own append-only table; the snapshot
+  // is authoritative even before the first resource receipt exists.
+  const interventions = snapshot?.manual_interventions ?? resources.manualInterventions;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
@@ -51,8 +55,18 @@ export function Resources() {
             <td style={{ ...rowValueCell }} className="mono tabular">{formatDuration(resources.wallSeconds)}</td>
           </tr>
           <tr>
+            <td style={rowLabel}>GPU-hours</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">
+              {resources.gpuHours === null ? "Not measured (no GPU compute observed)" : resources.gpuHours.toFixed(4)}
+            </td>
+          </tr>
+          <tr>
             <td style={rowLabel}>Peak GPU memory</td>
-            <td style={{ ...rowValueCell }} className="mono tabular">{resources.peakGpuMemoryMb === null ? "Not measured (no GPU detected)" : `${resources.peakGpuMemoryMb.toFixed(0)} MB`}</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">
+              {resources.peakGpuMemoryMb === null
+                ? "Not measured (per-process GPU memory accounting unavailable)"
+                : `${resources.peakGpuMemoryMb.toFixed(0)} MB`}
+            </td>
           </tr>
           <tr>
             <td style={rowLabel}>Peak RSS memory</td>
@@ -64,7 +78,7 @@ export function Resources() {
           </tr>
           <tr>
             <td style={rowLabel}>Manual interventions</td>
-            <td style={{ ...rowValueCell }} className="mono tabular">{resources.manualInterventions}</td>
+            <td style={{ ...rowValueCell }} className="mono tabular">{interventions}</td>
           </tr>
         </tbody>
       </table>

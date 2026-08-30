@@ -71,6 +71,7 @@ def build_workflow(challenge_path: str, budget_path: str, ledger: WorkflowLedger
         bedrock_input_limit=int(budget.limits["bedrock_input_tokens"]),
         bedrock_output_limit=int(budget.limits["bedrock_output_tokens"]),
         total_wall_seconds=int(budget.limits["total_wall_seconds"]),
+        total_gpu_hours=float(budget.limits["total_gpu_hours"]),
     )
     return AutonomousResearchWorkflow(services), ledger, SubmissionFinalizer(contract, ledger, artifacts)
 

@@ -245,11 +245,12 @@ class SessionSnapshot(StrictModel):
     frontier: FrontierState = Field(default_factory=FrontierState)
     finalized: bool = False
     cancelled: bool = False
+    manual_interventions: int = 0
 
 
 class ResourceTotals(StrictModel):
     wall_seconds: float = 0
-    gpu_hours: float = 0
+    gpu_hours: float | None = None
     bedrock_input_tokens: int = 0
     bedrock_output_tokens: int = 0
     peak_gpu_memory_mb: float | None = None

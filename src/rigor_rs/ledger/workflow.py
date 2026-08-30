@@ -207,6 +207,7 @@ class WorkflowLedger:
         snapshot = SessionSnapshot(
             session_id=session_id, latest_sequence=row["latest_sequence"], status=row["status"],
             finalized=bool(row["finalized"]), cancelled=bool(row["cancelled"]),
+            manual_interventions=self.manual_intervention_count(session_id),
         )
         for event in self.events(session_id):
             snapshot.component_states[event.component_id] = event.status
@@ -267,6 +268,28 @@ class WorkflowLedger:
                 (session_id,),
             ).fetchall()
         return [json.loads(row["contract_json"]) for row in rows]
+    # Explicit intervention policy (Plan_Workflow §12.4): pausing, resuming or
+    # cancelling an autonomous run is a human decision and counts. Starting a
+    # session and confirming the one-way final package are required operator
+    # actions in the organizer's own procedure, so they are recorded as control
+    # events but are not counted as interventions.
+    INTERVENTION_ACTIONS = {"pause", "resume", "cancel"}
+
+    def record_manual_intervention(self, session_id: str, action: str, reason: str) -> None:
+        with self.transaction() as connection:
+            connection.execute(
+                "INSERT INTO manual_interventions VALUES(?,?,?,?,?)",
+                (new_id("intervention"), session_id, action, reason, datetime.now(UTC).isoformat()),
+            )
+
+    def manual_intervention_count(self, session_id: str) -> int:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS total FROM manual_interventions WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+        return int(row["total"]) if row else 0
+
     def store_metric_receipt(self, session_id: str, run_id: str, document: dict[str, Any]) -> None:
         with self.transaction() as connection:
             connection.execute(
@@ -332,4 +355,8 @@ class WorkflowLedger:
                     "UPDATE sessions SET cancelled=?,status=? WHERE session_id=?",
                     (1 if action == "cancel" else 0, next_status.value, session_id),
                 )
+        if action in self.INTERVENTION_ACTIONS:
+            self.record_manual_intervention(
+                session_id, action, f"operator requested {action} at sequence {expected_sequence}"
+            )
         return True, "accepted"

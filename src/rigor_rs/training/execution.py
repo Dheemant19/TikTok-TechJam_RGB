@@ -35,6 +35,7 @@ class TierReceipt(BaseModel):
     wall_seconds: float
     peak_rss_mb: float
     peak_gpu_memory_mb: float | None
+    gpu_seconds: float | None = None
     stdout_path: Path
     stderr_path: Path
     output_directory: Path
@@ -43,19 +44,30 @@ class TierReceipt(BaseModel):
 
 
 class ResourceMonitor:
+    """Samples the process tree; GPU figures are measured, never estimated."""
+
     def __init__(self, pid: int) -> None:
         self.process = psutil.Process(pid)
         self.peak_rss = 0
         self.peak_gpu: float | None = None
+        # Device-active seconds: wall time during which this process tree held a
+        # CUDA compute context. None means NVML could not observe the device at
+        # all, which must stay null rather than be reported as zero usage.
+        self.gpu_seconds: float | None = None
+        self._last_sample: float | None = None
         self._nvml_ready = False
         if pynvml:
             try:
                 pynvml.nvmlInit()
                 self._nvml_ready = True
+                self.gpu_seconds = 0.0
             except Exception:
                 pass
 
     def sample(self) -> None:
+        now = time.monotonic()
+        elapsed = 0.0 if self._last_sample is None else max(0.0, now - self._last_sample)
+        self._last_sample = now
         try:
             processes = [self.process, *self.process.children(recursive=True)]
             self.peak_rss = max(self.peak_rss, sum(item.memory_info().rss for item in processes if item.is_running()))
@@ -66,19 +78,27 @@ class ResourceMonitor:
         # NVML reports usedGpuMemory as None whenever per-process accounting is
         # unavailable (routine on Windows/WDDM). Summing that None previously
         # raised TypeError out of the sampler's finally block and failed every
-        # training tier with "unsupported operand type(s) for +=".
+        # training tier with "unsupported operand type(s) for +=". Presence in
+        # the compute-process list is a separate, always-available signal and is
+        # what device-active time is measured from.
         try:
             pids = {process.pid for process in processes}
             total = 0
-            measured = False
+            memory_measured = False
+            device_active = False
             for index in range(pynvml.nvmlDeviceGetCount()):
                 handle = pynvml.nvmlDeviceGetHandleByIndex(index)
                 for item in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
-                    if item.pid in pids and item.usedGpuMemory is not None:
+                    if item.pid not in pids:
+                        continue
+                    device_active = True
+                    if item.usedGpuMemory is not None:
                         total += int(item.usedGpuMemory)
-                        measured = True
-            if measured:
+                        memory_measured = True
+            if memory_measured:
                 self.peak_gpu = max(self.peak_gpu or 0.0, total / 1024 / 1024)
+            if device_active and self.gpu_seconds is not None:
+                self.gpu_seconds += elapsed
         except Exception:
             # Telemetry must never fail a real training run; an unavailable
             # measurement stays null rather than becoming an invented number.
@@ -197,6 +217,7 @@ class ExecutionFunnel:
             "receipt_id": new_id("tier"), "tier": tier, "status": status, "comparable": comparable,
             "command": command, "return_code": process.returncode, "wall_seconds": time.perf_counter() - started,
             "peak_rss_mb": monitor.peak_rss / 1024 / 1024, "peak_gpu_memory_mb": monitor.peak_gpu,
+            "gpu_seconds": monitor.gpu_seconds,
             "stdout_path": stdout_path, "stderr_path": stderr_path, "output_directory": output,
             "error": (stdout.decode(errors="replace") + stderr.decode(errors="replace"))[-4000:] if status != "succeeded" else None,
         }
@@ -235,7 +256,7 @@ class ExecutionFunnel:
         document = {
             "receipt_id": new_id("tier"), "tier": tier, "status": "failed", "comparable": False,
             "command": [], "return_code": None, "wall_seconds": 0.0,
-            "peak_rss_mb": 0.0, "peak_gpu_memory_mb": None,
+            "peak_rss_mb": 0.0, "peak_gpu_memory_mb": None, "gpu_seconds": 0.0,
             "stdout_path": stdout_path, "stderr_path": stderr_path, "output_directory": output,
             "error": message[-4000:],
         }

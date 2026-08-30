@@ -62,6 +62,7 @@ class WorkflowState(TypedDict, total=False):
     stop: bool
     stop_reason: str
     started_at: float
+    gpu_seconds_used: float
 
 
 @dataclass
@@ -84,6 +85,7 @@ class WorkflowServices:
     bedrock_input_limit: int
     bedrock_output_limit: int
     total_wall_seconds: int = 0
+    total_gpu_hours: float = 0.0
 
 
 class AutonomousResearchWorkflow:
@@ -130,7 +132,15 @@ class AutonomousResearchWorkflow:
             code_hash=sha256_file(self.s.repository / "src/rigor_rs/data/profiler.py"),
             creation_receipt_id=new_id("receipt"),
         )
-        self._event(state, "train_data", "prepare", "data_ready", ComponentStatus.SUCCEEDED, "Training and validation data contract locked")
+        self._event(
+            state, "train_data", "prepare", "data_ready", ComponentStatus.SUCCEEDED,
+            "Training and validation data contract locked",
+            {
+                "splits": {name: f"{lo}-{hi}" for name, (lo, hi) in self.s.contract.splits.items()},
+                "source_hash": source_hash,
+                "label": self.s.contract.label,
+            },
+        )
         return {"dataset_artifact": artifact.model_dump(mode="json"), "status": "running"}
 
     async def profile(self, state: WorkflowState) -> dict[str, Any]:
@@ -206,6 +216,9 @@ class AutonomousResearchWorkflow:
             return "LLM input token budget reached"
         if state.get("agent_output_tokens", 0) >= self.s.bedrock_output_limit:
             return "LLM output token budget reached"
+        gpu_hours_used = state.get("gpu_seconds_used", 0.0) / 3600
+        if self.s.total_gpu_hours and gpu_hours_used >= self.s.total_gpu_hours:
+            return f"GPU-hour budget reached ({gpu_hours_used:.3f}/{self.s.total_gpu_hours})"
         started = state.get("started_at")
         if started and self.s.total_wall_seconds:
             elapsed = time.time() - float(started)
@@ -662,20 +675,35 @@ class AutonomousResearchWorkflow:
         )
         self._event(state, "evaluator", "validation", "metric", ComponentStatus.SUCCEEDED, "Official validation metrics recorded", {"metrics": {"GAUC": receipt.gauc, "nDCG@5": receipt.ndcg_at_5, "primary": receipt.primary}, "receipt": receipt.model_dump(mode="json"), "prediction": str(prediction)})
         tier_receipts = state.get("tier_receipts", [])
+        # GPU-hours are summed from measured device-active process time. A tier
+        # whose gpu_seconds is null was not observable by NVML, so the total is
+        # reported as null rather than as a fabricated zero.
+        gpu_seconds = [item.get("gpu_seconds") for item in tier_receipts]
+        measured_gpu = [value for value in gpu_seconds if value is not None]
+        gpu_hours = round(sum(measured_gpu) / 3600, 6) if measured_gpu else None
+        peak_gpu = [item.get("peak_gpu_memory_mb") for item in tier_receipts]
+        measured_peak = [value for value in peak_gpu if value is not None]
         resource_totals = {
             "wall_seconds": sum(item.get("wall_seconds", 0.0) for item in tier_receipts),
             "peak_rss_mb": max((item.get("peak_rss_mb", 0.0) for item in tier_receipts), default=0.0),
-            "peak_gpu_memory_mb": max((item.get("peak_gpu_memory_mb") or 0.0 for item in tier_receipts), default=0.0),
+            "peak_gpu_memory_mb": max(measured_peak) if measured_peak else None,
+            "gpu_hours": gpu_hours,
+            "gpu_hours_session_total": round(
+                (state.get("gpu_seconds_used", 0.0) + sum(measured_gpu)) / 3600, 6
+            ) if measured_gpu or state.get("gpu_seconds_used") else None,
             "bedrock_input_tokens": state.get("agent_input_tokens", 0),
             "bedrock_output_tokens": state.get("agent_output_tokens", 0),
             "retries": state.get("recovery_attempt", 0),
-            "manual_interventions": state.get("manual_interventions", 0),
+            "manual_interventions": self.s.ledger.manual_intervention_count(state["session_id"]),
         }
         self.s.ledger.store_resource_sample(
             state["session_id"], state["run_id"], resource_totals
         )
         self._event(state, "trainer", "resources", "usage", ComponentStatus.SUCCEEDED, "Resource usage recorded for this run", {"resources": resource_totals})
-        return {"metric_receipt": receipt.model_dump(mode="json")}
+        return {
+            "metric_receipt": receipt.model_dump(mode="json"),
+            "gpu_seconds_used": state.get("gpu_seconds_used", 0.0) + sum(measured_gpu),
+        }
 
     async def decide(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)

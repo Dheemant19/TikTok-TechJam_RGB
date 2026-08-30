@@ -94,195 +94,125 @@ export interface NodeDetail {
   history: HistoryRow[];
 }
 
+// Static per-node content is limited to architectural description: what the
+// stage does and what it is wired to. Every number, metric, hash, timestamp
+// and count must come from the live ledger via nodeDetail.ts. Placeholder
+// telemetry here previously rendered as real readings whenever a stage had
+// not produced its own data yet (e.g. an unrun evaluator showed a GAUC and a
+// "vs. baseline" delta), which is exactly the fabrication AGENTS.md forbids.
 export const NODE_DETAILS: Record<string, NodeDetail> = {
   train_data: {
     summary:
       "Provides the frozen train/validation split used across the whole run. Read-only source of interaction rows for the Data Profiler.",
-    facts: [
-      { label: "Rows", value: "2.4M interactions" },
-      { label: "Users", value: "182,400" },
-      { label: "Split", value: "Train / Val / Test" },
-      { label: "Format", value: "Parquet, KuaiRand schema" },
-    ],
+    facts: [],
     input: [
       { label: "Source path", value: "Hidden to protect data and credentials" },
-      { label: "Config", value: "challenge_config.yaml" },
+      { label: "Config", value: "configs/challenge/kuairand_pure.yaml", mono: true },
     ],
-    output: [
-      { label: "Split manifest", value: "train: 1.9M · val: 250K · test: 250K" },
-      { label: "Schema hash", value: "8f2c…a91d", mono: true },
-    ],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:12:04", note: "Loaded and validated schema", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   data_profiler: {
     summary:
       "Fits train-only transforms (vocabularies, bucket edges, scalers) and applies the frozen artifact to validation and test features without refitting.",
-    facts: [
-      { label: "long_view prevalence", value: "31.2%" },
-      { label: "Unseen-ID rate", value: "0.8%" },
-      { label: "Missing fields", value: "3 flagged" },
-      { label: "Transform", value: "Frozen, train-only" },
-    ],
+    facts: [],
     input: [{ label: "Raw interactions", value: "Hidden to protect data and credentials" }],
-    output: [
-      { label: "profile.json", value: "Aggregate diagnostics, bounded bins" },
-      { label: "transform_receipt.json", value: "source hash → fitted hash → artifact hash", mono: true },
-    ],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:12:41", note: "Profile and receipt generated", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   phase_guard: {
     summary:
       "Checks the prepared data against safety rules before it reaches the research and training stages. Blocks the run if a check fails.",
-    facts: [
-      { label: "Checks run", value: "12" },
-      { label: "Result", value: "All passed" },
-      { label: "Leakage check", value: "Clear" },
-      { label: "Label check", value: "Clear" },
-    ],
+    facts: [],
     input: [{ label: "Transform receipt", value: "From Data Profiler" }],
-    output: [{ label: "Decision", value: "Approved to continue" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:13:02", note: "No safety violations found", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   knowledge_mcp: {
     summary: "Searches curated and auto-ingested research sources for evidence relevant to the current experiment frontier.",
-    facts: [
-      { label: "Sources found", value: "6" },
-      { label: "Curated", value: "4" },
-      { label: "Auto-ingested", value: "2" },
-      { label: "License checked", value: "Yes" },
-    ],
-    input: [{ label: "Query", value: "sequence modeling for long-view prediction under censoring" }],
-    output: [{ label: "Evidence cards", value: "6 with citations and retrieval time" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:13:20", note: "Evidence retrieved and cached", dotColor: "#22c55e" }],
+    facts: [],
+    input: [{ label: "Query", value: "Derived from the current experiment frontier" }],
+    output: [],
+    history: [],
   },
   scientist: {
     summary: "Chooses the next experiment to try, informed by research evidence, the current best model, and remaining budget.",
-    facts: [
-      { label: "Candidate", value: "Attention pooling over session" },
-      { label: "Budget used", value: "18%" },
-      { label: "Parent", value: "stable fallback" },
-      { label: "Rationale", value: "Evidence-backed" },
-    ],
+    facts: [],
     input: [
-      { label: "Evidence cards", value: "From Research Agent" },
-      { label: "Current best", value: "primary score 0.601" },
+      { label: "Evidence cards", value: "From Find Research Evidence" },
+      { label: "Current best", value: "From the frontier recorded in the ledger" },
     ],
-    output: [{ label: "Experiment plan", value: "Attention pooling + duration-aware loss" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:13:55", note: "Experiment selected", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   coder: {
     summary: "Writes the code change implementing the selected experiment, then hands it to fast safety tests before training.",
-    facts: [
-      { label: "Files changed", value: "3" },
-      { label: "Lines", value: "+142 / −18" },
-      { label: "Diff type", value: "Unified" },
-      { label: "Secrets", value: "Hidden to protect data and credentials" },
-    ],
+    facts: [],
     input: [{ label: "Experiment plan", value: "From Choose the Next Experiment" }],
-    output: [{ label: "Patch", value: "model/pooling.py, train/loss.py, config.yaml" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:14:30", note: "Patch generated", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   pruner: {
     summary: "Runs a fast, cheap test suite to catch broken code before committing to a full training run.",
-    facts: [
-      { label: "Tests run", value: "34" },
-      { label: "Passed", value: "34" },
-      { label: "Duration", value: "42s" },
-      { label: "Smoke train", value: "2 steps, no NaN" },
-    ],
+    facts: [],
     input: [{ label: "Patch", value: "From Write the Code Change" }],
-    output: [{ label: "Result", value: "All fast tests passed" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:15:12", note: "Cleared for full training", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   trainer: {
     summary: "Trains the model on the frozen train split. On failure, hands off to the recovery agent and resumes from the last checkpoint.",
-    facts: [
-      { label: "GPU-hours", value: "1.4" },
-      { label: "Steps", value: "12,000" },
-      { label: "Peak memory", value: "18.2 GB" },
-      { label: "Checkpoints", value: "3" },
-    ],
+    facts: [],
     input: [{ label: "Patch + config", value: "From Write the Code Change" }],
-    output: [{ label: "Model checkpoint", value: "Hidden to protect data and credentials" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:22:48", note: "Training completed, converged", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   recovery: {
     summary: "Standby agent. Activates only when training fails or diverges, restoring the last stable checkpoint and reconnecting to its parent stage.",
-    facts: [
-      { label: "Status", value: "On standby" },
-      { label: "Last activation", value: "None this run" },
-      { label: "Reconnects to", value: "Train the Model" },
-      { label: "Preserves", value: "Full run history" },
-    ],
+    facts: [],
     input: [{ label: "Trigger", value: "Training failure or divergence signal" }],
-    output: [{ label: "Restored state", value: "Last stable checkpoint (if activated)" }],
-    history: [{ attempt: 0, status: "Standby", time: "Not recorded", note: "Not activated this run", dotColor: "#94a3b8" }],
+    output: [],
+    history: [],
   },
   evaluator: {
     summary: "Scores the trained model on the held-out validation split using the authoritative evaluation code. This is the only source of truth for metrics.",
-    facts: [
-      { label: "GAUC", value: "0.641" },
-      { label: "nDCG@5", value: "0.318" },
-      { label: "Primary score", value: "0.614" },
-      { label: "vs. baseline", value: "+2.2%" },
-    ],
+    facts: [],
     input: [
       { label: "Model checkpoint", value: "From Train the Model" },
       { label: "Eval split", value: "Held-out validation" },
     ],
-    output: [{ label: "Metrics", value: "GAUC 0.641 · nDCG@5 0.318 · primary 0.614" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:24:10", note: "Evaluation complete", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   watchdog: {
     summary: "Decides whether the run continues to another experiment or stops, based on convergence and remaining budget. This decision is authoritative.",
-    facts: [
-      { label: "Decision", value: "Continue" },
-      { label: "Budget remaining", value: "62%" },
-      { label: "Convergence", value: "Not yet reached" },
-      { label: "Consecutive rejects", value: "0" },
-    ],
+    facts: [],
     input: [
       { label: "Metrics", value: "From Score on Validation" },
-      { label: "Budget state", value: "From budget_config.yaml" },
+      { label: "Budget state", value: "configs/budgets/*.yaml", mono: true },
     ],
-    output: [{ label: "Decision", value: "Continue. New best accepted." }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:24:22", note: "Decision recorded", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   ledger: {
     summary: "Records every step of this run as an ordered, append-only event log used for live viewing, replay, and audit.",
-    facts: [
-      { label: "Events this run", value: "13" },
-      { label: "Storage", value: "Local SQLite" },
-      { label: "Replay-ready", value: "Yes" },
-      { label: "Tamper checks", value: "Hash-chained" },
-    ],
+    facts: [],
     input: [{ label: "Run events", value: "From all pipeline stages" }],
-    output: [{ label: "Event log", value: "13 events, sequence 1 to 13" }],
-    history: [{ attempt: 1, status: "Succeeded", time: "09:24:30", note: "Run evidence saved", dotColor: "#22c55e" }],
+    output: [],
+    history: [],
   },
   finalizer: {
     summary: "Builds the final submission package once the watchdog signals convergence or a budget stop, and only after explicit confirmation.",
-    facts: [
-      { label: "Trigger", value: "Convergence or budget stop" },
-      { label: "Confirmation", value: "Session ID required" },
-      { label: "Manifest", value: "Hash-verified" },
-      { label: "Replay check", value: "Clean" },
-    ],
+    facts: [],
     input: [{ label: "Best checkpoint", value: "Validation-best" }],
-    output: [{ label: "Package", value: "Prediction schema checked, manifest hashed" }],
-    history: [{ attempt: 0, status: "Waiting", time: "Not recorded", note: "Awaiting convergence or stop", dotColor: "#94a3b8" }],
+    output: [],
+    history: [],
   },
   submission: {
     summary: "The final, one-way artifact produced by this run. Once built, this boundary cannot be reopened by the UI.",
-    facts: [
-      { label: "Status", value: "Not yet built" },
-      { label: "Schema check", value: "Pending" },
-      { label: "Boundary", value: "One-way, explicit" },
-      { label: "Source", value: "Build Final Package" },
-    ],
+    facts: [],
     input: [{ label: "Final package", value: "From Build Final Package" }],
-    output: [{ label: "Predictions", value: "Pending finalization" }],
-    history: [{ attempt: 0, status: "Waiting", time: "Not recorded", note: "Pipeline not yet finalized", dotColor: "#94a3b8" }],
+    output: [],
+    history: [],
   },
 };
 
