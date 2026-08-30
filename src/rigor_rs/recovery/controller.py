@@ -31,7 +31,12 @@ class RecoveryController:
             "did not produce required artifacts", "main entrypoint may not have run",
         )):
             return "code_patch"
-        if "no measurable change in training behavior" in value:
+        if any(term in value for term in (
+            "no measurable change in training behavior",
+            "no measurable change in ranking behavior",
+            "within-user validation ordering is identical",
+            "inert patch",
+        )):
             return "behavior_unchanged"
         if any(term in value for term in ("syntaxerror", "importerror", "modulenotfounderror", "config")):
             return "syntax_import_config"
@@ -47,10 +52,17 @@ class RecoveryController:
             return "transient_external"
         if "regression" in value:
             return "metric_regression"
+        if any(term in value for term in (
+            "typeerror:", "attributeerror:", "nameerror:", "keyerror:",
+            "valueerror:", "runtimeerror:", "assertionerror:",
+        )):
+            return "code_patch"
         return "infrastructure"
 
-    def recover(self, run_id: str, error: str, attempt: int, cap: int) -> RecoveryReceipt:
-        category = self.classify(error)
+    def recover(
+        self, run_id: str, error: str, attempt: int, cap: int, category: str | None = None
+    ) -> RecoveryReceipt:
+        category = category if category in self.RECIPES else self.classify(error)
         recipe = self.RECIPES[category]
         if attempt > cap:
             action, result = "restore_stable_fallback", "recovery cap exhausted"

@@ -55,6 +55,10 @@ class WorkflowState(TypedDict, total=False):
     agent_input_tokens: int
     agent_output_tokens: int
     error: str
+    error_category: str
+    failure_stage: str
+    experiment_count: int
+    experiment_attempt_count: int
     recovery_attempt: int
     last_execution_error: str
     recovery_action: str
@@ -211,7 +215,7 @@ class AutonomousResearchWorkflow:
     def _budget_exhausted(self, state: WorkflowState) -> str:
         """Name the exhausted budget, or an empty string while work may continue."""
         if state.get("experiment_count", 0) >= self.s.maximum_experiments:
-            return f"experiment budget reached ({self.s.maximum_experiments})"
+            return f"completed validation experiment budget reached ({self.s.maximum_experiments})"
         if state.get("agent_input_tokens", 0) >= self.s.bedrock_input_limit:
             return "LLM input token budget reached"
         if state.get("agent_output_tokens", 0) >= self.s.bedrock_output_limit:
@@ -228,11 +232,11 @@ class AutonomousResearchWorkflow:
 
     async def research(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
-        # The experiment/token budget was previously only consulted inside
-        # decide(), so a run whose experiments kept failing looped forever:
-        # every recovery routed back here, research reset recovery_attempt,
-        # and the loop only ended when Azure tokens ran out mid-call. Enforce
-        # the same organizer-configured stop before spending another call.
+        # Budget checks must run before every paid research call, not only after
+        # a successful validation decision. Failed code attempts do not consume
+        # completed-experiment slots, but they remain bounded by per-contract
+        # recovery caps plus the session's token, wall-clock, GPU-hour and
+        # provider-request limits.
         exhausted = self._budget_exhausted(state)
         if exhausted:
             frontier = self.s.frontier.budget_stop(FrontierState.model_validate(state["frontier"]))
@@ -310,8 +314,10 @@ class AutonomousResearchWorkflow:
         except Exception as error:
             self._event(event_state, "scientist", "research", "failed", ComponentStatus.FAILED, f"Research Agent call failed: {error}", {"error": str(error)})
             return {
-                "run_id": run_id, "error": str(error), "recovery_attempt": 0,
-                "experiment_count": state.get("experiment_count", 0) + 1,
+                "run_id": run_id, "error": str(error),
+                "error_category": self.s.recovery.classify(str(error)),
+                "failure_stage": "research", "recovery_attempt": 0,
+                "experiment_attempt_count": state.get("experiment_attempt_count", 0) + 1,
             }
         proposed_experiment_id = contract.experiment_id
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", proposed_experiment_id).strip("-._") or "experiment"
@@ -331,11 +337,11 @@ class AutonomousResearchWorkflow:
         )
         return {
             "run_id": run_id, "experiment_contract": contract.model_dump(mode="json"), "error": "",
-            "recovery_attempt": 0,
+            "error_category": "", "failure_stage": "", "recovery_attempt": 0,
             "last_execution_error": "", "recovery_action": "", "retry_target": "",
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
-            "experiment_count": state.get("experiment_count", 0) + 1,
+            "experiment_attempt_count": state.get("experiment_attempt_count", 0) + 1,
         }
 
     async def code(self, state: WorkflowState) -> dict[str, Any]:
@@ -405,8 +411,12 @@ class AutonomousResearchWorkflow:
                 )
             commit = self.s.workspace.commit(workspace, contract.experiment_id)
         except Exception as error:
-            self._event(state, "coder", "patch", "failed", ComponentStatus.FAILED, f"Code Agent call failed: {error}", {"error": str(error)})
-            return {"error": str(error)}
+            message = f"{type(error).__name__}: {error}"
+            self._event(state, "coder", "patch", "failed", ComponentStatus.FAILED, f"Code Agent call failed: {message}", {"error": message})
+            return {
+                "error": message, "error_category": self.s.recovery.classify(message),
+                "failure_stage": "code",
+            }
         self._event(
             state, "coder", "patch", "completed", ComponentStatus.SUCCEEDED,
             "Patch validated and committed in isolated worktree",
@@ -418,6 +428,7 @@ class AutonomousResearchWorkflow:
         return {
             "patch_proposal": proposal.model_dump(mode="json"), "workspace": str(workspace),
             "worktree_commit": commit, "touched_files": touched, "error": "",
+            "error_category": "", "failure_stage": "",
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
         }
@@ -546,7 +557,10 @@ class AutonomousResearchWorkflow:
             # intentional session cancel is still not swallowed here.
             message = f"{type(error).__name__}: {error}"
             self._event(state, "trainer", "execute", "failed", ComponentStatus.FAILED, f"Execution funnel failed: {message}", {"error": message})
-            return {"error": message}
+            return {
+                "error": message, "error_category": self.s.recovery.classify(message),
+                "failure_stage": "execute",
+            }
 
     def _run_output(self, state: WorkflowState, contract: ExperimentContract) -> Path:
         return (
@@ -568,13 +582,21 @@ class AutonomousResearchWorkflow:
         receipts.append(tier1.model_dump(mode="json"))
         self._event(state, "trainer", "execute", "tier1", ComponentStatus.SUCCEEDED if tier1.status == "succeeded" else ComponentStatus.FAILED, "Isolated worktree test tier", {"receipt": receipts[-1]})
         if tier1.status != "succeeded":
-            return {"tier_receipts": receipts, "error": tier1.error or "tier1 failed"}
+            error = tier1.error or "tier1 failed"
+            return {
+                "tier_receipts": receipts, "error": error,
+                "error_category": self.s.recovery.classify(error), "failure_stage": "execute",
+            }
         config = workspace / "configs/experiments/bce_fm.yaml"
         tier2 = await self.s.funnel.tier2(workspace, Path(state["transform_dir"]), config, output / "tier2", 0)
         receipts.append(tier2.model_dump(mode="json"))
         self._event(state, "trainer", "execute", "tier2", ComponentStatus.SUCCEEDED if tier2.status == "succeeded" else ComponentStatus.FAILED, "Smoke-scale proxy run", {"receipt": receipts[-1]})
         if tier2.status != "succeeded":
-            return {"tier_receipts": receipts, "error": tier2.error or "tier2 failed"}
+            error = tier2.error or "tier2 failed"
+            return {
+                "tier_receipts": receipts, "error": error,
+                "error_category": self.s.recovery.classify(error), "failure_stage": "execute",
+            }
         if await self._behavior_unchanged_vs_baseline(
             state["session_id"], Path(state["transform_dir"]), output / "tier2", 0
         ):
@@ -585,18 +607,29 @@ class AutonomousResearchWorkflow:
                 "GAUC/nDCG@5"
             )
             self._event(state, "phase_guard", "execute", "inert_patch", ComponentStatus.FAILED, message, {"tier2_output": str(output / "tier2")})
-            return {"tier_receipts": receipts, "error": message}
+            return {
+                "tier_receipts": receipts, "error": message,
+                "error_category": "behavior_unchanged", "failure_stage": "execute",
+            }
         tier3 = await self.s.funnel.tier3(workspace, Path(state["transform_dir"]), config, output / "tier3", 0)
         receipts.append(tier3.model_dump(mode="json"))
         self._event(state, "trainer", "execute", "tier3", ComponentStatus.SUCCEEDED if tier3.status == "succeeded" else ComponentStatus.FAILED, "Bounded proxy-scale run", {"receipt": receipts[-1]})
         if tier3.status != "succeeded":
-            return {"tier_receipts": receipts, "error": tier3.error or "tier3 failed"}
+            error = tier3.error or "tier3 failed"
+            return {
+                "tier_receipts": receipts, "error": error,
+                "error_category": self.s.recovery.classify(error), "failure_stage": "execute",
+            }
         tier4 = await self.s.funnel.tier4(workspace, Path(state["transform_dir"]), config, output / "tier4", 0)
         receipts.append(tier4.model_dump(mode="json"))
         self._event(state, "trainer", "execute", "tier4", ComponentStatus.SUCCEEDED if tier4.status == "succeeded" else ComponentStatus.FAILED, "Full-scale training run", {"receipt": receipts[-1]})
         if tier4.status != "succeeded":
-            return {"tier_receipts": receipts, "error": tier4.error or "tier4 failed"}
-        return {"tier_receipts": receipts, "error": ""}
+            error = tier4.error or "tier4 failed"
+            return {
+                "tier_receipts": receipts, "error": error,
+                "error_category": self.s.recovery.classify(error), "failure_stage": "execute",
+            }
+        return {"tier_receipts": receipts, "error": "", "error_category": "", "failure_stage": ""}
 
     @staticmethod
     def _same_within_user_ranking(
@@ -677,9 +710,6 @@ class AutonomousResearchWorkflow:
         )
         self._event(state, "evaluator", "validation", "metric", ComponentStatus.SUCCEEDED, "Official validation metrics recorded", {"metrics": {"GAUC": receipt.gauc, "nDCG@5": receipt.ndcg_at_5, "primary": receipt.primary}, "receipt": receipt.model_dump(mode="json"), "prediction": str(prediction)})
         tier_receipts = state.get("tier_receipts", [])
-        # GPU-hours are summed from measured device-active process time. A tier
-        # whose gpu_seconds is null was not observable by NVML, so the total is
-        # reported as null rather than as a fabricated zero.
         gpu_seconds = [item.get("gpu_seconds") for item in tier_receipts]
         measured_gpu = [value for value in gpu_seconds if value is not None]
         gpu_hours = round(sum(measured_gpu) / 3600, 6) if measured_gpu else None
@@ -705,6 +735,7 @@ class AutonomousResearchWorkflow:
         return {
             "metric_receipt": receipt.model_dump(mode="json"),
             "gpu_seconds_used": state.get("gpu_seconds_used", 0.0) + sum(measured_gpu),
+            "experiment_count": state.get("experiment_count", 0) + 1,
         }
 
     async def decide(self, state: WorkflowState) -> dict[str, Any]:
@@ -742,40 +773,60 @@ class AutonomousResearchWorkflow:
         # crashing on the missing contract.
         contract = ExperimentContract.model_validate(state["experiment_contract"]) if state.get("experiment_contract") else None
         attempt_limit = contract.recovery_attempt_limit if contract else 1
-        receipt = self.s.recovery.recover(state["run_id"], state["error"], attempt, attempt_limit)
+        receipt = self.s.recovery.recover(
+            state["run_id"], state["error"], attempt, attempt_limit,
+            category=state.get("error_category") or None,
+        )
+        code_origin = state.get("failure_stage") in {"code", "execute"}
+        retry_target = (
+            "code"
+            if contract and (code_origin or receipt.category in self.CODE_LEVEL_CATEGORIES)
+            else "research"
+        )
+        event_payload = {
+            **receipt.model_dump(mode="json"),
+            "retry_target": "research" if attempt > attempt_limit else retry_target,
+            "experiment_id": contract.experiment_id if contract else None,
+            "completed_experiments": state.get("experiment_count", 0),
+            "experiment_attempts": state.get("experiment_attempt_count", 0),
+        }
         self.s.ledger.store_recovery_receipt(
             state["session_id"], state["run_id"], receipt.model_dump(mode="json")
         )
-        self._event(state, "recovery", "recovery", "recovery", ComponentStatus.FAILED if attempt > attempt_limit else ComponentStatus.READY, receipt.action, receipt.model_dump(mode="json"))
+        self._event(
+            state, "recovery", "recovery", "recovery",
+            ComponentStatus.FAILED if attempt > attempt_limit else ComponentStatus.READY,
+            receipt.action, event_payload,
+        )
         if attempt > attempt_limit or receipt.category == "metric_regression":
             frontier = FrontierState.model_validate(state["frontier"])
             frontier.failed.append(state["run_id"])
-            stop = bool(self._budget_exhausted(state))
+            stop_reason = self._budget_exhausted(state)
+            stop = bool(stop_reason)
             if stop:
                 frontier = self.s.frontier.budget_stop(frontier)
                 self.s.ledger.store_frontier(state["session_id"], frontier)
                 self._event(
                     state, "watchdog", "decision", "frontier", ComponentStatus.SUCCEEDED,
-                    "Experiment budget exhausted after failed recovery; validation best locked",
+                    f"Stopping after exhausted recovery: {stop_reason}",
                     {
                         "frontier": frontier.model_dump(mode="json"),
-                        "decision": "failed",
-                        "converged": False,
-                        "budget_stop": True,
+                        "decision": "failed", "converged": False, "budget_stop": True,
+                        "budget_reason": stop_reason,
                         "experiment_id": contract.experiment_id if contract else None,
                     },
                 )
             return {
-                "recovery_attempt": attempt, "error": "", "last_execution_error": "",
+                "recovery_attempt": attempt, "error": "", "error_category": "",
+                "failure_stage": "", "last_execution_error": "",
                 "retry_target": "research", "frontier": frontier.model_dump(mode="json"),
                 "stop": stop, "stop_reason": "budget" if stop else "",
             }
-        retry_target = "code" if (receipt.category in self.CODE_LEVEL_CATEGORIES and contract) else "research"
-        # Carry the diagnosis forward so the Code Agent is actually told why its
-        # last patch was rejected. Previously the error was wiped here and the
-        # recovery action existed only as a ledger string no agent ever saw.
+        # Code and execution failures stay on the same run ID and contract.
+        # They consume recovery attempts and resource budgets, not completed
+        # validation-experiment slots.
         return {
-            "recovery_attempt": attempt, "error": "",
+            "recovery_attempt": attempt, "error": "", "error_category": "",
             "last_execution_error": state.get("error", "") if retry_target == "code" else "",
             "recovery_action": receipt.action,
             "retry_target": retry_target,
@@ -822,7 +873,8 @@ class AutonomousResearchWorkflow:
     async def run(self, session_id: str) -> WorkflowState:
         initial: WorkflowState = {
             "session_id": session_id, "run_id": "workflow", "status": "running",
-            "agent_input_tokens": 0, "agent_output_tokens": 0, "experiment_count": 0,
+            "agent_input_tokens": 0, "agent_output_tokens": 0,
+            "experiment_count": 0, "experiment_attempt_count": 0,
             "recovery_attempt": 0, "stop": False, "started_at": time.time(),
         }
         self.s.ledger.set_session_status(session_id, ComponentStatus.RUNNING)

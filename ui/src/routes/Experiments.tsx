@@ -41,9 +41,10 @@ export function Experiments() {
       </p>
       {attempts.length > 0 && (
         <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
-          {attempts.length} bounded experiment attempt{attempts.length === 1 ? "" : "s"} consumed budget;{" "}
-          {evaluated.length} reached full training and official validation. Failed proxy checks remain visible because
-          they still consumed research, code, compute, and recovery resources.
+          {attempts.length} bounded experiment attempt{attempts.length === 1 ? "" : "s"} recorded;{" "}
+          {evaluated.length} reached full training and official validation and therefore consumed the completed-experiment
+          limit. Failed research, code, and proxy attempts remain visible and consume their bounded recovery and resource
+          budgets, but not completed-experiment slots.
         </p>
       )}
 

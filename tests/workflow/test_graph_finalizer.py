@@ -227,7 +227,10 @@ async def test_execute_contains_unhandled_exceptions_as_recoverable_errors(tmp_p
         async def tier1(self, *_a, **_k):
             raise SyntaxError("unterminated string literal (detected at line 229)")
 
-    services = SimpleNamespace(funnel=ExplodingFunnel(), artifacts=tmp_path / "artifacts")
+    services = SimpleNamespace(
+        funnel=ExplodingFunnel(), artifacts=tmp_path / "artifacts",
+        recovery=RecoveryController(),
+    )
     workflow = AutonomousResearchWorkflow(services)
 
     async def control_gate(_state):
@@ -341,12 +344,10 @@ def test_activation_raises_when_multiple_new_branches_are_ambiguous(tmp_path: Pa
 
 @pytest.mark.asyncio
 async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_research(tmp_path: Path, monkeypatch) -> None:
-    # The inert-patch detector fired correctly three times in a row live, but
-    # recover() wiped the error and always routed back to research, so the Code
-    # Agent was never told why its patch was rejected and each cycle burned a
-    # fresh research call only to repeat the identical config-gating mistake.
-    # A code-level failure must retry `code` for the SAME contract, carrying
-    # the diagnosis forward.
+    # Reproduced in session-20260830T062240630878Z-599bf0db: the live inert
+    # message said "ranking behavior", while the classifier only recognized
+    # the obsolete phrase "training behavior". Eight code failures were
+    # misclassified as infrastructure and each burned a fresh research plan.
     from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
     contract = ExperimentContract(
@@ -359,10 +360,10 @@ async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_resear
         fallback_run_id="B0", recovery_attempt_limit=2,
     )
     inert_error = (
-        "patch produced no measurable change in training behavior: proxy-scale "
-        "validation scores are bit-identical to the unpatched baseline"
+        "patch produced no measurable change in ranking behavior: proxy-scale "
+        "within-user validation ordering is identical to the unpatched experiment baseline"
     )
-
+    recovery_events: list[dict] = []
     services = SimpleNamespace(
         recovery=RecoveryController(), maximum_experiments=10,
         frontier=SimpleNamespace(),
@@ -374,23 +375,28 @@ async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_resear
         return None
 
     monkeypatch.setattr(workflow, "_control_gate", control_gate)
-    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
-
+    monkeypatch.setattr(
+        workflow, "_event",
+        lambda _state, _component, _stage, _event_type, _status, _summary, payload=None: recovery_events.append(payload or {}),
+    )
     state = {
         "session_id": "s", "run_id": "run-1", "error": inert_error,
+        "error_category": "behavior_unchanged", "failure_stage": "execute",
         "experiment_contract": contract.model_dump(mode="json"),
-        "experiment_count": 1, "recovery_attempt": 0,
+        "experiment_count": 0, "experiment_attempt_count": 1, "recovery_attempt": 0,
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
     }
 
     result = await workflow.recover(state)
 
-    # Retries the patch for the same contract, not a brand-new hypothesis.
     assert result["retry_target"] == "code"
     assert workflow._route_recovery({**state, **result}) == "code"
-    # The diagnosis must survive so the Code Agent actually sees it.
     assert result["last_execution_error"] == inert_error
     assert result["recovery_action"] == "activate_new_capability_in_config_or_callsites"
+    assert state["experiment_count"] == 0
+    assert state["experiment_attempt_count"] == 1
+    assert recovery_events[-1]["retry_target"] == "code"
+    assert recovery_events[-1]["experiment_id"] == "E1"
 
 
 @pytest.mark.asyncio
@@ -415,15 +421,15 @@ async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path
 
     async def control_gate(_state):
         return None
-
     monkeypatch.setattr(workflow, "_control_gate", control_gate)
-    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(workflow, "_event", lambda *_args, **_kwargs: None)
 
     state = {
         "session_id": "s", "run_id": "run-1",
-        "error": "patch produced no measurable change in training behavior",
+        "error": "patch produced no measurable change in ranking behavior",
+        "error_category": "behavior_unchanged", "failure_stage": "execute",
         "experiment_contract": contract.model_dump(mode="json"),
-        "experiment_count": 1,
+        "experiment_count": 0, "experiment_attempt_count": 1,
         "recovery_attempt": 1,  # already used the single permitted attempt
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
     }
@@ -436,11 +442,9 @@ async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_research_stops_at_budget_instead_of_looping_forever(monkeypatch) -> None:
-    # Live failure mode: every experiment failed, recovery routed back to
-    # research, research reset recovery_attempt, and the loop only ended when
-    # the Azure output-token budget was exceeded mid-call. The organizer
-    # experiment budget must stop the loop before another paid call.
+async def test_research_stops_at_completed_experiment_budget(monkeypatch) -> None:
+    # maximum_experiments counts runs that reached official validation. Code
+    # and proxy failures use bounded recovery/resource budgets instead.
     locked = {}
     services = SimpleNamespace(
         maximum_experiments=1, bedrock_input_limit=10_000, bedrock_output_limit=10_000,
@@ -529,6 +533,7 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
     services = SimpleNamespace(
         knowledge=SimpleNamespace(retrieval=FakeRetrieval()),
         agents=FakeAgents(),
+        recovery=RecoveryController(),
         contract=SimpleNamespace(public_summary=lambda: {}),
         maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
         total_wall_seconds=0, total_gpu_hours=0.0,
@@ -624,7 +629,8 @@ async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: 
         "session_id": "session-1",
         "profile_receipt": {"profile": {"path": str(profile_path)}},
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
-        "experiment_count": 0, "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
+        "experiment_count": 0, "experiment_attempt_count": 0,
+        "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
     }
 
     result = await workflow.research(state)
@@ -632,6 +638,8 @@ async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: 
     assert result["error"] == ""
     assert result["experiment_contract"]["observed_evidence_ids"] == [paper.paper_id]
     assert "content_hash" not in seen_contexts[-1]["evidence"][0]
+    assert result["experiment_attempt_count"] == 1
+    assert "experiment_count" not in result
 
 
 @pytest.mark.asyncio
@@ -671,6 +679,7 @@ async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, m
     services = SimpleNamespace(
         knowledge=SimpleNamespace(retrieval=FakeRetrieval()),
         agents=FakeAgents(),
+        recovery=RecoveryController(),
         contract=SimpleNamespace(public_summary=lambda: {}),
         maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
         total_wall_seconds=0, total_gpu_hours=0.0,
@@ -835,3 +844,59 @@ def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:
     assert result["event_chain_valid"]
     with pytest.raises(RuntimeError, match="already been finalized"):
         finalizer.package(session)
+
+
+@pytest.mark.asyncio
+async def test_completed_experiment_budget_increments_only_after_official_validation(tmp_path: Path, monkeypatch) -> None:
+    from rigor_rs.contract.models import MetricReceipt
+
+    transform = tmp_path / "transform"
+    model = tmp_path / "tier4" / "model"
+    transform.mkdir()
+    model.mkdir(parents=True)
+    np.save(model / "valid_scores.npy", np.asarray([0.2, 0.8], dtype=np.float32))
+    np.savez_compressed(
+        transform / "valid.npz",
+        users=np.asarray(["u", "u"]),
+        videos=np.asarray(["v1", "v2"]),
+        y=np.asarray([0, 1], dtype=np.float32),
+    )
+    receipt = MetricReceipt(
+        receipt_id="metric", run_id="run-1", prediction_artifact_id="pred",
+        evaluator_hash="evaluator", config_hash="config", gauc=1.0,
+        ndcg_at_5=1.0, primary=1.0, users=1, rows=2,
+        comparable=True, scope="validation", receipt_hash="hash",
+    )
+    services = SimpleNamespace(
+        evaluator=SimpleNamespace(
+            write_predictions=lambda *_args: "prediction-hash",
+            score=lambda **_kwargs: receipt,
+        ),
+        ledger=SimpleNamespace(
+            store_metric_receipt=lambda *_args: None,
+            store_resource_sample=lambda *_args: None,
+            manual_intervention_count=lambda _session: 0,
+        ),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *_args, **_kwargs: None)
+    state = {
+        "session_id": "s", "run_id": "run-1", "transform_dir": str(transform),
+        "experiment_contract": {"hypothesis": "test"},
+        "experiment_count": 3, "experiment_attempt_count": 9,
+        "tier_receipts": [{
+            "tier": 4, "status": "succeeded", "output_directory": str(tmp_path / "tier4"),
+            "gpu_seconds": 0.0, "peak_gpu_memory_mb": None,
+            "wall_seconds": 1.0, "peak_rss_mb": 10.0,
+        }],
+    }
+
+    result = await workflow.evaluate(state)
+
+    assert result["experiment_count"] == 4
+    assert state["experiment_attempt_count"] == 9

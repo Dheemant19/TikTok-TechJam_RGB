@@ -88,12 +88,21 @@ def test_hallucinated_citation_uses_agent_output_recovery() -> None:
 def test_inert_patch_uses_behavior_unchanged_recovery() -> None:
     receipt = RecoveryController().recover(
         "run",
-        "patch produced no measurable change in training behavior: proxy-scale "
-        "validation scores are bit-identical to the unpatched baseline",
+        "patch produced no measurable change in ranking behavior: proxy-scale "
+        "within-user validation ordering is identical to the unpatched experiment baseline",
         1,
-        1,
+        2,
     )
 
     assert receipt.category == "behavior_unchanged"
     assert receipt.action == "activate_new_capability_in_config_or_callsites"
     assert receipt.result == "retry permitted"
+
+
+def test_python_traceback_uses_code_patch_recovery() -> None:
+    receipt = RecoveryController().recover(
+        "run", "TypeError: unsupported operand type in agent-generated training code", 1, 2
+    )
+
+    assert receipt.category == "code_patch"
+    assert receipt.action == "regenerate_standard_git_diff"
