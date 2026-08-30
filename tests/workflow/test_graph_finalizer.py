@@ -789,6 +789,100 @@ async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, mon
     assert (await task)["baseline_result"]["status"] == "succeeded"
 
 
+@pytest.mark.asyncio
+async def test_baseline_evidence_is_persisted_before_sanity_check_failure(tmp_path: Path, monkeypatch) -> None:
+    baseline_result = {
+        "status": "succeeded",
+        "seeds": [{"metrics": {"run_id": "B0-seed-0", "primary": 0.6016}}],
+    }
+    stored_metrics: list[str] = []
+    events: list[tuple[str, str, ComponentStatus, dict]] = []
+
+    def fail_harness(_transform):
+        raise UnicodeDecodeError("charmap", b"\x90", 0, 1, "character maps to <undefined>")
+
+    services = SimpleNamespace(
+        baseline=SimpleNamespace(reproduce=lambda _dir: baseline_result, harness_checks=fail_harness),
+        ledger=SimpleNamespace(
+            store_metric_receipt=lambda _session, run_id, _metric: stored_metrics.append(run_id),
+        ),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(
+        workflow,
+        "_event",
+        lambda _state, component, _stage, event_type, status, _summary, payload=None:
+            events.append((component, event_type, status, payload or {})),
+    )
+
+    result = await workflow.baseline({"session_id": "s", "transform_dir": str(tmp_path)})
+
+    assert stored_metrics == ["B0-seed-0"]
+    assert ("trainer", "completed", ComponentStatus.SUCCEEDED) in [
+        (component, event_type, status) for component, event_type, status, _payload in events
+    ]
+    failure = events[-1]
+    assert failure[:3] == ("phase_guard", "failed", ComponentStatus.FAILED)
+    assert failure[3]["baseline_result"] == baseline_result
+    assert result["baseline_result"] == baseline_result
+    assert result["stop_reason"] == "baseline_failure"
+
+
+
+@pytest.mark.asyncio
+async def test_baseline_terminal_failure_is_not_attributed_to_decision_agent(tmp_path: Path, monkeypatch) -> None:
+    import rigor_rs.orchestration.graph as graph_module
+
+    ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
+    session = ledger.create_session()
+
+    class FakeSaver:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def setup(self):
+            return None
+
+    class FakeGraph:
+        async def ainvoke(self, state, config):
+            return {
+                **state,
+                "stop": True,
+                "stop_reason": "baseline_failure",
+                "error": "UnicodeDecodeError: invalid Windows locale decode",
+            }
+
+    services = SimpleNamespace(
+        ledger=ledger,
+        knowledge=SimpleNamespace(close=lambda: asyncio.sleep(0)),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+    monkeypatch.setattr(
+        graph_module,
+        "AsyncSqliteSaver",
+        SimpleNamespace(from_conn_string=lambda _path: FakeSaver()),
+    )
+    monkeypatch.setattr(workflow, "_build", lambda checkpointer=None: FakeGraph())
+
+    result = await workflow.run(session)
+
+    assert result["stop_reason"] == "baseline_failure"
+    snapshot = ledger.snapshot(session)
+    assert snapshot.status == ComponentStatus.FAILED
+    terminal = ledger.events(session)[-1]
+    assert terminal.component_id == "orchestrator"
+    assert terminal.stage == "workflow"
+    assert terminal.status == ComponentStatus.FAILED
+    assert "baseline execution" in terminal.plain_summary
+
 def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:
     ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
     session = ledger.create_session()

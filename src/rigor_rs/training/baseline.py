@@ -292,5 +292,9 @@ class BaselineReproducer:
             config_hash=sha256_file(self.config_path), users=valid["users"].tolist(),
             labels=valid["y"].tolist(), scores=model.predict(valid["X"]), comparable=False,
         )
-        random_bound = float(json.loads(self.contract.official_files["baseline_scores"].read_text())["scores"]["random"]["valid"]["primary"]) + self.contract.sanity_shuffle_tolerance
+        random_bound = float(
+            json.loads(
+                self.contract.official_files["baseline_scores"].read_text(encoding="utf-8")
+            )["scores"]["random"]["valid"]["primary"]
+        ) + self.contract.sanity_shuffle_tolerance
         return {"receipt": receipt.model_dump(mode="json"), "bound": random_bound, "passed": receipt.primary <= random_bound, "seed": seed}

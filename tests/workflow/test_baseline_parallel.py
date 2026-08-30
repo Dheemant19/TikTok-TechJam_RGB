@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+from types import SimpleNamespace
 
 import numpy as np
 
 from rigor_rs.contract.challenge import load_challenge_contract
 from rigor_rs.training.baseline import BaselineReproducer
+from rigor_rs.contract.models import MetricReceipt
 
 
 def test_parallel_official_fm_matches_sequential_results(tmp_path: Path) -> None:
@@ -55,3 +58,44 @@ def test_parallel_official_fm_matches_sequential_results(tmp_path: Path) -> None
         np.testing.assert_array_equal(actual_model.V, expected_model.V)
         np.testing.assert_array_equal(actual_model.W, expected_model.W)
         assert actual_model.b == expected_model.b
+
+
+def test_label_shuffle_reads_organizer_scores_as_utf8_on_windows(tmp_path: Path) -> None:
+    scores = tmp_path / "baseline_scores.json"
+    scores.write_text(
+        json.dumps(
+            {
+                "scores": {"random": {"valid": {"primary": 0.48}}},
+                "note": "用真实标签当预测分得到的理论上限",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    receipt = MetricReceipt(
+        receipt_id="m", run_id="sanity-label-shuffle",
+        prediction_artifact_id="memory", evaluator_hash="e",
+        config_hash="c", gauc=0.5, ndcg_at_5=0.45, primary=0.475,
+        users=1, rows=2, comparable=False, scope="validation",
+        receipt_hash="h",
+    )
+    reproducer = object.__new__(BaselineReproducer)
+    reproducer.contract = SimpleNamespace(
+        official_files={"baseline_scores": scores},
+        baseline_config={"k": 1},
+        sanity_shuffle_tolerance=0.02,
+    )
+    reproducer.config_path = scores
+    reproducer._load_split = lambda _path: {
+        "X": np.asarray([[0], [1]]),
+        "y": np.asarray([0, 1]),
+        "users": np.asarray(["u", "u"]),
+    }
+    model = SimpleNamespace(predict=lambda _features: np.asarray([0.1, 0.9]))
+    reproducer._fit_one = lambda *_args, **_kwargs: (model, [])
+    reproducer.evaluator = SimpleNamespace(score=lambda **_kwargs: receipt)
+
+    result = reproducer.label_shuffle_control(tmp_path)
+
+    assert result["bound"] == 0.5
+    assert result["passed"] is True

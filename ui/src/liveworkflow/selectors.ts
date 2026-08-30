@@ -270,7 +270,9 @@ export function selectAutonomyTimeline(events: RunEventDTO[]): TimelineRow[] {
     .map((event) => ({
       sequence: event.sequence,
       occurredAt: event.occurred_at,
-      componentLabel: NODES.find((node) => node.id === event.component_id)?.label ?? event.component_id,
+      componentLabel: event.component_id === "orchestrator"
+        ? "Workflow Orchestrator"
+        : NODES.find((node) => node.id === event.component_id)?.label ?? event.component_id,
       action: event.plain_summary,
       status: event.status,
     }));

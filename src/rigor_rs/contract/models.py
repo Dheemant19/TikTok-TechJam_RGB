@@ -35,9 +35,9 @@ class ComponentStatus(StrEnum):
 
 
 COMPONENT_IDS = {
-    "train_data", "data_profiler", "phase_guard", "knowledge_mcp", "scientist",
-    "coder", "pruner", "trainer", "recovery", "evaluator", "watchdog",
-    "ledger", "finalizer", "submission",
+    "orchestrator", "train_data", "data_profiler", "phase_guard", "knowledge_mcp",
+    "scientist", "coder", "pruner", "trainer", "recovery", "evaluator",
+    "watchdog", "ledger", "finalizer", "submission",
 }
 
 

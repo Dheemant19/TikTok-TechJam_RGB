@@ -165,21 +165,56 @@ class AutonomousResearchWorkflow:
     async def baseline(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
         self._event(state, "trainer", "baseline", "started", ComponentStatus.RUNNING, "Reproducing official FM baseline on validation")
-        result = await asyncio.to_thread(
-            self.s.baseline.reproduce,
-            Path(state["transform_dir"]),
-        )
+        try:
+            result = await asyncio.to_thread(
+                self.s.baseline.reproduce,
+                Path(state["transform_dir"]),
+            )
+        except Exception as error:
+            message = f"{type(error).__name__}: {error}"
+            self._event(
+                state, "trainer", "baseline", "failed", ComponentStatus.FAILED,
+                f"Official FM baseline execution failed: {message}",
+                {"error": message},
+            )
+            return {
+                "error": message, "stop": True, "stop_reason": "baseline_failure",
+            }
         if result["status"] != "succeeded":
             self._event(state, "phase_guard", "baseline", "integrity_halt", ComponentStatus.BLOCKED, "Official FM baseline reproduction missed tolerance", result)
             return {"baseline_result": result, "error": "baseline reproduction failed", "stop": True, "stop_reason": "baseline_gate"}
+
         metrics = result["seeds"][0]["metrics"]
-        # Plan_Workflow §5.3: the label-shuffle negative control and the
-        # organizer random/popularity harness references are part of the run,
-        # not a separate manual CLI step. Without this the "Check Data Safety"
-        # component never executed during `run` at all.
+        # Persist successful baseline evidence before running secondary sanity
+        # controls. The 2026-08-30 Windows failure happened after all five FM
+        # seeds completed; because this was previously deferred, the UI falsely
+        # looked as though the baseline itself had never computed.
+        for seed_result in result["seeds"]:
+            metric = seed_result["metrics"]
+            self.s.ledger.store_metric_receipt(
+                state["session_id"], metric["run_id"], metric
+            )
+        self._event(
+            state, "trainer", "baseline", "completed", ComponentStatus.SUCCEEDED,
+            "Official FM baseline reproduced within organizer tolerance",
+            {"baseline_result": result},
+        )
+
         transform_dir = Path(state["transform_dir"])
-        harness = await asyncio.to_thread(self.s.baseline.harness_checks, transform_dir)
-        shuffle = await asyncio.to_thread(self.s.baseline.label_shuffle_control, transform_dir)
+        try:
+            harness = await asyncio.to_thread(self.s.baseline.harness_checks, transform_dir)
+            shuffle = await asyncio.to_thread(self.s.baseline.label_shuffle_control, transform_dir)
+        except Exception as error:
+            message = f"{type(error).__name__}: {error}"
+            self._event(
+                state, "phase_guard", "baseline", "failed", ComponentStatus.FAILED,
+                f"Pipeline sanity checks failed to execute: {message}",
+                {"error": message, "baseline_result": result},
+            )
+            return {
+                "baseline_result": result, "baseline_metric": metrics,
+                "error": message, "stop": True, "stop_reason": "baseline_failure",
+            }
         sanity = {
             "harness": {name: receipt.model_dump(mode="json") for name, receipt in harness.items()},
             "label_shuffle": shuffle,
@@ -200,11 +235,6 @@ class AutonomousResearchWorkflow:
             sanity,
         )
         frontier = self.s.frontier.register_baseline("B0")
-        for seed_result in result["seeds"]:
-            metric = seed_result["metrics"]
-            self.s.ledger.store_metric_receipt(
-                state["session_id"], metric["run_id"], metric
-            )
         self.s.ledger.store_frontier(state["session_id"], frontier)
         self._event(state, "ledger", "baseline", "frontier", ComponentStatus.SUCCEEDED, "B0 registered as validation best and stable fallback", {"frontier": frontier.model_dump(mode="json"), "baseline_result": result})
         return {
@@ -887,22 +917,27 @@ class AutonomousResearchWorkflow:
                     initial,
                     config={"configurable": {"thread_id": session_id}},
                 )
+            stop_reason = result.get("stop_reason")
             terminal_status = (
                 ComponentStatus.BLOCKED
-                if result.get("stop_reason") == "baseline_gate"
+                if stop_reason == "baseline_gate"
+                else ComponentStatus.FAILED
+                if stop_reason == "baseline_failure"
                 else ComponentStatus.SUCCEEDED
             )
             self.s.ledger.set_session_status(session_id, terminal_status)
             terminal_summary = (
                 "Workflow blocked by the baseline integrity gate"
                 if terminal_status == ComponentStatus.BLOCKED
+                else "Workflow stopped because baseline execution or its safety checks failed"
+                if terminal_status == ComponentStatus.FAILED
                 else "Validation research loop stopped safely; final hidden-test packaging awaits explicit confirmation"
             )
             self._event(
-                result, "watchdog", "workflow", "completed", terminal_status,
+                result, "orchestrator", "workflow", "completed", terminal_status,
                 terminal_summary,
                 {
-                    "stop_reason": result.get("stop_reason", ""),
+                    "stop_reason": stop_reason or "",
                     "next_action": "package" if terminal_status == ComponentStatus.SUCCEEDED else None,
                 },
             )
@@ -912,10 +947,11 @@ class AutonomousResearchWorkflow:
             raise
         except Exception as error:
             self.s.ledger.set_session_status(session_id, ComponentStatus.FAILED)
+            message = f"{type(error).__name__}: {error}"
             self._event(
-                initial, "watchdog", "workflow", "failed", ComponentStatus.FAILED,
-                f"Workflow halted: {type(error).__name__}: {error}",
-                {"error": f"{type(error).__name__}: {error}"},
+                initial, "orchestrator", "workflow", "failed", ComponentStatus.FAILED,
+                f"Workflow halted by an uncaught exception: {message}",
+                {"error": message},
             )
             raise
         finally:
