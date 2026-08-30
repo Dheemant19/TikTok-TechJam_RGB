@@ -13,7 +13,7 @@ from rigor_rs.knowledge.config import KnowledgeConfig
 from rigor_rs.knowledge.embeddings import EmbeddingProvider, vector_from_bytes
 from rigor_rs.knowledge.ingestion import IngestionService
 from rigor_rs.knowledge.models import (
-    CacheStatus, CitationExpansionResult, CitationRecord, CodeForPaperResult, CodeSearchResult,
+    CacheStatus, CitationExpansionResult, CitationRecord, CodeForPaperResult, CodeRecord, CodeSearchResult,
     EvidenceFilters, EvidenceMatch, EvidenceSearchResult, FullTextResult, PaperRecord,
     Provenance, ResearchCard, ResponseMeta, SourceMode, ToolError,
 )
@@ -151,6 +151,7 @@ class RetrievalService:
     async def search_evidence(
         self, query: str, semantic: bool = True, filters: EvidenceFilters | None = None,
         max_results: int = 8, session_id: str | None = None, experiment_id: str | None = None,
+        bypass_cache: bool = False,
     ) -> EvidenceSearchResult:
         sid, eid = session_id or self.session_id, experiment_id or self.experiment_id
         if not query.strip() or max_results < 1 or max_results > self.config.retrieval.maximum_search_results:
@@ -159,7 +160,7 @@ class RetrievalService:
             return EvidenceSearchResult(meta=self._meta(request_id, CacheStatus.BYPASS, SourceMode.LOCAL, [], error=error, session_id=sid, experiment_id=eid), results=[])
         request_id = self.request_id()
         key, canonical_request = canonical_cache_key("hybrid", query, filters, date.today(), max_results)
-        cached = self.cache.get(key)
+        cached = None if bypass_cache else self.cache.get(key)
         if cached:
             results = []
             for item in cached.get("results", []):
@@ -318,6 +319,60 @@ class RetrievalService:
         warnings = [] if len(verified) == len(paper.code) else ["Unpinned or unlicensed repositories were withheld"]
         return CodeForPaperResult(meta=self._meta(request_id, CacheStatus.BYPASS, SourceMode.LOCAL, [paper], warnings), paper_id=paper_id, results=verified)
 
+    async def reference_code_for_experiment(
+        self, paper_ids: list[str], fallback_query: str,
+        session_id: str | None = None, experiment_id: str | None = None,
+        max_repositories: int = 2, max_files_per_repository: int = 2, max_characters: int = 20_000,
+    ) -> tuple[str, list[str]]:
+        """Assemble real reference-code text for the Code Agent. get_code_for_paper
+        /search_code above only ever return a CodeRecord (repository_url, stars,
+        license, topics) -- no file content -- so for each resolved repository
+        this lists its Python source tree at the pinned commit and fetches the
+        highest-ranked real implementation files (GitHubProvider.list_python_files
+        + get_file_content); only when no .py files are found (or no commit is
+        pinned) does it fall back to the repository's README. Cited papers'
+        already-pinned, license-verified repositories are tried first (free,
+        local); a live GitHub search on the experiment's primary_change is the
+        fallback when no cited paper has one. Any failure (network, rate limit,
+        budget) degrades to no reference code rather than blocking patch
+        generation -- reference code is a helpful supplement, not a requirement,
+        and is handed to the LLM as untrusted quoted context, never executed.
+        """
+        try:
+            records: list[CodeRecord] = []
+            for paper_id in paper_ids[:max_repositories]:
+                result = await self.get_code_for_paper(paper_id)
+                records.extend(result.results)
+            if not records and self.github:
+                search = await self.search_code(fallback_query, max_results=max_repositories, session_id=session_id, experiment_id=experiment_id)
+                records = search.results
+            sections: list[str] = []
+            used_repositories: list[str] = []
+            per_repo_budget = max(max_characters // max(len(records[:max_repositories]), 1), 1)
+            for record in records[:max_repositories]:
+                if not self.github:
+                    break
+                header = f"# Reference: {record.repository_url} (paper={record.paper_id or 'n/a'}, stars={record.stars}, license={record.license})\n"
+                body = ""
+                if record.pinned_commit:
+                    paths = await self.github.list_python_files(record.repository_url, record.pinned_commit, limit=max_files_per_repository)
+                    parts = []
+                    for path in paths:
+                        content = await self.github.get_file_content(record.repository_url, path, record.pinned_commit)
+                        if content:
+                            parts.append(f"## {path}\n{content}")
+                    body = "\n\n".join(parts)
+                if not body:
+                    body = await self.github.get_readme(record.repository_url, record.pinned_commit) or ""
+                if not body:
+                    continue
+                sections.append(header + body[:per_repo_budget])
+                used_repositories.append(record.repository_url)
+            text = "\n\n".join(sections)[:max_characters]
+            return text, used_repositories
+        except Exception:
+            return "", []
+
     async def expand_citations(self, work_id: str, direction: str, max_results: int = 10) -> CitationExpansionResult:
         request_id = self.request_id()
         citations = self.store.citations(work_id, direction, max_results)
@@ -366,9 +421,11 @@ class RetrievalService:
     async def research_card(
         self, hypothesis: str, max_evidence: int = 6,
         session_id: str | None = None, experiment_id: str | None = None,
+        filters: EvidenceFilters | None = None, bypass_cache: bool = False,
     ) -> ResearchCard:
         search = await self.search_evidence(
-            hypothesis, True, None, max_evidence, session_id=session_id, experiment_id=experiment_id,
+            hypothesis, True, filters, max_evidence, session_id=session_id, experiment_id=experiment_id,
+            bypass_cache=bypass_cache,
         )
         contradiction_terms = ("regression", "conflict", "bias", "limitation", "negative", "fails")
         contradicting = [item for item in search.results if any(term in item.paper.relevance_notes.casefold() for term in contradiction_terms)]

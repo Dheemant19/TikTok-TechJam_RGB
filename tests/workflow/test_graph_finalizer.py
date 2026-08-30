@@ -342,6 +342,106 @@ def test_activation_raises_when_multiple_new_branches_are_ambiguous(tmp_path: Pa
     assert reverted["value"], "must revert so the repaired patch still applies"
 
 
+def _minimal_contract(allowed_files: list[str]):
+    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+    return ExperimentContract(
+        experiment_id="E1", parent_run_id="B0", hypothesis="Some sufficiently long hypothesis text for validation",
+        observed_evidence_ids=[], primary_change="test change", allowed_files=allowed_files,
+        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+        fallback_run_id="B0", recovery_attempt_limit=2,
+    )
+
+
+def test_new_symbol_wiring_check_rejects_a_class_train_never_calls(tmp_path: Path) -> None:
+    # Reproduced from run-20260830T062501677461Z-e014e119 (EXP_mmoe_aux_longview_v1):
+    # the Code Agent wrote a fully correct 66-line MMoEFactorizationMachine
+    # class in models/experimental.py but never touched
+    # training/experiment.py's model construction call site, so train()
+    # kept building the old FactorizationMachine. A full tier2 GPU run then
+    # discovered a bit-identical proxy ranking with only a generic error.
+    # This must be caught immediately, for free, right after patch apply.
+    workspace = tmp_path / "ws"
+    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "src/rigor_rs/models").mkdir(parents=True)
+    (workspace / "src/rigor_rs/training/experiment.py").write_text(
+        "from rigor_rs.models.experimental import FactorizationMachine\n"
+        "def train():\n    model = FactorizationMachine()\n",
+        encoding="utf-8",
+    )
+    (workspace / "src/rigor_rs/models/experimental.py").write_text(
+        "class FactorizationMachine:\n    pass\n\n\nclass MMoEFactorizationMachine:\n    pass\n",
+        encoding="utf-8",
+    )
+    contract = _minimal_contract(["src/rigor_rs/models/experimental.py", "src/rigor_rs/training/experiment.py"])
+
+    reverted = {"value": False}
+    services = SimpleNamespace(workspace=SimpleNamespace(
+        file_at_head=lambda _ws, _rel: "class FactorizationMachine:\n    pass\n",
+        revert=lambda _ws: reverted.__setitem__("value", True),
+    ))
+    workflow = AutonomousResearchWorkflow(services)
+
+    with pytest.raises(ValueError, match="inert patch") as excinfo:
+        workflow._verify_new_symbols_wired(workspace, contract)
+    assert "MMoEFactorizationMachine" in str(excinfo.value)
+    assert "src/rigor_rs/models/experimental.py" in str(excinfo.value)
+    assert reverted["value"]
+    # This exact wording must classify as behavior_unchanged, not infrastructure,
+    # so the ledger routes it through the same bounded code retry as the tier2
+    # variant instead of a generic infrastructure restart.
+    message = f"ValueError: {excinfo.value}"
+    assert RecoveryController.classify(message) == "behavior_unchanged"
+
+
+def test_new_symbol_wiring_check_passes_when_train_references_the_new_class(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws2"
+    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "src/rigor_rs/models").mkdir(parents=True)
+    (workspace / "src/rigor_rs/training/experiment.py").write_text(
+        "from rigor_rs.models.experimental import MMoEFactorizationMachine\n"
+        "def train():\n    model = MMoEFactorizationMachine()\n",
+        encoding="utf-8",
+    )
+    (workspace / "src/rigor_rs/models/experimental.py").write_text(
+        "class MMoEFactorizationMachine:\n    pass\n", encoding="utf-8",
+    )
+    contract = _minimal_contract(["src/rigor_rs/models/experimental.py", "src/rigor_rs/training/experiment.py"])
+
+    services = SimpleNamespace(workspace=SimpleNamespace(
+        file_at_head=lambda _ws, _rel: "",
+        revert=lambda _ws: pytest.fail("a correctly wired patch must not revert"),
+    ))
+    workflow = AutonomousResearchWorkflow(services)
+
+    workflow._verify_new_symbols_wired(workspace, contract)  # must not raise
+
+
+def test_new_symbol_wiring_check_ignores_test_only_helpers(tmp_path: Path) -> None:
+    # A helper class defined only for a unit test is not a training capability;
+    # it must not be flagged just because train() never calls it.
+    workspace = tmp_path / "ws3"
+    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "tests/workflow").mkdir(parents=True)
+    (workspace / "src/rigor_rs/training/experiment.py").write_text(
+        "def train():\n    pass\n", encoding="utf-8",
+    )
+    (workspace / "tests/workflow/test_experiment.py").write_text(
+        "class _FakeLoader:\n    pass\n", encoding="utf-8",
+    )
+    contract = _minimal_contract(["src/rigor_rs/training/experiment.py", "tests/workflow/test_experiment.py"])
+
+    services = SimpleNamespace(workspace=SimpleNamespace(
+        file_at_head=lambda _ws, _rel: "",
+        revert=lambda _ws: pytest.fail("a test-only helper must not revert the patch"),
+    ))
+    workflow = AutonomousResearchWorkflow(services)
+
+    workflow._verify_new_symbols_wired(workspace, contract)  # must not raise
+
+
 @pytest.mark.asyncio
 async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_research(tmp_path: Path, monkeypatch) -> None:
     # Reproduced in session-20260830T062240630878Z-599bf0db: the live inert
@@ -567,6 +667,92 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
 
 
 @pytest.mark.asyncio
+async def test_research_query_rotates_priority_area_by_experiment_count(tmp_path: Path, monkeypatch) -> None:
+    # Reproduced live: the query passed to research_card() was a single
+    # hardcoded literal string forever, so 69 contracts across 22 sessions
+    # cited only 5 distinct paper_ids total out of 20 curated papers spanning
+    # 7 priority areas. The query and its priority_area filter must now vary
+    # with how many contracts this session has already produced. No
+    # trust_tier filter -- curated and discovered (OpenAlex) papers are both
+    # ranked and handed to the agent -- and every call bypasses the 7-day
+    # query cache so it genuinely searches again each experiment.
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text("{}", encoding="utf-8")
+
+    class FakeCard:
+        supporting: list = []
+        contradicting: list = []
+        source_ids: list = []
+        meta = SimpleNamespace(source_mode="cache")
+        missing_evidence: list = []
+
+    seen_calls = []
+
+    class FakeRetrieval:
+        async def research_card(self, hypothesis, max_evidence, **kwargs):
+            seen_calls.append({"hypothesis": hypothesis, "filters": kwargs.get("filters"), "bypass_cache": kwargs.get("bypass_cache")})
+            return FakeCard()
+
+    from rigor_rs.agents.azure_foundry import AgentUsage
+    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+
+    class FakeAgents:
+        async def research(self, _context):
+            contract = ExperimentContract(
+                experiment_id="E", parent_run_id="B0", hypothesis="Some sufficiently long hypothesis text",
+                observed_evidence_ids=[], primary_change="try something", allowed_files=["a.py"],
+                prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+                falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+                comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+                budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+                fallback_run_id="B0", recovery_attempt_limit=1,
+            )
+            return SimpleNamespace(value=contract, usage=AgentUsage(input_tokens=10, output_tokens=10, model_id="fake"))
+
+    prior_count = {"value": 0}
+    services = SimpleNamespace(
+        knowledge=SimpleNamespace(retrieval=FakeRetrieval()),
+        agents=FakeAgents(),
+        contract=SimpleNamespace(public_summary=lambda: {}),
+        maximum_experiments=10, bedrock_input_limit=100_000, bedrock_output_limit=100_000,
+        total_wall_seconds=0, total_gpu_hours=0.0,
+        ledger=SimpleNamespace(
+            list_contracts=lambda _sid: [{"experiment_id": f"E{i}"} for i in range(prior_count["value"])],
+            store_contract=lambda *_a, **_k: None,
+        ),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    state = {
+        "session_id": "session-1",
+        "profile_receipt": {"profile": {"path": str(profile_path)}},
+        "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+        "experiment_count": 0, "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
+    }
+
+    rotation = workflow._PRIORITY_AREA_ROTATION
+    queries = workflow._PRIORITY_AREA_QUERIES
+    for i in range(len(rotation) + 1):  # one full cycle plus one, to prove it wraps
+        prior_count["value"] = i
+        await workflow.research(state)
+        expected_area = rotation[i % len(rotation)]
+        assert seen_calls[-1]["hypothesis"] == queries[expected_area]
+        assert seen_calls[-1]["filters"] is None
+        assert seen_calls[-1]["bypass_cache"] is True
+
+    # Every call in the cycle must have used a distinct query.
+    assert len({call["hypothesis"] for call in seen_calls[:len(rotation)]}) == len(rotation)
+    # The (len(rotation)+1)th call must repeat the first area, proving the wrap.
+    assert seen_calls[len(rotation)]["hypothesis"] == seen_calls[0]["hypothesis"]
+
+
+@pytest.mark.asyncio
 async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: Path, monkeypatch) -> None:
     # Reproduced live against Azure: the model periodically cites a paper's
     # content_hash instead of its paper_id when both are sent as sibling
@@ -721,7 +907,11 @@ async def test_baseline_runs_label_shuffle_control_and_halts_when_suspicious(tmp
     events: list[tuple[str, str]] = []
     services = SimpleNamespace(
         baseline=SimpleNamespace(
-            reproduce=lambda _dir: {"status": "succeeded", "seeds": [{"metrics": {"run_id": "B0-seed-0", "primary": 0.6}}]},
+            reproduce=lambda _dir: {"status": "succeeded", "seeds": [{"metrics": {
+                "run_id": "B0-seed-0", "primary": 0.6, "gauc": 0.66, "ndcg_at_5": 0.53,
+                "evaluator_hash": "eval-hash", "config_hash": "cfg-hash",
+                "prediction_artifact_id": "pred", "users": 100, "rows": 200,
+            }}]},
             harness_checks=lambda _dir: {"random": receipt},
             label_shuffle_control=lambda _dir: {"passed": False, "bound": 0.4953, "receipt": receipt.model_dump(mode="json")},
         ),
@@ -752,7 +942,11 @@ async def test_baseline_runs_label_shuffle_control_and_halts_when_suspicious(tmp
 async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, monkeypatch) -> None:
     def reproduce(_transform_dir):
         time.sleep(0.2)
-        return {"status": "succeeded", "seeds": [{"metrics": {"run_id": "B0-seed-0", "primary": 0.6}}]}
+        return {"status": "succeeded", "seeds": [{"metrics": {
+            "run_id": "B0-seed-0", "primary": 0.6, "gauc": 0.66, "ndcg_at_5": 0.53,
+            "evaluator_hash": "eval-hash", "config_hash": "cfg-hash",
+            "prediction_artifact_id": "pred", "users": 100, "rows": 200,
+        }}]}
 
     services = SimpleNamespace(
         baseline=SimpleNamespace(
@@ -793,7 +987,11 @@ async def test_baseline_training_keeps_event_loop_responsive(tmp_path: Path, mon
 async def test_baseline_evidence_is_persisted_before_sanity_check_failure(tmp_path: Path, monkeypatch) -> None:
     baseline_result = {
         "status": "succeeded",
-        "seeds": [{"metrics": {"run_id": "B0-seed-0", "primary": 0.6016}}],
+        "seeds": [{"metrics": {
+            "run_id": "B0-seed-0", "primary": 0.6016, "gauc": 0.6674, "ndcg_at_5": 0.5357,
+            "evaluator_hash": "eval-hash", "config_hash": "cfg-hash",
+            "prediction_artifact_id": "pred", "users": 100, "rows": 200,
+        }}],
     }
     stored_metrics: list[str] = []
     events: list[tuple[str, str, ComponentStatus, dict]] = []
@@ -831,6 +1029,65 @@ async def test_baseline_evidence_is_persisted_before_sanity_check_failure(tmp_pa
     assert failure[3]["baseline_result"] == baseline_result
     assert result["baseline_result"] == baseline_result
     assert result["stop_reason"] == "baseline_failure"
+
+
+@pytest.mark.asyncio
+async def test_baseline_comparator_averages_all_five_seeds_not_seed_zero(tmp_path: Path, monkeypatch) -> None:
+    # decide() builds its real MetricReceipt comparator straight from
+    # state["best_metric"]/"parent_metric"; these were set from
+    # result["seeds"][0] alone, so every experiment in every session was
+    # silently compared against one arbitrary noisy seed while the UI's
+    # "Official FM Baseline (5 seeds)" table showed the honest mean of all
+    # five -- two different numbers, only one of which actually drove
+    # decisions. Reproduced with the session's real seed values.
+    from rigor_rs.contract.models import MetricReceipt
+
+    seed_values = [
+        (0.6671326321610643, 0.5358048805448538, 0.601468756352959),
+        (0.6673954513271534, 0.5361264979255713, 0.6017609746263624),
+        (0.6670635117150168, 0.5351164495629801, 0.6010899806389984),
+        (0.6674614320871909, 0.5355452797368637, 0.6015033559120273),
+        (0.6679479198936048, 0.536126483327846, 0.6020372016107254),
+    ]
+    seeds = [
+        {"metrics": {
+            "run_id": f"B0-seed-{i}", "gauc": gauc, "ndcg_at_5": ndcg, "primary": primary,
+            "evaluator_hash": "eval-hash", "config_hash": "cfg-hash",
+            "prediction_artifact_id": "pred", "users": 100, "rows": 200,
+        }}
+        for i, (gauc, ndcg, primary) in enumerate(seed_values)
+    ]
+    services = SimpleNamespace(
+        baseline=SimpleNamespace(
+            reproduce=lambda _dir: {"status": "succeeded", "seeds": seeds},
+            harness_checks=lambda _dir: {},
+            label_shuffle_control=lambda _dir: {"passed": True, "bound": 0.4953},
+        ),
+        frontier=SimpleNamespace(
+            register_baseline=lambda _run_id: SimpleNamespace(model_dump=lambda mode: {"validation_best": "B0"})
+        ),
+        ledger=SimpleNamespace(store_metric_receipt=lambda *_a: None, store_frontier=lambda *_a: None),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *args, **kwargs: None)
+
+    result = await workflow.baseline({"session_id": "s", "transform_dir": str(tmp_path)})
+
+    for key in ("baseline_metric", "best_metric", "parent_metric"):
+        metric = result[key]
+        assert metric["primary"] == pytest.approx(0.6015720538282145, abs=1e-9)
+        assert metric["gauc"] == pytest.approx(0.667400189436806, abs=1e-9)
+        assert metric["ndcg_at_5"] == pytest.approx(0.535743918219623, abs=1e-9)
+        # Must not equal seed-0's value alone -- the bug this reproduces.
+        assert metric["primary"] != seed_values[0][2]
+        assert metric["run_id"] == "B0"
+        # Must still validate as a real MetricReceipt (decide() does exactly this).
+        MetricReceipt.model_validate(metric)
 
 
 

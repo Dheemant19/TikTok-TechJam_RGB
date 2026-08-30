@@ -187,7 +187,16 @@ class PreprocessorService:
         return output
 
     def fit_apply(self, source: DataArtifact, spec: TransformSpec) -> TransformReceipt:
-        key = canonical_hash({"source": source.source_hash, "code": source.code_hash, "spec": spec.model_dump(mode="json")})
+        # contract.official_hashes must be part of the key: _load_dev_rows()
+        # reads split boundaries from self.contract.splits, which are derived
+        # from an official file. A split-boundary change (without touching
+        # the raw CSVs, this file's code, or spec) must invalidate the cache,
+        # or fit_apply would silently keep serving a transform fit under the
+        # old train/valid boundary. profile() applies the same guard above.
+        key = canonical_hash({
+            "source": source.source_hash, "code": source.code_hash,
+            "spec": spec.model_dump(mode="json"), "contract_hashes": self.contract.official_hashes,
+        })
         output = self.artifact_root / "transforms" / key
         receipt_path = output / "transform_receipt.json"
         if receipt_path.is_file():

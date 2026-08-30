@@ -203,15 +203,20 @@ class SubmissionFinalizer:
             sys.executable, str(self.contract.official_files["submission_checker"]), str(prediction),
             "--data_dir", str(self.contract.dataset_dir), "--split", "test", "--check",
         ]
-        # The official checker prints non-ASCII (Chinese + "✓") UTF-8 text.
-        # Decoding it with the Windows locale encoding returned stdout=None
-        # here, which crashed finalization while writing the evidence log.
-        # Decode explicitly so the organizer's own output is preserved verbatim.
+        # The official checker prints non-ASCII (Chinese + "check mark") text.
+        # On Windows the child process's own stdout stream defaults to the
+        # OS locale codepage (cp1252) whenever stdout is a pipe rather than a
+        # real console, so submit.py's own print() crashed with
+        # UnicodeEncodeError before we ever got its bytes back -- this is not
+        # our decode step below, it is the child's encode step. Force UTF-8
+        # I/O in the child via the environment instead of touching the
+        # organizer's script.
         completed = subprocess.run(
             command,
             cwd=str(self.contract.official_files["submission_checker"].parent),
             capture_output=True,
             timeout=300,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         )
         check_stdout = (completed.stdout or b"").decode("utf-8", errors="replace")
         check_stderr = (completed.stderr or b"").decode("utf-8", errors="replace")

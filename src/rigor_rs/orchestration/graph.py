@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import ast
+import asyncio
 import json
-import time
 import re
+import time
+from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
@@ -184,7 +185,13 @@ class AutonomousResearchWorkflow:
             self._event(state, "phase_guard", "baseline", "integrity_halt", ComponentStatus.BLOCKED, "Official FM baseline reproduction missed tolerance", result)
             return {"baseline_result": result, "error": "baseline reproduction failed", "stop": True, "stop_reason": "baseline_gate"}
 
-        metrics = result["seeds"][0]["metrics"]
+        # Every downstream decision compares against this value (decide() builds
+        # its MetricReceipt comparator straight from state["best_metric"]/
+        # "parent_metric"), so it must be the same 5-seed mean the UI already
+        # shows as "the baseline" -- using seeds[0] alone silently compared
+        # every experiment against one arbitrary noisy seed instead of the
+        # stable aggregate the reproduction was designed to produce.
+        metrics = self._average_seed_metrics([entry["metrics"] for entry in result["seeds"]])
         # Persist successful baseline evidence before running secondary sanity
         # controls. The 2026-08-30 Windows failure happened after all five FM
         # seeds completed; because this was previously deferred, the UI falsely
@@ -242,6 +249,33 @@ class AutonomousResearchWorkflow:
             "parent_metric": metrics, "frontier": frontier.model_dump(mode="json"), "experiment_count": 0,
         }
 
+    @staticmethod
+    def _average_seed_metrics(receipts: list[dict[str, Any]]) -> dict[str, Any]:
+        """Aggregate N per-seed metric receipts into the single stable comparator
+        every experiment is judged against. gauc/ndcg_at_5/primary are averaged;
+        evaluator_hash, config_hash, users, rows, and scope are structural (same
+        split, same evaluator) and are taken verbatim from the first receipt --
+        they are asserted identical across seeds rather than silently trusted.
+        """
+        if not receipts:
+            raise ValueError("cannot average zero baseline seed receipts")
+        first = receipts[0]
+        for entry in receipts[1:]:
+            if entry["evaluator_hash"] != first["evaluator_hash"] or entry["config_hash"] != first["config_hash"]:
+                raise ValueError("baseline seeds used different evaluator/config -- not directly comparable")
+        document = {
+            "receipt_id": new_id("receipt"), "run_id": "B0",
+            "prediction_artifact_id": first["prediction_artifact_id"],
+            "evaluator_hash": first["evaluator_hash"], "config_hash": first["config_hash"],
+            "gauc": sum(entry["gauc"] for entry in receipts) / len(receipts),
+            "ndcg_at_5": sum(entry["ndcg_at_5"] for entry in receipts) / len(receipts),
+            "primary": sum(entry["primary"] for entry in receipts) / len(receipts),
+            "users": first["users"], "rows": first["rows"],
+            "comparable": True, "scope": "validation",
+            "occurred_at": datetime.now(UTC).isoformat(),
+        }
+        return {**document, "receipt_hash": canonical_hash(document)}
+
     def _budget_exhausted(self, state: WorkflowState) -> str:
         """Name the exhausted budget, or an empty string while work may continue."""
         if state.get("experiment_count", 0) >= self.s.maximum_experiments:
@@ -259,6 +293,27 @@ class AutonomousResearchWorkflow:
             if elapsed >= self.s.total_wall_seconds:
                 return f"wall-clock budget reached ({self.s.total_wall_seconds}s)"
         return ""
+
+    # Ordered exactly as AGENTS.md's "High-Value KuaiRand Research Directions"
+    # priority list. Rotated by completed-contract count within the session so
+    # each successive experiment targets a different mechanism family instead
+    # of the single hardcoded query below always retrieving the same ~6
+    # papers -- reproduced live: 69 contracts across 22 sessions cited only 5
+    # distinct paper_ids total, out of 20 curated papers spanning all 7 areas.
+    _PRIORITY_AREA_ROTATION = (
+        "ranking_loss_alignment", "sequential_user_modeling", "multi_task_learning",
+        "watch_time_censored_regression", "feature_interaction_architectures",
+        "temporal_drift_modeling", "off_policy_validation",
+    )
+    _PRIORITY_AREA_QUERIES = {
+        "ranking_loss_alignment": "pairwise or listwise ranking loss aligned with GAUC and nDCG@5 instead of pointwise BCE",
+        "sequential_user_modeling": "sequential user history and short-term interest modeling for within-user ranking",
+        "multi_task_learning": "multi-task learning with auxiliary engagement signals for long_view ranking",
+        "watch_time_censored_regression": "censored watch-time and duration-bias regression for engagement ranking",
+        "feature_interaction_architectures": "explicit feature interaction architectures for click-through and engagement ranking",
+        "temporal_drift_modeling": "temporal dynamics and train/test distribution drift in recommendation ranking",
+        "off_policy_validation": "unbiased off-policy evaluation and exposure bias correction for ranking",
+    }
 
     async def research(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
@@ -288,9 +343,26 @@ class AutonomousResearchWorkflow:
         self._event(event_state, "knowledge_mcp", "research", "started", ComponentStatus.RUNNING, "Finding research evidence")
         profile_path = Path(state["profile_receipt"]["profile"]["path"])
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        prior_contracts = self.s.ledger.list_contracts(state["session_id"])
+        area = self._PRIORITY_AREA_ROTATION[len(prior_contracts) % len(self._PRIORITY_AREA_ROTATION)]
         card = await self.s.knowledge.retrieval.research_card(
-            "improve within-user GAUC and nDCG@5 for long_view", 6,
+            self._PRIORITY_AREA_QUERIES[area], 6,
             session_id=state["session_id"], experiment_id=run_id,
+            # No filters at all: `priority_area` is a curation-time tag that
+            # only curated papers ever carry (every OpenAlex-discovered paper
+            # has priority_areas=[]), so filtering on it would hard-exclude
+            # every discovered paper regardless of trust_tier. The rotated
+            # query text above already steers relevance toward this area;
+            # curated and freshly-discovered papers both compete on the same
+            # reciprocal-rank-fusion score (curated only breaks a tie), so the
+            # Research Agent sees and ranks both instead of a pre-filtered
+            # subset.
+            # bypass_cache=True: this is the once-per-experiment call that
+            # picks the actual hypothesis, not a cheap lookup -- it must go
+            # find current evidence every time, not replay whatever the first
+            # call for this (area, day) pair happened to return up to 7 days
+            # ago (cache_ttl_seconds=604800).
+            bypass_cache=True,
         )
         # content_hash is deliberately excluded here: sending it as a sibling
         # hash-like field next to paper_id caused the model to periodically
@@ -316,7 +388,7 @@ class AutonomousResearchWorkflow:
                     "hypothesis": item.get("hypothesis"),
                     "primary_change": item.get("primary_change"),
                 }
-                for item in self.s.ledger.list_contracts(state["session_id"])
+                for item in prior_contracts
             ],
             "frontier": state["frontier"],
             "remaining_budget": {
@@ -388,7 +460,11 @@ class AutonomousResearchWorkflow:
             if retry_attempt == 0
             else f"{contract.experiment_id}-retry{retry_attempt}"
         )
-        workspace, parent_commit = self.s.workspace.create(workspace_name, "HEAD")
+        workspace, parent_commit = self.s.workspace.create(
+            workspace_name,
+            "HEAD",
+            required_paths=contract.allowed_files,
+        )
         source_context = {}
         for relative in contract.allowed_files:
             path = workspace / relative
@@ -398,9 +474,20 @@ class AutonomousResearchWorkflow:
             0,
             self.s.bedrock_output_limit - state.get("agent_output_tokens", 0),
         )
+        reference_code, reference_repositories = await self.s.knowledge.retrieval.reference_code_for_experiment(
+            contract.observed_evidence_ids, contract.primary_change,
+            session_id=state["session_id"], experiment_id=state.get("run_id", contract.experiment_id),
+        )
+        self._event(
+            state, "coder", "patch", "reference_code",
+            ComponentStatus.SUCCEEDED if reference_code else ComponentStatus.FAILED,
+            f"Reference code search found {len(reference_repositories)} repositories" if reference_repositories
+            else "No reference code found for the cited papers or fallback search",
+            {"repositories": reference_repositories, "characters": len(reference_code)},
+        )
         agent_context = {
             "source_context": source_context,
-            "reference_code": "",
+            "reference_code": reference_code,
             "remaining_output_tokens": remaining_output_tokens,
             "previous_execution_failure": state.get("last_execution_error") or None,
             "required_recovery_action": state.get("recovery_action") or None,
@@ -412,6 +499,7 @@ class AutonomousResearchWorkflow:
             try:
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
                 self._verify_training_entrypoint(workspace)
+                self._verify_new_symbols_wired(workspace, contract)
                 activated = self._activate_patch_capability(workspace)
             except Exception as first:
                 repair = await self.s.agents.propose_patch(
@@ -431,6 +519,7 @@ class AutonomousResearchWorkflow:
                 result.usage.output_tokens += repair.usage.output_tokens
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
                 self._verify_training_entrypoint(workspace)
+                self._verify_new_symbols_wired(workspace, contract)
                 activated = self._activate_patch_capability(workspace)
             if activated:
                 touched = sorted({*touched, "configs/experiments/bce_fm.yaml"})
@@ -439,7 +528,11 @@ class AutonomousResearchWorkflow:
                     f"Selected the loss branch this patch introduced: training.loss={activated}",
                     {"activated_loss": activated},
                 )
-            commit = self.s.workspace.commit(workspace, contract.experiment_id)
+            commit = self.s.workspace.commit(
+                workspace,
+                contract.experiment_id,
+                touched,
+            )
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
             self._event(state, "coder", "patch", "failed", ComponentStatus.FAILED, f"Code Agent call failed: {message}", {"error": message})
@@ -571,6 +664,59 @@ class AutonomousResearchWorkflow:
             )
         config_path.write_text(updated, encoding="utf-8")
         return branch
+
+    _TOP_LEVEL_SYMBOL_PATTERN = re.compile(r"(?m)^(?:class|def)\s+(\w+)")
+
+    def _verify_new_symbols_wired(self, workspace: Path, contract: ExperimentContract) -> None:
+        """Reject a patch that defines a new class/function nobody calls.
+
+        _activate_patch_capability only closes the loss-branch-string variant of
+        this failure (see its docstring). Every other capability shape -- a new
+        model class, a new forward()/constructor argument, a new helper function
+        -- has no safe deterministic auto-fix: wiring it in requires a real code
+        decision (which call site, which arguments, how outputs combine) that is
+        not safe to guess. Observed live and repeatedly in the ledger: MMoE heads,
+        sequence encoders, and temporal-reweighting patches defining a fully
+        correct new class/function in an allowed model file while never touching
+        the training entrypoint's model construction or loss call sites, so the
+        tier2 proxy run (a full GPU run) discovered a bit-identical ranking with
+        only a generic error. This catches that dead-code shape immediately, for
+        free, right after the patch is applied -- before any GPU time is spent --
+        and forces the one bounded in-call repair retry with the exact unreferenced
+        symbol and its defining file named, instead of a generic label.
+        """
+        relative = "src/rigor_rs/training/experiment.py"
+        entrypoint = workspace / relative
+        if not entrypoint.is_file():
+            return
+        entrypoint_text = entrypoint.read_text(encoding="utf-8")
+        unwired: list[tuple[str, str]] = []
+        for touched in contract.allowed_files:
+            if touched in (relative, "configs/experiments/bce_fm.yaml") or touched.startswith("tests/"):
+                continue
+            path = workspace / touched
+            if not path.is_file() or path.suffix != ".py":
+                continue
+            patched = set(self._TOP_LEVEL_SYMBOL_PATTERN.findall(path.read_text(encoding="utf-8")))
+            try:
+                head_source = self.s.workspace.file_at_head(workspace, touched)
+            except Exception:
+                head_source = ""
+            original = set(self._TOP_LEVEL_SYMBOL_PATTERN.findall(head_source))
+            for symbol in sorted(patched - original):
+                if not re.search(rf"\b{re.escape(symbol)}\b", entrypoint_text):
+                    unwired.append((symbol, touched))
+        if not unwired:
+            return
+        self.s.workspace.revert(workspace)
+        listed = "; ".join(f"{symbol!r} (defined in {file})" for symbol, file in unwired)
+        raise ValueError(
+            f"inert patch: patch defines new symbols that {relative} never references: {listed}. "
+            "A new class or function that train() never imports or calls cannot change "
+            "GAUC/nDCG@5 -- it is dead code. Import it and call it from the model "
+            f"construction, forward, or loss call sites inside {relative} in this same "
+            "patch, or delete it if it is not needed."
+        )
 
     async def execute(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)

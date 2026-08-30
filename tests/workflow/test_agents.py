@@ -30,7 +30,7 @@ def test_model_output_limit_uses_profile_and_remaining_budget(monkeypatch) -> No
 
     factory._chat(factory.config.research_agent, remaining_output_tokens=5_000)
     assert captured[-1]["max_tokens"] == 5_000
-    assert captured[-1]["reasoning_effort"] == "low"
+    assert captured[-1]["reasoning_effort"] == "medium"
 
     captured.clear()
     factory._chat(factory.config.research_agent, remaining_output_tokens=200_000)

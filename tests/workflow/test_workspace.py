@@ -14,6 +14,12 @@ def run(*args: str, cwd: Path) -> None:
     subprocess.run(list(args), cwd=cwd, check=True, capture_output=True)
 
 
+def run_output(*args: str, cwd: Path) -> str:
+    return subprocess.run(
+        list(args), cwd=cwd, check=True, capture_output=True, text=True,
+    ).stdout
+
+
 def contract(allowed: list[str]) -> ExperimentContract:
     return ExperimentContract(
         experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise loss improves within-user ranking quality",
@@ -34,14 +40,21 @@ def test_patch_scope_and_git_apply_check(tmp_path: Path) -> None:
     run("git", "add", ".", cwd=repo)
     subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
     manager = WorkspaceManager(repo, tmp_path / "worktrees")
-    workspace, _ = manager.create("E1")
+    workspace, _ = manager.create("E1", required_paths=["model.py"])
     proposal = PatchProposal(
         unified_diff="""diff --git a/model.py b/model.py\nindex c57762b..12805b9 100644\n--- a/model.py\n+++ b/model.py\n@@ -1 +1 @@\n-LOSS = 'bce'\n+LOSS = 'bpr'\n""",
         explanation="align loss", tests=[],
     )
-    _, _, paths = manager.apply(workspace, contract(["model.py"]), proposal)
+    patch, _, paths = manager.apply(workspace, contract(["model.py"]), proposal)
     assert paths == ["model.py"]
     assert "bpr" in (workspace / "model.py").read_text()
+    assert patch == tmp_path / "patches" / "E1" / "diff.patch"
+    assert patch.is_file()
+    assert not (workspace / "diff.patch").exists()
+    (workspace / "unrelated.txt").write_text("must not be staged\n", encoding="utf-8")
+    commit_hash = manager.commit(workspace, "E1", paths)
+    assert len(commit_hash) == 40
+    assert run_output("git", "show", "--format=", "--name-only", "HEAD", cwd=workspace).strip() == "model.py"
     with pytest.raises(IntegrityViolation):
         manager.validate_proposal(workspace, contract(["model.py"]), PatchProposal(
             unified_diff="""diff --git a/kuairand-starter-kit/evaluate.py b/kuairand-starter-kit/evaluate.py\n--- a/kuairand-starter-kit/evaluate.py\n+++ b/kuairand-starter-kit/evaluate.py\n@@ -1 +1 @@\n-old\n+new\n""",
@@ -89,7 +102,7 @@ def test_apply_rejects_and_reverts_syntactically_invalid_python(tmp_path: Path) 
     run("git", "add", ".", cwd=repo)
     subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
     manager = WorkspaceManager(repo, tmp_path / "worktrees2")
-    workspace, _ = manager.create("E2")
+    workspace, _ = manager.create("E2", required_paths=["model.py"])
 
     broken = PatchProposal(
         unified_diff=(
@@ -109,3 +122,47 @@ def test_apply_rejects_and_reverts_syntactically_invalid_python(tmp_path: Path) 
     # The worktree must be restored so the Code Agent's repaired patch, which
     # is generated against the original content, still applies.
     assert (workspace / "model.py").read_text(encoding="utf-8") == "VALUE = 'ok'\n"
+
+
+def test_create_checks_out_only_runtime_and_contract_files(tmp_path: Path) -> None:
+    repo = tmp_path / "repo3"
+    repo.mkdir()
+    run("git", "init", cwd=repo)
+    files = {
+        "src/rigor_rs/runtime.py": "VALUE = 1\n",
+        "configs/experiments/bce_fm.yaml": "training: {}\n",
+        "kuairand-starter-kit/evaluate.py": "def evaluate(*args): return {}\n",
+        "tests/workflow/test_experiment.py": "def test_contract(): pass\n",
+        "tests/workflow/test_unrelated.py": "def test_unrelated(): pass\n",
+        ".agents/skills.md": "not needed\n",
+        "docs/architecture.md": "not needed\n",
+        "ui/package.json": "{}\n",
+        "pyproject.toml": "[project]\nname = 'fixture'\nversion = '0.0.0'\n",
+    }
+    for relative, content in files.items():
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    run("git", "add", ".", cwd=repo)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+         "commit", "-m", "init"],
+        cwd=repo, check=True, capture_output=True,
+    )
+
+    manager = WorkspaceManager(repo, tmp_path / "worktrees3")
+    workspace, _ = manager.create(
+        "E3",
+        required_paths=["tests/workflow/test_experiment.py"],
+    )
+
+    assert (workspace / ".git").is_file()
+    assert (workspace / "src/rigor_rs/runtime.py").is_file()
+    assert (workspace / "configs/experiments/bce_fm.yaml").is_file()
+    assert (workspace / "kuairand-starter-kit/evaluate.py").is_file()
+    assert (workspace / "tests/workflow/test_experiment.py").is_file()
+    assert (workspace / "pyproject.toml").is_file()
+    assert not (workspace / "tests/workflow/test_unrelated.py").exists()
+    assert not (workspace / ".agents").exists()
+    assert not (workspace / "docs").exists()
+    assert not (workspace / "ui").exists()

@@ -10,6 +10,14 @@ from rigor_rs.contract.models import ExperimentContract, PatchProposal
 from rigor_rs.integrity.gates import IntegrityViolation, PhaseBoundaryValidator
 
 
+_RUNTIME_SPARSE_PATTERNS = (
+    "/src/rigor_rs/",
+    "/configs/experiments/",
+    "/kuairand-starter-kit/evaluate.py",
+    "/pyproject.toml",
+)
+
+
 class WorkspaceManager:
     def __init__(self, repository: Path, root: Path, maximum_patch_characters: int = 60_000, maximum_reference_code_characters: int = 40_000) -> None:
         self.repository = repository.resolve()
@@ -19,19 +27,53 @@ class WorkspaceManager:
         self.maximum_reference_code_characters = maximum_reference_code_characters
 
     def _git(self, *args: str, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        result = subprocess.run(
             ["git", *args], cwd=str(cwd or self.repository), text=True,
-            capture_output=True, check=check,
+            capture_output=True, check=False,
         )
+        if check and result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip() or "no diagnostic output"
+            raise RuntimeError(
+                f"git {' '.join(args)} failed with exit code {result.returncode}: {detail}"
+            )
+        return result
 
-    def create(self, experiment_id: str, parent: str = "HEAD") -> tuple[Path, str]:
+    @staticmethod
+    def _sparse_patterns(required_paths: list[str] | None) -> list[str]:
+        patterns = list(_RUNTIME_SPARSE_PATTERNS)
+        for raw in required_paths or []:
+            path = Path(raw)
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError(f"unsafe sparse-checkout path: {raw}")
+            normalized = path.as_posix().strip("/")
+            if normalized:
+                patterns.append(f"/{normalized}")
+        return list(dict.fromkeys(patterns))
+
+    def create(
+        self,
+        experiment_id: str,
+        parent: str = "HEAD",
+        required_paths: list[str] | None = None,
+    ) -> tuple[Path, str]:
         if not re.fullmatch(r"[A-Za-z0-9._-]+", experiment_id):
             raise ValueError("unsafe experiment_id")
         path = self.root / experiment_id
         if path.exists():
             raise FileExistsError(path)
         commit = self._git("rev-parse", parent).stdout.strip()
-        self._git("worktree", "add", "--detach", str(path), commit)
+        self._git("worktree", "add", "--detach", "--no-checkout", str(path), commit)
+        try:
+            self._git("sparse-checkout", "init", "--no-cone", cwd=path)
+            self._git(
+                "sparse-checkout", "set", "--no-cone",
+                *self._sparse_patterns(required_paths),
+                cwd=path,
+            )
+            self._git("checkout", "--detach", commit, cwd=path)
+        except Exception:
+            self._git("worktree", "remove", "--force", str(path), check=False)
+            raise
         return path, commit
 
     @staticmethod
@@ -69,7 +111,9 @@ class WorkspaceManager:
 
     def apply(self, workspace: Path, contract: ExperimentContract, proposal: PatchProposal) -> tuple[Path, str, list[str]]:
         paths = self.validate_proposal(workspace, contract, proposal)
-        patch = workspace / "diff.patch"
+        patch_directory = self.root.parent / "patches" / workspace.name
+        patch_directory.mkdir(parents=True, exist_ok=True)
+        patch = patch_directory / "diff.patch"
         patch.write_text(proposal.unified_diff, encoding="utf-8")
         check = self._git("apply", "--check", str(patch), cwd=workspace, check=False)
         if check.returncode != 0:
@@ -100,8 +144,14 @@ class WorkspaceManager:
         result = self._git("show", f"HEAD:{relative}", cwd=workspace, check=False)
         return result.stdout if result.returncode == 0 else ""
 
-    def commit(self, workspace: Path, experiment_id: str) -> str:
-        self._git("add", "-A", cwd=workspace)
+    def commit(self, workspace: Path, experiment_id: str, paths: list[str]) -> str:
+        if not paths:
+            raise IntegrityViolation("cannot commit an experiment with no validated files")
+        for raw in paths:
+            path = Path(raw)
+            if path.is_absolute() or ".." in path.parts:
+                raise IntegrityViolation(f"unsafe commit path: {raw}")
+        self._git("add", "--", *paths, cwd=workspace)
         self._git("-c", "user.name=RIGOR-RS", "-c", "user.email=local@rigor-rs.invalid", "commit", "-m", f"experiment {experiment_id}", cwd=workspace)
         return self._git("rev-parse", "HEAD", cwd=workspace).stdout.strip()
 

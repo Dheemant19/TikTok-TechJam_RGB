@@ -12,7 +12,7 @@ api_version_env: AZURE_FOUNDRY_API_VERSION
 research_agent:
   model_deployment_env: AZURE_RESEARCH_MODEL_DEPLOYMENT
   temperature: 0
-  reasoning_effort: low
+  reasoning_effort: medium
   timeout_seconds: 180
   transient_retry_limit: 2
   use_responses_api: true
@@ -20,10 +20,11 @@ research_agent:
 code_recovery_agent:
   model_deployment_env: AZURE_CODE_MODEL_DEPLOYMENT
   temperature: 0
-  reasoning_effort: low
+  reasoning_effort: max
   timeout_seconds: 300
   transient_retry_limit: 2
-  # gpt-5.1-codex-mini is Responses-API-only (no Chat Completions support).
+  # gpt-5.6-luna supports both Responses and Chat Completions APIs; Responses
+  # is used here for feature parity with the research agent.
   use_responses_api: true
 
 structured_output:

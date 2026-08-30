@@ -131,3 +131,159 @@ async def test_local_miss_fetches_once_then_uses_cache(test_config, store) -> No
     assert first.meta.source_mode == SourceMode.LIVE
     assert first.results[0].paper.paper_id == "openalex:w-test-live"
     assert second.meta.cache_status == CacheStatus.HIT
+
+
+@pytest.mark.asyncio
+async def test_bypass_cache_forces_a_fresh_live_fetch_every_call(test_config, store) -> None:
+    # The per-experiment research() call must find current evidence every
+    # time it runs, not replay whatever the first call for an (area, day)
+    # pair happened to return up to cache_ttl_seconds (7 days) ago.
+    embeddings = FakeEmbeddings()
+    provider = FakeOpenAlex()
+    ingestion = IngestionService(test_config, store, embeddings)
+    budgets = BudgetManager(store, load_budget_config(test_config.budget_config).mcp)
+    cache = QueryCache(store, test_config.retrieval.cache_ttl_seconds)
+    retrieval = RetrievalService(
+        test_config, store, embeddings, budgets, cache, ingestion, openalex=provider,
+    )
+    first = await retrieval.search_evidence(
+        "Unique Live Provider Evidence", semantic=False, max_results=3, bypass_cache=True,
+    )
+    second = await retrieval.search_evidence(
+        "Unique Live Provider Evidence", semantic=False, max_results=3, bypass_cache=True,
+    )
+    assert provider.calls == 2
+    assert first.meta.cache_status == CacheStatus.MISS
+    assert second.meta.cache_status == CacheStatus.MISS
+    assert second.meta.source_mode == SourceMode.LIVE
+
+
+@pytest.mark.asyncio
+async def test_reference_code_fetches_real_source_files_when_available(test_config, store) -> None:
+    # get_code_for_paper/search_code only ever returned repository metadata
+    # (url/stars/license/topics), never actual file content, so the Code
+    # Agent's reference_code was hardcoded to "" forever. Real .py source
+    # files at the pinned commit must be fetched and take priority over the
+    # README, which is documentation, not the algorithm.
+    from rigor_rs.knowledge.models import CodeRecord, PaperIdentifiers, PaperRecord
+
+    embeddings = FakeEmbeddings()
+
+    class FakeGitHub:
+        def __init__(self) -> None:
+            self.readme_calls: list[str] = []
+            self.listed_ref: str | None = None
+
+        async def list_python_files(self, repository_url, ref, limit=2):
+            self.listed_ref = ref
+            return ["bpr/model.py", "bpr/train_test.py", "docs/example.py"]
+
+        async def get_file_content(self, repository_url, path, ref):
+            return f"class BPR(nn.Module):\n    def forward(self):\n        pass  # from {path}\n"
+
+        async def get_readme(self, repository_url, ref=None):
+            self.readme_calls.append(repository_url)
+            return "# BPR reference implementation\n\nclass BPR(nn.Module): ...\n"
+
+    github = FakeGitHub()
+    ingestion = IngestionService(test_config, store, embeddings)
+    budgets = BudgetManager(store, load_budget_config(test_config.budget_config).mcp)
+    cache = QueryCache(store, test_config.retrieval.cache_ttl_seconds)
+    retrieval = RetrievalService(test_config, store, embeddings, budgets, cache, ingestion, github=github)
+
+    paper = PaperRecord(
+        paper_id="arxiv:test-bpr", title="Test BPR", authors=["A"], year=2012, venue=None,
+        abstract=None, identifiers=PaperIdentifiers(), paper_url=None, license="MIT",
+        retracted=False, trust_tier="curated", content_completeness="metadata_only",
+        priority_areas=["ranking_loss_alignment"], relevance_notes="pairwise ranking",
+        keywords=[], sanitizer_flags=[], quarantined=False, content_hash="a" * 64,
+        retrieved_at="2026-01-01T00:00:00+00:00",
+        code=[CodeRecord(
+            repository_url="https://github.com/example/bpr", pinned_commit="deadbeef",
+            license="MIT", stars=10, paper_id="arxiv:test-bpr",
+            retrieved_at="2026-01-01T00:00:00+00:00", content_hash="b" * 64, verified=True,
+        )],
+    )
+    store.upsert_paper(paper, None, None, None, None)
+
+    text, repositories = await retrieval.reference_code_for_experiment(
+        ["arxiv:test-bpr"], "fallback query that must not be used",
+    )
+
+    assert github.listed_ref == "deadbeef"
+    assert repositories == ["https://github.com/example/bpr"]
+    assert "class BPR(nn.Module)" in text
+    assert "from bpr/model.py" in text
+    assert github.readme_calls == []  # real source files found -- README never needed
+
+
+@pytest.mark.asyncio
+async def test_reference_code_falls_back_to_readme_when_no_source_files_found(test_config, store) -> None:
+    from rigor_rs.knowledge.models import CodeRecord, PaperIdentifiers, PaperRecord
+
+    embeddings = FakeEmbeddings()
+
+    class FakeGitHub:
+        def __init__(self) -> None:
+            self.readme_calls: list[str] = []
+
+        async def list_python_files(self, repository_url, ref, limit=2):
+            return []  # e.g. a non-Python repo, or the Git Trees API found nothing
+
+        async def get_readme(self, repository_url, ref=None):
+            self.readme_calls.append(repository_url)
+            return "# BPR reference implementation\n\nclass BPR(nn.Module): ...\n"
+
+    github = FakeGitHub()
+    ingestion = IngestionService(test_config, store, embeddings)
+    budgets = BudgetManager(store, load_budget_config(test_config.budget_config).mcp)
+    cache = QueryCache(store, test_config.retrieval.cache_ttl_seconds)
+    retrieval = RetrievalService(test_config, store, embeddings, budgets, cache, ingestion, github=github)
+
+    paper = PaperRecord(
+        paper_id="arxiv:test-bpr", title="Test BPR", authors=["A"], year=2012, venue=None,
+        abstract=None, identifiers=PaperIdentifiers(), paper_url=None, license="MIT",
+        retracted=False, trust_tier="curated", content_completeness="metadata_only",
+        priority_areas=["ranking_loss_alignment"], relevance_notes="pairwise ranking",
+        keywords=[], sanitizer_flags=[], quarantined=False, content_hash="a" * 64,
+        retrieved_at="2026-01-01T00:00:00+00:00",
+        code=[CodeRecord(
+            repository_url="https://github.com/example/bpr", pinned_commit="deadbeef",
+            license="MIT", stars=10, paper_id="arxiv:test-bpr",
+            retrieved_at="2026-01-01T00:00:00+00:00", content_hash="b" * 64, verified=True,
+        )],
+    )
+    store.upsert_paper(paper, None, None, None, None)
+
+    text, repositories = await retrieval.reference_code_for_experiment(
+        ["arxiv:test-bpr"], "fallback query that must not be used",
+    )
+
+    assert github.readme_calls == ["https://github.com/example/bpr"]
+    assert repositories == ["https://github.com/example/bpr"]
+    assert "class BPR(nn.Module)" in text
+    assert "https://github.com/example/bpr" in text
+
+
+@pytest.mark.asyncio
+async def test_reference_code_degrades_to_empty_on_any_failure(test_config, store) -> None:
+    embeddings = FakeEmbeddings()
+
+    class ExplodingGitHub:
+        async def get_readme(self, repository_url, ref=None):
+            raise RuntimeError("GitHub is down")
+
+        async def search_code_records(self, query, language, min_stars, limit):
+            raise RuntimeError("GitHub is down")
+
+    ingestion = IngestionService(test_config, store, embeddings)
+    budgets = BudgetManager(store, load_budget_config(test_config.budget_config).mcp)
+    cache = QueryCache(store, test_config.retrieval.cache_ttl_seconds)
+    retrieval = RetrievalService(test_config, store, embeddings, budgets, cache, ingestion, github=ExplodingGitHub())
+
+    text, repositories = await retrieval.reference_code_for_experiment(
+        ["arxiv:does-not-exist"], "some query",
+    )
+
+    assert text == ""
+    assert repositories == []

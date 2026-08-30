@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -95,6 +96,76 @@ class GitHubProvider(KnowledgeProvider):
             retrieved_at=datetime.now(UTC).isoformat(), content_hash=hashlib.sha256(digest_input.encode()).hexdigest(),
             verified=bool(sha and (item.get("license") or {}).get("spdx_id")),
         )
+
+    async def get_readme(self, repository_url: str, ref: str | None = None) -> str | None:
+        """Fetch a repository's actual README text (base64-decoded), the closest
+        thing to real reference code the metadata-only search/resolve calls
+        above provide -- those return repository_url/stars/license/topics but
+        never file content."""
+        repository = repository_url.removeprefix("https://github.com/").strip("/")
+        params = {"ref": ref} if ref else None
+        try:
+            response = await self.http.get_json(
+                f"{self.base_url}/repos/{quote(repository, safe='/')}/readme", params=params,
+            )
+        except ProviderFailure as error:
+            if error.status_code == 404:
+                return None
+            raise
+        content, encoding = response.data.get("content"), response.data.get("encoding")
+        if not content or encoding != "base64":
+            return None
+        try:
+            return base64.b64decode(content).decode("utf-8", errors="replace")
+        except (ValueError, TypeError):
+            return None
+
+    _SKIP_PATH_SEGMENTS = ("test", "__pycache__", ".github", "docs", "example", "notebook", "benchmark")
+
+    async def list_python_files(self, repository_url: str, ref: str, limit: int = 3) -> list[str]:
+        """List real, ranked implementation-file paths via the Git Trees API --
+        get_readme() only ever returns documentation, not source. Test files,
+        docs, examples, and notebooks are excluded so the ranked paths point at
+        the actual algorithm, not usage boilerplate; shorter (closer to repo
+        root, less deeply nested) paths are preferred as a proxy for "core
+        module" over deeply-nested helper files."""
+        repository = repository_url.removeprefix("https://github.com/").strip("/")
+        try:
+            response = await self.http.get_json(
+                f"{self.base_url}/repos/{quote(repository, safe='/')}/git/trees/{quote(ref, safe='')}",
+                params={"recursive": "1"},
+            )
+        except ProviderFailure as error:
+            if error.status_code == 404:
+                return []
+            raise
+        candidates = [
+            item["path"] for item in response.data.get("tree", [])
+            if item.get("type") == "blob" and item.get("path", "").endswith(".py")
+            and not any(segment in item["path"].casefold() for segment in self._SKIP_PATH_SEGMENTS)
+        ]
+        candidates.sort(key=lambda path: (path.count("/"), len(path)))
+        return candidates[:limit]
+
+    async def get_file_content(self, repository_url: str, path: str, ref: str) -> str | None:
+        repository = repository_url.removeprefix("https://github.com/").strip("/")
+        try:
+            response = await self.http.get_json(
+                f"{self.base_url}/repos/{quote(repository, safe='/')}/contents/{quote(path, safe='/')}",
+                params={"ref": ref},
+            )
+        except ProviderFailure as error:
+            if error.status_code == 404:
+                return None
+            raise
+        content, encoding = response.data.get("content"), response.data.get("encoding")
+        if not content or encoding != "base64":
+            # Files over ~1MB omit `content` entirely; skip rather than guess.
+            return None
+        try:
+            return base64.b64decode(content).decode("utf-8", errors="replace")
+        except (ValueError, TypeError):
+            return None
 
     async def search_code_records(self, query: str, language: str, min_stars: int, limit: int) -> tuple[list[CodeRecord], int]:
         search_query = f"{query} language:{language} stars:>={min_stars}"
