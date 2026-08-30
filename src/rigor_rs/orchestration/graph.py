@@ -250,7 +250,8 @@ class AutonomousResearchWorkflow:
                 "stop": True, "stop_reason": "budget", "error": "",
             }
         run_id = new_id("run")
-        self._event(state, "knowledge_mcp", "research", "started", ComponentStatus.RUNNING, "Finding research evidence")
+        event_state = {**state, "run_id": run_id}
+        self._event(event_state, "knowledge_mcp", "research", "started", ComponentStatus.RUNNING, "Finding research evidence")
         profile_path = Path(state["profile_receipt"]["profile"]["path"])
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
         card = await self.s.knowledge.retrieval.research_card(
@@ -272,7 +273,7 @@ class AutonomousResearchWorkflow:
             item.paper.content_hash: item.paper.paper_id
             for item in [*card.supporting, *card.contradicting]
         }
-        self._event(state, "knowledge_mcp", "research", "completed", ComponentStatus.SUCCEEDED, "Research evidence selected", {"evidence_ids": card.source_ids, "source_mode": card.meta.source_mode, "supporting": [item.model_dump(mode="json") for item in card.supporting], "contradicting": [item.model_dump(mode="json") for item in card.contradicting], "missing_evidence": card.missing_evidence})
+        self._event(event_state, "knowledge_mcp", "research", "completed", ComponentStatus.SUCCEEDED, "Research evidence selected", {"evidence_ids": card.source_ids, "source_mode": card.meta.source_mode, "supporting": [item.model_dump(mode="json") for item in card.supporting], "contradicting": [item.model_dump(mode="json") for item in card.contradicting], "missing_evidence": card.missing_evidence})
         context = {
             "challenge": self.s.contract.public_summary(), "profile": profile,
             "runs": [
@@ -307,7 +308,7 @@ class AutonomousResearchWorkflow:
             if cited != contract.observed_evidence_ids:
                 contract = contract.model_copy(update={"observed_evidence_ids": cited})
         except Exception as error:
-            self._event(state, "scientist", "research", "failed", ComponentStatus.FAILED, f"Research Agent call failed: {error}", {"error": str(error)})
+            self._event(event_state, "scientist", "research", "failed", ComponentStatus.FAILED, f"Research Agent call failed: {error}", {"error": str(error)})
             return {
                 "run_id": run_id, "error": str(error), "recovery_attempt": 0,
                 "experiment_count": state.get("experiment_count", 0) + 1,
@@ -319,11 +320,12 @@ class AutonomousResearchWorkflow:
         )
         self.s.ledger.store_contract(state["session_id"], contract.experiment_id, contract.model_dump(mode="json"))
         self._event(
-            state, "scientist", "research", "plan", ComponentStatus.SUCCEEDED,
+            event_state, "scientist", "research", "plan", ComponentStatus.SUCCEEDED,
             "One bounded experiment selected",
             {
                 "contract": contract.model_dump(mode="json"),
                 "proposed_experiment_id": proposed_experiment_id,
+                "planned_run_id": run_id,
                 "usage": result.usage.model_dump(),
             },
         )
@@ -839,10 +841,18 @@ class AutonomousResearchWorkflow:
                 else ComponentStatus.SUCCEEDED
             )
             self.s.ledger.set_session_status(session_id, terminal_status)
+            terminal_summary = (
+                "Workflow blocked by the baseline integrity gate"
+                if terminal_status == ComponentStatus.BLOCKED
+                else "Validation research loop stopped safely; final hidden-test packaging awaits explicit confirmation"
+            )
             self._event(
                 result, "watchdog", "workflow", "completed", terminal_status,
-                "Workflow stopped at a safe terminal state",
-                {"stop_reason": result.get("stop_reason", "")},
+                terminal_summary,
+                {
+                    "stop_reason": result.get("stop_reason", ""),
+                    "next_action": "package" if terminal_status == ComponentStatus.SUCCEEDED else None,
+                },
             )
             return result
         except asyncio.CancelledError:

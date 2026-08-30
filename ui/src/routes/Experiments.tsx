@@ -28,6 +28,8 @@ export function Experiments() {
   const events = useRunStore((state) => state.events);
   const rows = useMemo(() => selectExperiments(events), [events]);
   const baseline = rows.find((row) => row.status === "baseline");
+  const attempts = rows.filter((row) => row.status !== "baseline");
+  const evaluated = attempts.filter((row) => row.primary !== null);
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-6)", maxWidth: 1200, width: "100%", margin: "0 auto" }}>
@@ -37,6 +39,13 @@ export function Experiments() {
           ? `Every run compared against the official FM baseline (${formatMetric(baseline.primary)} primary), not an intermediate best.`
           : "The official FM baseline has not been reproduced yet in this session."}
       </p>
+      {attempts.length > 0 && (
+        <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
+          {attempts.length} bounded experiment attempt{attempts.length === 1 ? "" : "s"} consumed budget;{" "}
+          {evaluated.length} reached full training and official validation. Failed proxy checks remain visible because
+          they still consumed research, code, compute, and recovery resources.
+        </p>
+      )}
 
       {rows.length === 0 ? (
         <div style={{ ...cardStyle, marginTop: "var(--space-6)", textAlign: "center", color: "var(--text-2)", fontSize: 12.5, padding: "var(--space-5)" }}>

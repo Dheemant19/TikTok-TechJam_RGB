@@ -65,20 +65,23 @@ const DECISION_STATUS: Record<string, ExperimentRow["status"]> = {
   ambiguous: "ambiguous",
 };
 
-/** Builds the Experiments page's rows straight from ledger events: the B0
- * baseline registration plus one row per watchdog decision, each compared
- * against the official FM baseline rather than an intermediate best
- * (Plan_UI.md #5.1, AGENTS.md baseline rules). */
+/** Builds one row for every bounded experiment attempt, not merely for the
+ * attempts that survived smoke checks and reached a watchdog decision. The
+ * experiment budget is consumed when a contract is selected because research,
+ * patch generation and proxy execution all spend resources. Hiding inert
+ * patches made a correct "budget reached (10)" event appear next to only two
+ * experiments in the UI.
+ *
+ * Older ledger events associated the scientist plan with the preceding run ID,
+ * so plans are paired in sequence with the next coder-start event. New events
+ * include planned_run_id and use that directly. */
 export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
   const rows: ExperimentRow[] = [];
-  const baselineEvent = events.find((event) => event.component_id === "ledger" && event.event_type === "frontier");
+  const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
+  const baselineEvent = ordered.find((event) => event.component_id === "ledger" && event.event_type === "frontier");
   if (baselineEvent) {
     const baselineResult = asRecord(field(asRecord(baselineEvent.payload), "baseline_result"));
     const seeds = asArray(field(baselineResult, "seeds")) ?? [];
-    // baseline.py dumps `MetricReceipt.model_dump()` directly for each seed,
-    // so the field names are the Pydantic model's own (lowercase `gauc` /
-    // `ndcg_at_5`), unlike the evaluator node's own event payload which
-    // relabels them to the organizer's display names (`GAUC` / `nDCG@5`).
     const seedMetrics = seeds.map((seed) => asRecord(field(asRecord(seed), "metrics"))).filter((value): value is JsonRecord => value !== undefined);
     const average = (key: string): number | null => {
       const values = seedMetrics.map((metric) => numberField(metric, key)).filter((value): value is number => value !== null);
@@ -96,33 +99,68 @@ export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
   }
 
   const metricByRun = new Map<string, { gauc: number | null; ndcg5: number | null; primary: number | null }>();
-  for (const event of events) {
-    if (event.component_id !== "evaluator" || event.event_type !== "metric") continue;
-    const metrics = asRecord(field(asRecord(event.payload), "metrics"));
-    metricByRun.set(event.run_id, { gauc: numberField(metrics, "GAUC"), ndcg5: numberField(metrics, "nDCG@5"), primary: numberField(metrics, "primary") });
-  }
-  const evidenceSourceByRun = new Map<string, string>();
-  for (const event of events) {
-    if (event.component_id !== "knowledge_mcp" || event.event_type !== "completed") continue;
-    evidenceSourceByRun.set(event.run_id, evidenceSourceSummary(asRecord(event.payload)));
+  const decisionByRun = new Map<string, ExperimentRow["status"]>();
+  const failedRuns = new Set<string>();
+  for (const event of ordered) {
+    if (event.component_id === "evaluator" && event.event_type === "metric") {
+      const metrics = asRecord(field(asRecord(event.payload), "metrics"));
+      metricByRun.set(event.run_id, {
+        gauc: numberField(metrics, "GAUC"),
+        ndcg5: numberField(metrics, "nDCG@5"),
+        primary: numberField(metrics, "primary"),
+      });
+    }
+    if (event.component_id === "watchdog" && event.event_type === "frontier") {
+      const decision = stringField(asRecord(event.payload), "decision") ?? "";
+      const status = DECISION_STATUS[decision];
+      if (status) decisionByRun.set(event.run_id, status);
+    }
+    if (
+      event.event_type === "inert_patch"
+      || (
+        event.status === "failed"
+        && ["scientist", "coder", "trainer", "evaluator", "phase_guard"].includes(event.component_id)
+      )
+    ) {
+      failedRuns.add(event.run_id);
+    }
   }
 
-  for (const event of events) {
-    if (event.component_id !== "watchdog" || event.event_type !== "frontier") continue;
-    const payload = asRecord(event.payload);
-    const experimentId = stringField(payload, "experiment_id") ?? event.run_id;
-    const decision = stringField(payload, "decision") ?? "";
-    const metrics = metricByRun.get(event.run_id);
+  const plans = ordered.filter((event) => event.component_id === "scientist" && event.event_type === "plan");
+  const coderStarts = ordered.filter((event) => event.component_id === "coder" && event.event_type === "started");
+  const evidenceEvents = ordered.filter((event) => event.component_id === "knowledge_mcp" && event.event_type === "completed");
+  plans.forEach((plan, index) => {
+    const payload = asRecord(plan.payload);
+    const contract = asRecord(field(payload, "contract"));
+    const plannedRunId = stringField(payload, "planned_run_id") ?? coderStarts[index]?.run_id ?? plan.run_id;
+    const experimentId = stringField(contract, "experiment_id") ?? plannedRunId;
+    const metrics = metricByRun.get(plannedRunId);
+    const evidence = [...evidenceEvents].reverse().find((event) => event.sequence < plan.sequence);
     rows.push({
       id: experimentId,
       label: experimentId,
       gauc: metrics?.gauc ?? null,
       ndcg5: metrics?.ndcg5 ?? null,
       primary: metrics?.primary ?? null,
-      status: DECISION_STATUS[decision] ?? "running",
-      evidenceSource: evidenceSourceByRun.get(event.run_id) ?? null,
+      status: decisionByRun.get(plannedRunId) ?? (failedRuns.has(plannedRunId) ? "failed" : "running"),
+      evidenceSource: evidence ? evidenceSourceSummary(asRecord(evidence.payload)) : null,
     });
-  }
+  });
+
+  // A failed Research Agent call consumes one bounded attempt even though it
+  // cannot produce an ExperimentContract or start the coder.
+  const researchFailures = ordered.filter((event) => event.component_id === "scientist" && event.event_type === "failed");
+  researchFailures.forEach((event, index) => {
+    rows.push({
+      id: `${event.run_id}-research-failure-${index + 1}`,
+      label: `Research attempt failed (${event.run_id})`,
+      gauc: null,
+      ndcg5: null,
+      primary: null,
+      status: "failed",
+      evidenceSource: null,
+    });
+  });
   return rows;
 }
 
