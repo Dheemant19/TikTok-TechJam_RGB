@@ -4,6 +4,12 @@ parent_run_id: null
 hypothesis: null
 observed_evidence_ids: []
 primary_change: null
+method_family: null
+implementation_kind: null
+required_capabilities: []
+mechanism_id: null
+iteration_strategy: null
+decision_rationale: null
 
 files:
   allowed: []

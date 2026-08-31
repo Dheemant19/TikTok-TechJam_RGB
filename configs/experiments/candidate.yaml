@@ -3,6 +3,8 @@ official_evaluator: kuairand-starter-kit/evaluate.py
 model:
   name: factorization_machine
   factors: 16
+  # Built-ins: factorization_machine, deepfm, dcnv2, din.
+  # Research worktrees may add another validated PyTorch model.
 training:
   loss: bce
   learning_rate: 0.001
@@ -10,4 +12,6 @@ training:
   batch_size: 8192
   epochs: 20
   patience: 3
+  # Graceful per-run limit; the execution funnel also enforces a hard process timeout.
+  maximum_seconds: 1200
 device: cuda

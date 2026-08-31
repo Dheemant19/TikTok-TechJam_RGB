@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { asRecord, field } from "../api/json";
@@ -38,19 +38,22 @@ export function FinalPackage() {
   const packageResult = useRunStore((state) => state.packageResult);
   const packageError = useRunStore((state) => state.packageError);
   const packageRun = useRunStore((state) => state.packageRun);
-  const [confirmText, setConfirmText] = useState("");
+  const attachedSnapshot = snapshot?.session_id === sessionId ? snapshot : null;
 
   const rows = useMemo(() => selectExperiments(events), [events]);
   const duplicateRuns = useMemo(() => duplicatePredictionRuns(events), [events]);
   const baseline = rows.find((row) => row.status === "baseline");
-  const frontier = snapshot?.frontier;
+  const frontier = attachedSnapshot?.frontier;
   const winner = packageResult
-    ? textOf(field(packageResult, "validation_best"), textOf(frontier?.validation_best))
-    : textOf(frontier?.validation_best);
+    ? textOf(field(packageResult, "validation_best"), textOf(frontier?.validation_best, ""))
+    : textOf(frontier?.validation_best, "");
   const experimentId = packageResult ? textOf(field(packageResult, "experiment_id"), "") : "";
   const selected = winner === "B0"
     ? baseline
-    : rows.find((row) => row.id === experimentId);
+    : rows.find((row) => row.id === experimentId || row.runId === winner);
+  const selectedLabel = winner === "B0"
+    ? "Official FM baseline (B0)"
+    : selected?.label ?? (winner ? "Validation-best experiment" : "Selection pending");
   const primaryDelta = selected?.primary !== null
     && selected?.primary !== undefined
     && baseline?.primary !== null
@@ -60,10 +63,12 @@ export function FinalPackage() {
   const isBaselinePackage = winner === "B0";
   const hasIntegrityWarning = duplicateRuns.length > 0;
   const canPackage = Boolean(sessionId)
-    && (snapshot?.allowed_actions.includes("package") ?? false)
+    && Boolean(attachedSnapshot?.allowed_actions.includes("package"))
     && !packageResult;
-  const ready = canPackage && confirmText === sessionId;
 
+  const packageSessionId = packageResult
+    ? textOf(field(packageResult, "session_id"), sessionId ?? "")
+    : sessionId ?? "";
   const predictionsPath = packageResult
     ? textOf(field(packageResult, "predictions"), "")
     : "";
@@ -87,21 +92,21 @@ export function FinalPackage() {
     ? field(packageResult, "event_chain_valid") === true
     : false;
 
-  const verdict = hasIntegrityWarning
+  const packageStatus = hasIntegrityWarning
     ? {
-        title: "Do not submit this package",
-        detail: `This session contains byte-identical outputs from ${duplicateRuns.length} experiment runs. The CSV passed its file-format check, but the research result is not trustworthy. Restart the backend and run a new session with the corrected workflow.`,
+        title: "Package blocked by an integrity warning",
+        detail: `This session contains byte-identical outputs from ${duplicateRuns.length} experiment runs. The CSV passed its format check, but this result should not be submitted.`,
         color: "var(--status-failed)",
       }
     : isBaselinePackage
       ? {
-          title: "No — this is a baseline package, not a winning result",
-          detail: "No experiment cleared the required validation improvement, so FlowState selected the official FM baseline (B0). The hidden test has not been scored. This package only proves that the baseline CSV was generated in the correct format.",
+          title: "Baseline package ready",
+          detail: "The official FM baseline was selected because no experiment cleared the required validation improvement. The files are valid, but this is not an improved entry.",
           color: "var(--status-attention)",
         }
       : {
-          title: "Not yet — an improved candidate is ready to submit",
-          detail: "FlowState selected the validation-best experiment and verified the CSV format. Winning is unknown until the organizer scores predictions.csv on the hidden test.",
+          title: "Validation-best package ready",
+          detail: "The selected checkpoint produced a test prediction file, and the official starter-kit format check passed. Test ranking quality is not measured during packaging.",
           color: "var(--status-success)",
         };
 
@@ -114,15 +119,20 @@ export function FinalPackage() {
 
       {packageResult ? (
         <>
-          <section aria-live="polite" style={{ ...verdictStyle, borderColor: verdict.color }}>
-            <h2 style={{ ...verdictHeadingStyle, color: verdict.color }}>{verdict.title}</h2>
-            <p style={verdictDetailStyle}>{verdict.detail}</p>
+          <section aria-live="polite" style={{ ...packageStatusStyle, borderColor: packageStatus.color }}>
+            <div>
+              <h2 style={packageStatusHeadingStyle}>{packageStatus.title}</h2>
+              <p style={packageStatusDetailStyle}>{packageStatus.detail}</p>
+            </div>
+            <span style={{ ...statusPillStyle, color: packageStatus.color, borderColor: packageStatus.color }}>
+              {hasIntegrityWarning ? "Blocked" : schemaPassed && eventChainValid ? "Verified" : "Review checks"}
+            </span>
           </section>
 
           <section style={cardStyle}>
             <h2 style={sectionHeadingStyle}>What this package contains</h2>
             <div style={factsGridStyle}>
-              <Fact label="Selected model" value={isBaselinePackage ? "Official FM baseline (B0)" : experimentId || winner} />
+              <Fact label="Selected model" value={selectedLabel} />
               <Fact
                 label="Validation primary"
                 value={selected?.primary == null ? "Not available" : selected.primary.toFixed(4)}
@@ -148,20 +158,20 @@ export function FinalPackage() {
               <>
                 <p style={actionHelpStyle}>
                   {isBaselinePackage
-                    ? "Use this only if you intentionally want to submit the official baseline. For an improved entry, start a new research session instead."
-                    : "Download predictions.csv and submit it once through the organizer’s official submission channel. Keep manifest.json with your audit evidence."}
+                    ? "Download predictions.csv only if you intend to use the official baseline. Keep manifest.json as the record of exactly what was packaged."
+                    : "Download predictions.csv, then follow the organizer’s current submission instructions. The starter kit defines the CSV format and checker, but it does not name an upload destination. Keep manifest.json with your audit evidence."}
                 </p>
-                {sessionId && (
+                {packageSessionId && (
                   <div style={downloadRowStyle}>
                     <a
-                      href={api.packageFileUrl(sessionId, "predictions.csv")}
+                      href={api.packageFileUrl(packageSessionId, "predictions.csv")}
                       download
                       style={primaryActionStyle}
                     >
                       Download predictions.csv
                     </a>
                     <a
-                      href={api.packageFileUrl(sessionId, "manifest.json")}
+                      href={api.packageFileUrl(packageSessionId, "manifest.json")}
                       download
                       style={secondaryActionStyle}
                     >
@@ -177,7 +187,7 @@ export function FinalPackage() {
             <summary style={summaryStyle}>Technical package details</summary>
             <dl className="tabular" style={detailGridStyle}>
               <dt style={termStyle}>Session</dt>
-              <dd style={valueStyle}>{sessionId}</dd>
+              <dd style={valueStyle}>{packageSessionId || "Not available"}</dd>
               <dt style={termStyle}>Package folder</dt>
               <dd style={pathValueStyle}>{packageDirectory || "Not available"}</dd>
               <dt style={termStyle}>Submission CSV</dt>
@@ -195,47 +205,40 @@ export function FinalPackage() {
         <>
           <section style={cardStyle}>
             <h2 style={sectionHeadingStyle}>Current selection</h2>
-            <p style={actionHelpStyle}>
+            <div style={factsGridStyle}>
+              <Fact label="Session" value={sessionId ?? "No session attached"} />
+              <Fact label="Artifact to package" value={selectedLabel} />
+            </div>
+            <p style={{ ...actionHelpStyle, marginTop: "var(--space-3)" }}>
               {sessionId
-                ? `FlowState will package ${winner === "B0" ? "the official FM baseline (B0)" : winner}. Building the package does not submit it and does not reveal a hidden-test score.`
-                : "No session is attached. Start or attach to a run from Live Workflow first."}
+                ? "FlowState will freeze the validation-best checkpoint and create predictions.csv. This does not submit the file or score the test labels."
+                : "Start or attach to a run from Live Workflow first."}
             </p>
           </section>
 
           <section style={cardStyle}>
             <h2 style={sectionHeadingStyle}>Build the package</h2>
-            <label htmlFor="confirm-session" style={labelStyle}>
-              Type the session ID to freeze the selected artifact and generate predictions.csv.
-            </label>
-            <div style={confirmRowStyle}>
-              <input
-                id="confirm-session"
-                value={confirmText}
-                onChange={(event) => setConfirmText(event.target.value)}
-                placeholder={sessionId ?? "session id"}
-                disabled={!canPackage}
-                className="tabular"
-                style={inputStyle}
-              />
-              <button
-                type="button"
-                disabled={!ready || packaging}
-                onClick={() => packageRun()}
-                style={{
-                  ...buildButtonStyle,
-                  background: ready ? "var(--status-success)" : "var(--surface-2)",
-                  color: ready ? "#0d1a0d" : "var(--text-2)",
-                  cursor: ready && !packaging ? "pointer" : "not-allowed",
-                }}
-              >
-                {packaging ? "Building package..." : "Build package"}
-              </button>
-            </div>
-            {!canPackage && sessionId && (
-              <p style={actionHelpStyle}>
-                Packaging unlocks after convergence or a budget stop selects a validation-best result.
-              </p>
-            )}
+            <p style={actionHelpStyle}>
+              {canPackage
+                ? `Ready to package ${selectedLabel} from the attached session.`
+                : sessionId
+                  ? "This session is still running. Packaging unlocks after convergence or the compute budget selects a validation-best result."
+                  : "Attach a completed session to build its final package."}
+            </p>
+            <button
+              type="button"
+              disabled={!canPackage || packaging}
+              onClick={() => packageRun()}
+              style={{
+                ...buildButtonStyle,
+                marginTop: "var(--space-4)",
+                background: canPackage ? "var(--status-success)" : "var(--surface-2)",
+                color: canPackage ? "#0d1a0d" : "var(--text-2)",
+                cursor: canPackage && !packaging ? "pointer" : "not-allowed",
+              }}
+            >
+              {packaging ? "Building package..." : "Build final package"}
+            </button>
           </section>
         </>
       )}
@@ -285,21 +288,34 @@ const cardStyle: CSSProperties = {
   boxShadow: "var(--shadow-card)",
   padding: "var(--space-5)",
 };
-const verdictStyle: CSSProperties = {
+const packageStatusStyle: CSSProperties = {
   ...cardStyle,
   border: "1px solid",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+  gap: "var(--space-4)",
 };
-const verdictHeadingStyle: CSSProperties = {
+const packageStatusHeadingStyle: CSSProperties = {
   fontFamily: "var(--font-display)",
   fontSize: 22,
   lineHeight: 1.25,
   margin: 0,
 };
-const verdictDetailStyle: CSSProperties = {
+const packageStatusDetailStyle: CSSProperties = {
   color: "var(--text-1)",
-  lineHeight: 1.65,
+  lineHeight: 1.6,
   maxWidth: "76ch",
   margin: "var(--space-2) 0 0",
+};
+const statusPillStyle: CSSProperties = {
+  flex: "0 0 auto",
+  border: "1px solid",
+  borderRadius: 999,
+  padding: "5px 10px",
+  fontSize: 10.5,
+  fontWeight: 800,
+  letterSpacing: "0.04em",
 };
 const sectionHeadingStyle: CSSProperties = {
   fontSize: 16,
@@ -384,28 +400,6 @@ const valueStyle: CSSProperties = { margin: 0 };
 const pathValueStyle: CSSProperties = {
   ...valueStyle,
   overflowWrap: "anywhere",
-};
-const labelStyle: CSSProperties = {
-  display: "block",
-  fontSize: 12.5,
-  color: "var(--text-1)",
-  marginBottom: "var(--space-2)",
-};
-const confirmRowStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "var(--space-2)",
-};
-const inputStyle: CSSProperties = {
-  flex: "1 1 360px",
-  minWidth: 0,
-  background: "var(--surface-2)",
-  border: "1px solid var(--border-strong)",
-  borderRadius: "var(--radius-sm)",
-  color: "var(--text-0)",
-  padding: "var(--space-2) var(--space-3)",
-  fontSize: 16,
-  fontFamily: "var(--font-ui)",
 };
 const buildButtonStyle: CSSProperties = {
   border: "1px solid var(--border-strong)",

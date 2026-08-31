@@ -165,6 +165,25 @@ class ExperimentContract(StrictModel):
         ),
     )
     primary_change: str
+    method_family: str = Field(
+        default="factorization_machine",
+        min_length=2,
+        description="The actual model or method family that training must report, such as din, dcnv2, or deepfm.",
+    )
+    implementation_kind: Literal["loss", "architecture", "data", "multi_task", "ensemble"] = "loss"
+    required_capabilities: list[
+        Literal["chronological_history", "separate_task_heads", "grouped_ranking", "custom_inference"]
+    ] = Field(default_factory=list)
+    mechanism_id: str = Field(
+        default="unspecified",
+        min_length=3,
+        description="Stable snake_case name for duplicate detection, such as din_history_bce or dcnv2_listwise.",
+    )
+    iteration_strategy: Literal["tune_current_model", "new_model", "new_loss", "combined_change"] = "new_model"
+    decision_rationale: str = Field(
+        default="Select the next bounded change from measured validation and training evidence.",
+        min_length=20,
+    )
     allowed_files: list[str]
     prohibited_files: list[str]
     predicted_gauc_direction: Literal["up", "flat", "down"]

@@ -203,7 +203,7 @@ def test_create_checks_out_only_runtime_and_contract_files(tmp_path: Path) -> No
     run("git", "init", cwd=repo)
     files = {
         "src/flowstate/runtime.py": "VALUE = 1\n",
-        "configs/experiments/bce_fm.yaml": "training: {}\n",
+        "configs/experiments/candidate.yaml": "training: {}\n",
         "kuairand-starter-kit/evaluate.py": "def evaluate(*args): return {}\n",
         "tests/workflow/test_experiment.py": "def test_contract(): pass\n",
         "tests/workflow/test_unrelated.py": "def test_unrelated(): pass\n",
@@ -231,7 +231,7 @@ def test_create_checks_out_only_runtime_and_contract_files(tmp_path: Path) -> No
 
     assert (workspace / ".git").is_file()
     assert (workspace / "src/flowstate/runtime.py").is_file()
-    assert (workspace / "configs/experiments/bce_fm.yaml").is_file()
+    assert (workspace / "configs/experiments/candidate.yaml").is_file()
     assert (workspace / "kuairand-starter-kit/evaluate.py").is_file()
     assert (workspace / "tests/workflow/test_experiment.py").is_file()
     assert (workspace / "pyproject.toml").is_file()
@@ -274,4 +274,53 @@ def test_create_materializes_live_flowstate_package_for_isolated_import(tmp_path
     )
     assert run_output(sys.executable, "-c", script, cwd=workspace).strip() == (
         "isolated-worktree:generated-code"
+    )
+
+
+def test_child_worktree_inherits_parent_experiment_code(tmp_path: Path) -> None:
+    repo = tmp_path / "repo5"
+    repo.mkdir()
+    run("git", "init", cwd=repo)
+    (repo / "tracked.txt").write_text("base\n", encoding="utf-8")
+    run("git", "add", ".", cwd=repo)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "base"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    package = repo / "src" / "flowstate"
+    module = package / "training" / "experiment.py"
+    module.parent.mkdir(parents=True)
+    (package / "__init__.py").write_text("MARKER = 'supporting'\n", encoding="utf-8")
+    module.write_text("MODEL = 'outer-base'\n", encoding="utf-8")
+
+    manager = WorkspaceManager(repo, tmp_path / "worktrees5")
+    parent, _ = manager.create(
+        "parent",
+        required_paths=["src/flowstate/training/experiment.py"],
+    )
+    (parent / "src/flowstate/training/experiment.py").write_text(
+        "MODEL = 'accepted-parent'\n",
+        encoding="utf-8",
+    )
+    parent_commit = manager.commit(
+        parent,
+        "parent",
+        ["src/flowstate/training/experiment.py"],
+    )
+    module.write_text("MODEL = 'outer-changed'\n", encoding="utf-8")
+
+    child, resolved_parent = manager.create(
+        "child",
+        parent_commit,
+        required_paths=["src/flowstate/training/experiment.py"],
+    )
+
+    assert resolved_parent == parent_commit
+    assert (child / "src/flowstate/training/experiment.py").read_text(encoding="utf-8") == (
+        "MODEL = 'accepted-parent'\n"
+    )
+    assert (child / "src/flowstate/__init__.py").read_text(encoding="utf-8") == (
+        "MARKER = 'supporting'\n"
     )

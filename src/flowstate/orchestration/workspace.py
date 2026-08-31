@@ -51,7 +51,7 @@ class WorkspaceManager:
                 patterns.append(f"/{normalized}")
         return list(dict.fromkeys(patterns))
 
-    def _materialize_flowstate_package(self, workspace: Path) -> None:
+    def _materialize_flowstate_package(self, workspace: Path, preserve_existing: bool = False) -> None:
         """Copy the live `src/flowstate` tree into the worktree so the Code
         Agent's own patched files are actually what a training subprocess
         imports, instead of silently falling back to the outer repository's
@@ -79,12 +79,27 @@ class WorkspaceManager:
             return
         target_root = (workspace / "src" / "flowstate").resolve()
         target_root.parent.mkdir(parents=True, exist_ok=True)
+        if preserve_existing:
+            for source in source_root.rglob("*"):
+                if not source.is_file() or source.is_symlink() or source.suffix in {".pyc", ".pyo"}:
+                    continue
+                target = target_root / source.relative_to(source_root)
+                if target.exists():
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            return
         shutil.copytree(
             source_root, target_root, dirs_exist_ok=True,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
 
-    def _materialize_required_sources(self, workspace: Path, required_paths: list[str] | None) -> None:
+    def _materialize_required_sources(
+        self,
+        workspace: Path,
+        required_paths: list[str] | None,
+        preserve_existing: bool = False,
+    ) -> None:
         """Copy the caller's current allowed source files into a worktree.
 
         A worktree starts from HEAD, while an operator may have staged or
@@ -100,6 +115,8 @@ class WorkspaceManager:
             relative = Path(raw)
             if relative.is_absolute() or ".." in relative.parts:
                 raise ValueError(f"unsafe source materialization path: {raw}")
+            if preserve_existing and (workspace / relative).is_file():
+                continue
             if relative.as_posix().startswith("src/flowstate/"):
                 continue
             source = (self.repository / relative).resolve()
@@ -127,6 +144,8 @@ class WorkspaceManager:
         if path.exists():
             raise FileExistsError(path)
         commit = self._git("rev-parse", parent).stdout.strip()
+        repository_head = self._git("rev-parse", "HEAD").stdout.strip()
+        preserve_existing = commit != repository_head
         self._git("worktree", "add", "--detach", "--no-checkout", str(path), commit)
         try:
             self._git("sparse-checkout", "init", "--no-cone", cwd=path)
@@ -136,8 +155,8 @@ class WorkspaceManager:
                 cwd=path,
             )
             self._git("checkout", "--detach", commit, cwd=path)
-            self._materialize_flowstate_package(path)
-            self._materialize_required_sources(path, required_paths)
+            self._materialize_flowstate_package(path, preserve_existing)
+            self._materialize_required_sources(path, required_paths, preserve_existing)
         except Exception:
             self._git("worktree", "remove", "--force", str(path), check=False)
             raise

@@ -192,7 +192,7 @@ def test_checkpoint_prediction_uses_training_model_contract(tmp_path: Path) -> N
         {
             "state_dict": model.state_dict(),
             "dimension": 20,
-            "config": {"model": {"factors": 4}},
+            "config": {"model": {"factors": 4}, "device": "cpu"},
         },
         checkpoint,
     )
@@ -206,6 +206,8 @@ def test_checkpoint_prediction_uses_training_model_contract(tmp_path: Path) -> N
     with torch.no_grad():
         expected = model(torch.as_tensor(features, dtype=torch.long)).numpy()
     assert receipt["rows"] == 2
+    assert receipt["device"] == "cpu"
+    assert receipt["device_name"] == "CPU"
     np.testing.assert_allclose(np.load(output), expected)
 
 
@@ -220,6 +222,7 @@ def test_gpu_seconds_stay_null_when_nvml_cannot_observe_the_device() -> None:
     monitor.peak_gpu = None
     monitor.gpu_seconds = None
     monitor._last_sample = None
+    monitor.gpu_device_names = set()
     monitor._nvml_ready = False
 
     monitor.sample()
@@ -241,6 +244,7 @@ def test_gpu_seconds_accumulate_only_while_the_process_holds_the_device(monkeypa
     monitor.peak_gpu = None
     monitor.gpu_seconds = 0.0
     monitor._last_sample = None
+    monitor.gpu_device_names = set()
     monitor._nvml_ready = True
 
     active = {"value": False}
@@ -251,6 +255,7 @@ def test_gpu_seconds_accumulate_only_while_the_process_holds_the_device(monkeypa
         "pynvml",
         SimpleNamespace(
             nvmlDeviceGetCount=lambda: 1,
+            nvmlDeviceGetName=lambda _handle: b"NVIDIA Test GPU",
             nvmlDeviceGetHandleByIndex=lambda _index: object(),
             # usedGpuMemory=None reproduces Windows/WDDM, where per-process
             # memory accounting is unavailable but presence in the compute list
@@ -271,8 +276,63 @@ def test_gpu_seconds_accumulate_only_while_the_process_holds_the_device(monkeypa
     monitor.sample()
     assert monitor.gpu_seconds == 4.0
     assert monitor.peak_gpu is None
+    assert monitor.gpu_device_names == {"NVIDIA Test GPU"}
 
     active["value"] = False
     clock["value"] += 7.0
     monitor.sample()
     assert monitor.gpu_seconds == 4.0
+
+
+def test_full_scale_validation_rejects_truncated_fixed_splits(tmp_path: Path) -> None:
+    funnel = object.__new__(ExecutionFunnel)
+    transform = tmp_path / "transform"
+    transform.mkdir()
+    np.savez_compressed(transform / "train.npz", X=np.zeros((3, 2), dtype=np.int32))
+    np.savez_compressed(transform / "valid.npz", X=np.zeros((4, 2), dtype=np.int32))
+    output = tmp_path / "tier4"
+    model = output / "model"
+    model.mkdir(parents=True)
+    (model / "train_receipt.json").write_text(
+        '{"rows_train":3,"rows_valid":2}',
+        encoding="utf-8",
+    )
+    np.save(model / "valid_scores.npy", np.asarray([0.1, 0.2], dtype=np.float32))
+    receipt = funnel._preflight_failure(4, output, "placeholder").model_copy(
+        update={"status": "succeeded", "error": None, "return_code": 0}
+    )
+
+    validated = funnel._validate_full_scale_rows(receipt, transform)
+
+    assert validated.status == "failed"
+    assert "full-scale validation row count mismatch" in validated.error
+    assert "expected=4" in validated.error
+
+
+def test_cuda_request_is_cross_checked_with_nvml_device(tmp_path: Path) -> None:
+    funnel = object.__new__(ExecutionFunnel)
+    output = tmp_path / "tier4"
+    model = output / "model"
+    model.mkdir(parents=True)
+    (model / "train_receipt.json").write_text(
+        '{"device":"cuda:0","device_name":"NVIDIA GeForce RTX 5060 Laptop GPU"}',
+        encoding="utf-8",
+    )
+    config = tmp_path / "candidate.yaml"
+    config.write_text("device: cuda\n", encoding="utf-8")
+    receipt = funnel._preflight_failure(4, output, "placeholder").model_copy(
+        update={
+            "status": "succeeded",
+            "error": None,
+            "return_code": 0,
+            "gpu_seconds": 3.0,
+            "gpu_device_names": ["NVIDIA GeForce RTX 5060 Laptop GPU"],
+        }
+    )
+
+    assert funnel._validate_requested_device(receipt, config) is receipt
+
+    mismatched = receipt.model_copy(update={"gpu_device_names": ["Different NVIDIA GPU"]})
+    rejected = funnel._validate_requested_device(mismatched, config)
+    assert rejected.status == "failed"
+    assert "NVML observed" in rejected.error

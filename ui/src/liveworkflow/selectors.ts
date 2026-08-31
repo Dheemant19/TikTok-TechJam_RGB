@@ -34,6 +34,7 @@ function paperProvenance(paper: JsonRecord | undefined): { tierLabel: string; ha
 
 export interface ExperimentRow {
   id: string;
+  runId: string;
   label: string;
   gauc: number | null;
   ndcg5: number | null;
@@ -90,6 +91,7 @@ export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
     };
     rows.push({
       id: "B0",
+      runId: "B0",
       label: `Official FM Baseline (${seedMetrics.length} seed${seedMetrics.length === 1 ? "" : "s"})`,
       gauc: average("gauc"),
       ndcg5: average("ndcg_at_5"),
@@ -139,6 +141,7 @@ export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
     const evidence = [...evidenceEvents].reverse().find((event) => event.sequence < plan.sequence);
     rows.push({
       id: experimentId,
+      runId: plannedRunId,
       label: experimentId,
       gauc: metrics?.gauc ?? null,
       ndcg5: metrics?.ndcg5 ?? null,
@@ -154,6 +157,7 @@ export function selectExperiments(events: RunEventDTO[]): ExperimentRow[] {
   researchFailures.forEach((event, index) => {
     rows.push({
       id: `${event.run_id}-research-failure-${index + 1}`,
+      runId: event.run_id,
       label: `Research attempt failed (${event.run_id})`,
       gauc: null,
       ndcg5: null,
@@ -259,6 +263,7 @@ export interface TimelineRow {
   occurredAt: string;
   componentLabel: string;
   action: string;
+  method: string | null;
   status: string;
 }
 
@@ -275,15 +280,32 @@ export interface TimelineRow {
 export function selectAutonomyTimeline(events: RunEventDTO[]): TimelineRow[] {
   return [...events]
     .sort((a, b) => b.sequence - a.sequence)
-    .map((event) => ({
-      sequence: event.sequence,
-      occurredAt: event.occurred_at,
-      componentLabel: event.component_id === "orchestrator"
-        ? "Workflow Orchestrator"
-        : NODES.find((node) => node.id === uiNodeIdForEvent(event))?.label ?? event.component_id,
-      action: event.plain_summary,
-      status: event.status,
-    }));
+    .map((event) => {
+      const payload = asRecord(event.payload);
+      const contract = asRecord(field(payload, "contract"));
+      const training = asRecord(field(payload, "training"));
+      const methodFamily = stringField(contract, "method_family") ?? stringField(training, "model_family");
+      const iterationStrategy = stringField(contract, "iteration_strategy");
+      const runtimeDevice = stringField(training, "device_name") ?? stringField(training, "device");
+      const decisionRationale = stringField(contract, "decision_rationale");
+      const action = event.component_id === "scientist"
+        && event.event_type === "plan"
+        && methodFamily
+        ? `${decisionRationale ?? "Selected from prior run evidence"} Change: ${stringField(contract, "primary_change") ?? event.plain_summary}`
+        : event.plain_summary;
+      return {
+        sequence: event.sequence,
+        occurredAt: event.occurred_at,
+        componentLabel: event.component_id === "orchestrator"
+          ? "Workflow Orchestrator"
+          : NODES.find((node) => node.id === uiNodeIdForEvent(event))?.label ?? event.component_id,
+        action,
+        method: methodFamily
+          ? `${methodFamily}${iterationStrategy || runtimeDevice ? ` · ${iterationStrategy?.split("_").join(" ") ?? runtimeDevice}` : ""}`
+          : null,
+        status: event.status,
+      };
+    });
 }
 
 /** The stage-detail "Continue to" control must be branch-aware: after a

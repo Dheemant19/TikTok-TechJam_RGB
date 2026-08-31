@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { JsonRecord, RunEventDTO, SessionSnapshotDTO } from "../api/types";
 import { useRunStore } from "../liveworkflow/runStore";
@@ -87,7 +87,7 @@ describe("FinalPackage verdict", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Do not submit this package" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Package blocked by an integrity warning" })).toBeTruthy();
     expect(screen.getByText(/byte-identical outputs from 2 experiment runs/i)).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Download predictions.csv" })).toBeNull();
     expect(screen.getByRole("link", { name: "Return to Live Workflow" }).getAttribute("href")).toBe("/");
@@ -107,10 +107,35 @@ describe("FinalPackage verdict", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: /baseline package, not a winning result/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Baseline package ready" })).toBeTruthy();
     expect(screen.getByText("Not scored here")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Download predictions.csv" }).getAttribute("href"),
     ).toBe(`/api/v1/sessions/${SESSION_ID}/package/predictions.csv`);
+  });
+
+  it("builds the attached session without requiring typed confirmation", () => {
+    const readySnapshot = snapshot();
+    readySnapshot.finalized = false;
+    readySnapshot.frontier.locked = true;
+    readySnapshot.allowed_actions = ["package"];
+    const packageRun = vi.fn(async () => undefined);
+    useRunStore.setState({
+      sessionId: SESSION_ID,
+      snapshot: readySnapshot,
+      packageResult: null,
+      packageRun,
+      events: [],
+    });
+
+    render(
+      <MemoryRouter>
+        <FinalPackage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Build final package" }));
+    expect(packageRun).toHaveBeenCalledOnce();
   });
 });

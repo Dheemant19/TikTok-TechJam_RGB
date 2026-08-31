@@ -21,7 +21,8 @@ limits:
   bedrock_input_tokens: 6000000
   bedrock_output_tokens: 1200000
   maximum_experiments: 10
-  per_run_timeout_seconds: 5400
+  # Hard stop for one full model. A timeout abandons the method and returns to research.
+  per_run_timeout_seconds: 1800
   recovery_attempts_per_run: 2
 
 # Hugging Face Papers/GitHub calls are free APIs (no LLM $ cost); these bound local
@@ -45,6 +46,27 @@ proxy_tier:
   maximum_users: 5000
   maximum_wall_seconds: 600
   maximum_gpu_hours: 0.15
+
+# Diversity policy. `fm_choosing_score` is the Research Agent's relative
+# preference for FM-family hypotheses, not an unenforceable random probability.
+# The spacing rule below is the hard guarantee.
+research_strategy:
+  fm_choosing_score: 0.15
+  fm_family_names:
+    - factorization_machine
+    - fm
+    - deepfm
+    - deep_factorization_machine
+  minimum_non_fm_between_fm: 3
+  require_non_fm_first: false
+  maximum_consecutive_same_model_family: 2
+  semantic_duplicate_similarity: 0.72
+  research_duplicate_retry_limit: 2
+  maximum_consecutive_research_failures: 2
+  innovation_minimum_delta_vs_baseline: 0.0
+  ensemble_minimum_delta_vs_best: 0.002
+  final_artifact_policy: validation_best_only
+  minimum_eligible_models_for_ensemble: 2
 
 resource_sampling:
   interval_seconds: 5

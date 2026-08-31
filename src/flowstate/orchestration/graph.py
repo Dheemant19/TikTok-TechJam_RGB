@@ -6,7 +6,7 @@ import json
 import re
 import time
 from datetime import UTC, datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -31,6 +31,7 @@ from flowstate.orchestration.workspace import WorkspaceManager
 from flowstate.recovery.controller import RecoveryController
 from flowstate.training.baseline import BaselineReproducer
 from flowstate.training.execution import ExecutionFunnel
+from flowstate.training.hardware import hardware_capabilities
 
 
 class WorkflowState(TypedDict, total=False):
@@ -62,6 +63,8 @@ class WorkflowState(TypedDict, total=False):
     experiment_count: int
     experiment_attempt_count: int
     recovery_attempt: int
+    consecutive_research_failures: int
+    last_research_error: str
     last_execution_error: str
     recovery_action: str
     retry_target: str
@@ -69,6 +72,7 @@ class WorkflowState(TypedDict, total=False):
     stop_reason: str
     started_at: float
     gpu_seconds_used: float
+    innovation_frontier: dict[str, Any]
 
 
 @dataclass
@@ -92,6 +96,7 @@ class WorkflowServices:
     bedrock_output_limit: int
     total_wall_seconds: int = 0
     total_gpu_hours: float = 0.0
+    research_strategy: dict[str, Any] = field(default_factory=dict)
 
 
 class AutonomousResearchWorkflow:
@@ -107,6 +112,7 @@ class AutonomousResearchWorkflow:
         # code (new capability never wired into the actual model/loss call
         # sites) -- catches this before the expensive tier3/tier4 runs.
         self._reference_tier2_scores: dict[tuple[str, int], np.ndarray | None] = {}
+        self._hardware = hardware_capabilities()
 
     def _event(self, state: WorkflowState, component: str, stage: str, event_type: str, status: ComponentStatus, summary: str, payload: dict[str, Any] | None = None):
         return self.s.ledger.append_event(
@@ -151,6 +157,8 @@ class AutonomousResearchWorkflow:
                 "failure_summary": None,
                 "recovery_action": None,
                 "retry_target": None,
+                "metrics": None,
+                "decision": None,
             }
 
         for event in events:
@@ -178,10 +186,21 @@ class AutonomousResearchWorkflow:
                     recovery_action=event.plain_summary,
                     retry_target=event.payload.get("retry_target"),
                 )
+            elif event.component_id == "trainer" and event.event_type == "tier4":
+                training = event.payload.get("training")
+                if isinstance(training, dict):
+                    summary["training"] = training
             elif event.component_id == "evaluator" and event.status == ComponentStatus.SUCCEEDED:
                 summary["outcome"] = "evaluated"
+                summary["metrics"] = event.payload.get("metrics")
             elif event.component_id == "watchdog" and event.stage == "decision":
                 summary["outcome"] = event.payload.get("decision", "decided")
+                summary["decision"] = {
+                    "decision": event.payload.get("decision"),
+                    "delta_vs_parent": event.payload.get("delta_vs_parent"),
+                    "delta_vs_baseline": event.payload.get("delta_vs_official_baseline"),
+                    "converged": event.payload.get("converged"),
+                }
 
         empty_outcome = {
             "run_id": None,
@@ -191,16 +210,33 @@ class AutonomousResearchWorkflow:
             "failure_summary": None,
             "recovery_action": None,
             "retry_target": None,
+            "metrics": None,
+            "decision": None,
         }
-        return [
-            {
+        summaries: list[dict[str, Any]] = []
+        for contract in prior_contracts:
+            summary = {
                 "experiment_id": contract.get("experiment_id"),
                 "hypothesis": contract.get("hypothesis"),
                 "primary_change": contract.get("primary_change"),
                 **by_experiment.get(str(contract.get("experiment_id")), empty_outcome),
             }
-            for contract in prior_contracts
-        ]
+            for field in (
+                "method_family",
+                "implementation_kind",
+                "required_capabilities",
+                "mechanism_id",
+                "iteration_strategy",
+                "decision_rationale",
+            ):
+                if field in contract:
+                    summary[field] = contract[field]
+            if summary.get("metrics") is None:
+                summary.pop("metrics", None)
+            if summary.get("decision") is None:
+                summary.pop("decision", None)
+            summaries.append(summary)
+        return summaries
 
     async def prepare(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
@@ -225,6 +261,41 @@ class AutonomousResearchWorkflow:
                 "splits": {name: f"{lo}-{hi}" for name, (lo, hi) in self.s.contract.splits.items()},
                 "source_hash": source_hash,
                 "label": self.s.contract.label,
+            },
+        )
+        gpu_devices = self._hardware.get("devices", [])
+        self._event(
+            state,
+            "train_data",
+            "prepare",
+            "hardware_ready",
+            ComponentStatus.SUCCEEDED,
+            (
+                f"CUDA training available on {gpu_devices[0]['name']}"
+                if self._hardware.get("cuda_usable") and gpu_devices
+                else "CUDA unavailable; experiments will use CPU-compatible methods"
+            ),
+            {"hardware": self._hardware},
+        )
+        strategy = getattr(self.s, "research_strategy", {}) or {}
+        self._event(
+            state,
+            "scientist",
+            "prepare",
+            "research_policy",
+            ComponentStatus.SUCCEEDED,
+            (
+                "Research diversity policy active: FM-family score "
+                f"{float(strategy.get('fm_choosing_score', 0.15)):.2f}; "
+                f"at least {int(strategy.get('minimum_non_fm_between_fm', 3))} non-FM experiments "
+                "between FM-family hypotheses; repeated mechanisms are blocked before execution"
+            ),
+            {
+                "research_diversity_policy": strategy,
+                "final_artifact_policy": strategy.get(
+                    "final_artifact_policy",
+                    "validation_best_only",
+                ),
             },
         )
         # Every experiment's research() call now requires cited evidence to
@@ -357,6 +428,7 @@ class AutonomousResearchWorkflow:
         return {
             "baseline_result": result, "baseline_metric": metrics, "best_metric": metrics,
             "parent_metric": metrics, "frontier": frontier.model_dump(mode="json"), "experiment_count": 0,
+            "innovation_frontier": {},
         }
 
     @staticmethod
@@ -424,6 +496,240 @@ class AutonomousResearchWorkflow:
         "temporal_drift_modeling": "temporal dynamics and train/test distribution drift in recommendation ranking",
         "off_policy_validation": "unbiased off-policy evaluation and exposure bias correction for ranking",
     }
+    _EXPERIMENT_EXTENSION_FILES = (
+        "src/flowstate/models/experimental.py",
+        "src/flowstate/models/candidate.py",
+        "src/flowstate/training/experiment.py",
+        "src/flowstate/training/candidate_features.py",
+        "configs/experiments/candidate.yaml",
+        "tests/workflow/test_experiment.py",
+    )
+    _PROTECTED_EXPERIMENT_FILES = (
+        "kuairand-starter-kit/evaluate.py",
+        "kuairand-starter-kit/data.py",
+        "kuairand-starter-kit/baseline_scores.json",
+        "src/flowstate/evaluation/",
+        "src/flowstate/reporting/",
+        "runs/",
+        "state/",
+    )
+
+    def _research_diversity_policy(
+        self,
+        prior_contracts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        strategy = getattr(self.s, "research_strategy", {}) or {}
+        fm_names = {
+            str(value).strip().lower()
+            for value in strategy.get(
+                "fm_family_names",
+                ["factorization_machine", "fm", "deepfm", "deep_factorization_machine"],
+            )
+        }
+        minimum_gap = int(strategy.get("minimum_non_fm_between_fm", 3))
+        non_fm_since_last = 0
+        has_prior_fm = False
+        total_non_fm = 0
+        for contract in prior_contracts:
+            family = str(contract.get("method_family", "")).strip().lower()
+            if family and family not in fm_names:
+                total_non_fm += 1
+        for contract in reversed(prior_contracts):
+            family = str(contract.get("method_family", "")).strip().lower()
+            if family in fm_names:
+                has_prior_fm = True
+                break
+            if family:
+                non_fm_since_last += 1
+        require_non_fm_first = bool(strategy.get("require_non_fm_first", False))
+        fm_allowed = (
+            non_fm_since_last >= minimum_gap
+            if has_prior_fm
+            else not require_non_fm_first or total_non_fm >= minimum_gap
+        )
+        maximum_family_streak = int(
+            strategy.get("maximum_consecutive_same_model_family", 2)
+        )
+        latest_family = (
+            str(prior_contracts[-1].get("method_family", "")).strip().lower()
+            if prior_contracts
+            else ""
+        )
+        family_streak = 0
+        if latest_family:
+            for contract in reversed(prior_contracts):
+                family = str(contract.get("method_family", "")).strip().lower()
+                if family != latest_family:
+                    break
+                family_streak += 1
+        blocked_families = (
+            [latest_family]
+            if latest_family and family_streak >= maximum_family_streak
+            else []
+        )
+        return {
+            **strategy,
+            "fm_family_names": sorted(fm_names),
+            "non_fm_experiments_since_last_fm": non_fm_since_last if has_prior_fm else None,
+            "fm_family_allowed": fm_allowed,
+            "first_experiment_requires_non_fm": require_non_fm_first,
+            "total_non_fm_experiments": total_non_fm,
+            "latest_model_family": latest_family or None,
+            "consecutive_latest_model_family": family_streak,
+            "blocked_model_families": blocked_families,
+            "required_model_scope": "any" if fm_allowed else "non_fm",
+            "forbidden_mechanism_ids": sorted({
+                str(item.get("mechanism_id", "")).strip().lower()
+                for item in prior_contracts
+                if str(item.get("mechanism_id", "")).strip()
+            }),
+        }
+
+    @staticmethod
+    def _hypothesis_tokens(contract: dict[str, Any] | ExperimentContract) -> set[str]:
+        if isinstance(contract, ExperimentContract):
+            text = f"{contract.hypothesis} {contract.primary_change}"
+        else:
+            text = f"{contract.get('hypothesis', '')} {contract.get('primary_change', '')}"
+        ignored = {
+            "the", "and", "for", "with", "from", "that", "this", "will", "using",
+            "model", "training", "validation", "score", "scores", "long", "view",
+        }
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]+", text.lower())
+            if len(token) > 2 and token not in ignored
+        }
+
+    def _semantic_duplicate(
+        self,
+        contract: ExperimentContract,
+        prior_contracts: list[dict[str, Any]],
+    ) -> tuple[str | None, float]:
+        candidate = self._hypothesis_tokens(contract)
+        threshold = float(
+            (getattr(self.s, "research_strategy", {}) or {}).get(
+                "semantic_duplicate_similarity",
+                0.72,
+            )
+        )
+        for previous in prior_contracts:
+            prior = self._hypothesis_tokens(previous)
+            similarity = len(candidate & prior) / max(1, len(candidate | prior))
+            if (
+                contract.iteration_strategy == "tune_current_model"
+                and str(previous.get("mechanism_id", "")).strip().lower()
+                == contract.mechanism_id.strip().lower()
+            ):
+                continue
+            if similarity >= threshold:
+                return str(previous.get("mechanism_id") or previous.get("experiment_id")), similarity
+        return None, 0.0
+
+    def _innovation_frontier(self, prior_runs: list[dict[str, Any]]) -> dict[str, Any]:
+        strategy = getattr(self.s, "research_strategy", {}) or {}
+        fm_names = {
+            str(value).strip().lower()
+            for value in strategy.get(
+                "fm_family_names",
+                ["factorization_machine", "fm", "deepfm", "deep_factorization_machine"],
+            )
+        }
+        baseline_valid = getattr(self.s.contract, "baseline_valid", {}) or {}
+        threshold = float(baseline_valid.get("primary", float("inf"))) + float(
+            strategy.get("innovation_minimum_delta_vs_baseline", 0.0)
+        )
+        candidates = []
+        for run in prior_runs:
+            metrics = run.get("metrics")
+            if not isinstance(metrics, dict):
+                continue
+            primary = metrics.get("primary")
+            if primary is None:
+                continue
+            family = str(run.get("method_family", "")).strip().lower()
+            if family in fm_names or float(primary) <= threshold:
+                continue
+            candidates.append((float(primary), run))
+        if not candidates:
+            return {
+                "run_id": None,
+                "experiment_id": None,
+                "method_family": None,
+                "primary": None,
+                "delta_vs_official_baseline": None,
+                "purpose": "innovation_story_only",
+                "eligible_for_final_artifact": False,
+            }
+        primary, best = max(candidates, key=lambda item: item[0])
+        return {
+            "run_id": best.get("run_id"),
+            "experiment_id": best.get("experiment_id"),
+            "method_family": best.get("method_family"),
+            "primary": primary,
+            "delta_vs_official_baseline": primary - float(baseline_valid["primary"]),
+            "purpose": "innovation_story_only",
+            "eligible_for_final_artifact": False,
+        }
+
+    def _eligible_ensemble_candidates(
+        self,
+        prior_runs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        baseline_valid = getattr(self.s.contract, "baseline_valid", {}) or {}
+        baseline_primary = float(baseline_valid.get("primary", float("inf")))
+        best_by_family: dict[str, dict[str, Any]] = {}
+        for run in prior_runs:
+            metrics = run.get("metrics")
+            family = str(run.get("method_family", "")).strip().lower()
+            if not family or not isinstance(metrics, dict):
+                continue
+            primary = metrics.get("primary")
+            if primary is None or float(primary) <= baseline_primary:
+                continue
+            current = best_by_family.get(family)
+            if current is None or float(primary) > float(current["primary"]):
+                best_by_family[family] = {
+                    "run_id": run.get("run_id"),
+                    "experiment_id": run.get("experiment_id"),
+                    "method_family": family,
+                    "primary": float(primary),
+                }
+        return sorted(
+            best_by_family.values(),
+            key=lambda item: float(item["primary"]),
+            reverse=True,
+        )
+
+    @staticmethod
+    def _validate_ensemble_policy(
+        contract: ExperimentContract,
+        innovation_frontier: dict[str, Any],
+        diversity_policy: dict[str, Any],
+    ) -> None:
+        if contract.implementation_kind != "ensemble":
+            return
+        required_candidates = int(
+            diversity_policy.get("minimum_eligible_models_for_ensemble", 2)
+        )
+        eligible_candidates = list(diversity_policy.get("ensemble_candidates", []))
+        if len(eligible_candidates) < required_candidates:
+            raise ValueError(
+                "ensemble exploration requires at least "
+                f"{required_candidates} distinct validated model families above the official baseline; "
+                f"only {len(eligible_candidates)} currently qualify"
+            )
+        if innovation_frontier.get("run_id") is None:
+            raise ValueError(
+                "ensemble exploration requires a validated non-FM innovation candidate above baseline"
+            )
+        required_gain = float(
+            diversity_policy.get("ensemble_minimum_delta_vs_best", 0.002)
+        )
+        if contract.minimum_primary_improvement < required_gain:
+            raise ValueError(
+                f"ensemble must precommit to at least {required_gain:.3f} improvement over the current best"
+            )
 
     async def research(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
@@ -454,7 +760,8 @@ class AutonomousResearchWorkflow:
         profile_path = Path(state["profile_receipt"]["profile"]["path"])
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
         prior_contracts = self.s.ledger.list_contracts(state["session_id"])
-        area = self._PRIORITY_AREA_ROTATION[len(prior_contracts) % len(self._PRIORITY_AREA_ROTATION)]
+        area_index = state.get("experiment_attempt_count", len(prior_contracts))
+        area = self._PRIORITY_AREA_ROTATION[area_index % len(self._PRIORITY_AREA_ROTATION)]
         card = await self.s.knowledge.retrieval.research_card(
             self._PRIORITY_AREA_QUERIES[area], 6,
             session_id=state["session_id"], experiment_id=run_id,
@@ -497,17 +804,40 @@ class AutonomousResearchWorkflow:
         )
         curated_bank_share = float(getattr(retrieval_config, "curated_bank_share", 0.5))
         self._event(event_state, "knowledge_mcp", "research", "completed", ComponentStatus.SUCCEEDED, "Research evidence selected", {"evidence_ids": card.source_ids, "source_mode": card.meta.source_mode, "supporting": [item.model_dump(mode="json") for item in card.supporting], "contradicting": [item.model_dump(mode="json") for item in card.contradicting], "missing_evidence": card.missing_evidence})
-        execution = getattr(self.s, "execution", None)
-        proxy_config = getattr(execution, "proxy_config", {})
-        per_run_timeout = int(getattr(execution, "timeout_seconds", 5400))
+        execution = getattr(self.s, "funnel", None)
+        proxy_config = getattr(execution, "proxy_config", {}) or {}
+        per_run_timeout = int(getattr(execution, "timeout_seconds", 1800))
         proxy_wall_seconds = min(
             int(proxy_config.get("maximum_wall_seconds", 600)),
             per_run_timeout,
         )
+        prior_runs = self._prior_run_summaries(state["session_id"], prior_contracts)
+        diversity_policy = self._research_diversity_policy(prior_contracts)
+        rejected_mechanisms = sorted({
+            str(run.get("mechanism_id", "")).strip().lower()
+            for run in prior_runs
+            if str(run.get("mechanism_id", "")).strip()
+            and str(run.get("outcome", "")).strip().lower() != "retain"
+        })
+        diversity_policy["forbidden_rejected_mechanism_ids"] = rejected_mechanisms
+        ensemble_candidates = self._eligible_ensemble_candidates(prior_runs)
+        diversity_policy["ensemble_candidates"] = ensemble_candidates
+        diversity_policy["ensemble_allowed"] = len(ensemble_candidates) >= int(
+            diversity_policy.get("minimum_eligible_models_for_ensemble", 2)
+        )
+        frontier_state = FrontierState.model_validate(state["frontier"])
+        diversity_policy["accepted_parent_run_id"] = frontier_state.accepted_parent
+        diversity_policy["allowed_new_model_parent_run_ids"] = sorted({
+            "B0",
+            str(frontier_state.accepted_parent),
+        })
+        innovation_frontier = self._innovation_frontier(prior_runs)
         context = {
             "challenge": self.s.contract.public_summary(), "profile": profile,
-            "runs": self._prior_run_summaries(state["session_id"], prior_contracts),
+            "runs": prior_runs,
             "frontier": state["frontier"],
+            "innovation_frontier": innovation_frontier,
+            "research_diversity_policy": diversity_policy,
             "remaining_budget": {
                 "experiments": self.s.maximum_experiments - state.get("experiment_count", 0),
                 "bedrock_input_tokens": self.s.bedrock_input_limit - state.get("agent_input_tokens", 0),
@@ -517,25 +847,133 @@ class AutonomousResearchWorkflow:
                 "code_writing_wall_seconds": int(self.CODE_STAGE_TIMEOUT_SECONDS),
                 "code_output_mode": "complete replacement contents for every changed file",
                 "code_tools_available": False,
-                "preferred_maximum_production_files": 2,
+                "preferred_maximum_production_files": 4,
                 "fast_proxy_rows": int(proxy_config.get("maximum_rows", 100_000)),
                 "fast_proxy_wall_seconds": proxy_wall_seconds,
                 "fast_proxy_gpu_hours": float(proxy_config.get("maximum_gpu_hours", 0.15)),
                 "full_training_wall_seconds": per_run_timeout,
                 "first_falsification_target": "minutes on the existing GPU proxy, not a long architecture build",
+                "hardware": self._hardware,
+                "model_policy": (
+                    "Model family is unrestricted. FM is the official comparison baseline, not an experiment limit. "
+                    "Use an existing implementation only when evidence supports it; otherwise a worktree may add "
+                    "another model when its training and feature-only inference paths are validated."
+                ),
             },
             "evidence": evidence,
             "evidence_source_balance": {
                 "curated_bank_share": curated_bank_share,
                 "huggingface_share": 1.0 - curated_bank_share,
             },
-            "allowed_files": ["src/flowstate/models/experimental.py", "src/flowstate/training/experiment.py", "configs/experiments/bce_fm.yaml", "tests/workflow/test_experiment.py"],
-            "prohibited_files": ["kuairand-starter-kit/evaluate.py", "kuairand-starter-kit/data.py", "kuairand-starter-kit/baseline_scores.json", "runs/", "state/"],
+            "allowed_files": list(self._EXPERIMENT_EXTENSION_FILES),
+            "prohibited_files": list(self._PROTECTED_EXPERIMENT_FILES),
             "fallback_run_id": FrontierState.model_validate(state["frontier"]).stable_fallback,
         }
         try:
             result = await self.s.agents.research(context)
             contract: ExperimentContract = result.value
+            unknown_paths = sorted(set(contract.allowed_files) - set(self._EXPERIMENT_EXTENSION_FILES))
+            if unknown_paths:
+                raise ValueError(f"Research Agent requested files outside safe experiment extension points: {unknown_paths}")
+            required_paths = {"src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"}
+            if contract.implementation_kind in {"architecture", "multi_task", "ensemble"}:
+                model_paths = {
+                    "src/flowstate/models/experimental.py",
+                    "src/flowstate/models/candidate.py",
+                }
+                if not model_paths.intersection(contract.allowed_files):
+                    raise ValueError(
+                        "Architecture, multi-task, and ensemble experiments must include a model implementation file"
+                    )
+                required_paths.add("src/flowstate/training/experiment.py")
+            if contract.implementation_kind == "data" or "chronological_history" in contract.required_capabilities:
+                required_paths.add("src/flowstate/training/candidate_features.py")
+            missing_paths = sorted(required_paths - set(contract.allowed_files))
+            if missing_paths:
+                raise ValueError(f"Experiment contract cannot faithfully implement its method without files: {missing_paths}")
+            mechanism = contract.mechanism_id.strip().lower()
+            if mechanism == "unspecified":
+                raise ValueError("Research Agent must name the exact mechanism being attempted")
+            if contract.decision_rationale.startswith("Select the next bounded change"):
+                raise ValueError(
+                    "Research Agent must explain the iteration strategy using observed run evidence"
+                )
+            fm_names = set(diversity_policy["fm_family_names"])
+            selected_family = contract.method_family.strip().lower()
+            if not diversity_policy["fm_family_allowed"] and selected_family in fm_names:
+                raise ValueError(
+                    "FM-family exploration is paused until "
+                    f"{int(diversity_policy.get('minimum_non_fm_between_fm', 3))} "
+                    "distinct non-FM experiments have been attempted; "
+                    "select a paper-backed non-FM mechanism"
+                )
+            duplicate_mechanism, duplicate_similarity = self._semantic_duplicate(
+                contract,
+                prior_contracts,
+            )
+            blocked_families = set(diversity_policy.get("blocked_model_families", []))
+            if selected_family in blocked_families:
+                raise ValueError(
+                    f"Model family {contract.method_family!r} has reached the consecutive-attempt limit; "
+                    "select a materially different model family"
+                )
+            if duplicate_mechanism:
+                raise ValueError(
+                    f"Research Agent repeated hypothesis {duplicate_mechanism!r} with semantic similarity "
+                    f"{duplicate_similarity:.3f}; select a materially different mechanism"
+                )
+            self._validate_ensemble_policy(
+                contract,
+                innovation_frontier,
+                diversity_policy,
+            )
+            prior_mechanisms = {
+                str(item.get("mechanism_id", "")).strip().lower()
+                for item in prior_contracts
+            }
+            mechanism_attempts = sum(
+                1
+                for item in prior_contracts
+                if str(item.get("mechanism_id", "")).strip().lower() == mechanism
+            )
+            rejected_mechanisms_set = set(
+                diversity_policy.get("forbidden_rejected_mechanism_ids", [])
+            )
+            if mechanism in prior_mechanisms and (
+                contract.iteration_strategy != "tune_current_model"
+                or mechanism in rejected_mechanisms_set
+                or mechanism_attempts >= 2
+            ):
+                raise ValueError(
+                    f"Mechanism {contract.mechanism_id!r} was already attempted or rejected in this session; "
+                    "choose a materially different mechanism"
+                )
+            if contract.iteration_strategy == "tune_current_model":
+                accepted_parent = str(FrontierState.model_validate(state["frontier"]).accepted_parent)
+                if contract.parent_run_id != accepted_parent:
+                    raise ValueError(
+                        f"tuning must branch from the accepted parent {accepted_parent!r}, "
+                        f"not {contract.parent_run_id!r}"
+                    )
+                if accepted_parent != "B0":
+                    parent_summary = next(
+                        (item for item in prior_runs if item.get("run_id") == accepted_parent),
+                        None,
+                    )
+                    if parent_summary is None or parent_summary.get("outcome") not in {"retain", "evaluated"}:
+                        raise ValueError("tuning requires a successfully evaluated accepted parent")
+                    if str(parent_summary.get("method_family", "")).strip().lower() != contract.method_family.strip().lower():
+                        raise ValueError("tuning must preserve the accepted parent model family")
+            elif contract.iteration_strategy in {"new_loss", "combined_change"}:
+                accepted_parent = str(FrontierState.model_validate(state["frontier"]).accepted_parent)
+                if contract.parent_run_id != accepted_parent:
+                    raise ValueError(
+                        f"{contract.iteration_strategy} must branch from accepted parent {accepted_parent!r}"
+                    )
+            else:
+                accepted_parent = str(FrontierState.model_validate(state["frontier"]).accepted_parent)
+                if contract.parent_run_id not in {"B0", accepted_parent}:
+                    raise ValueError("a new model must branch from B0 or the accepted parent")
             cited = [alias_to_paper_id.get(item, item) for item in contract.observed_evidence_ids]
             unresolved = [item for item in cited if item not in card.source_ids]
             if unresolved:
@@ -546,11 +984,32 @@ class AutonomousResearchWorkflow:
             if cited != contract.observed_evidence_ids:
                 contract = contract.model_copy(update={"observed_evidence_ids": cited})
         except Exception as error:
-            self._event(event_state, "scientist", "research", "failed", ComponentStatus.FAILED, f"Research Agent call failed: {error}", {"error": str(error)})
+            error_message = str(error)
+            research_failures = (
+                state.get("consecutive_research_failures", 0) + 1
+                if state.get("last_research_error") == error_message
+                else 1
+            )
+            self._event(
+                event_state,
+                "scientist",
+                "research",
+                "failed",
+                ComponentStatus.FAILED,
+                f"Research Agent call failed: {error_message}",
+                {
+                    "error": error_message,
+                    "consecutive_research_failures": research_failures,
+                },
+            )
             return {
-                "run_id": run_id, "error": str(error),
-                "error_category": self.s.recovery.classify(str(error)),
-                "failure_stage": "research", "recovery_attempt": 0,
+                "run_id": run_id,
+                "error": error_message,
+                "error_category": self.s.recovery.classify(error_message),
+                "failure_stage": "research",
+                "recovery_attempt": 0,
+                "consecutive_research_failures": research_failures,
+                "last_research_error": error_message,
                 "experiment_attempt_count": state.get("experiment_attempt_count", 0) + 1,
             }
         proposed_experiment_id = contract.experiment_id
@@ -558,9 +1017,17 @@ class AutonomousResearchWorkflow:
         contract = contract.model_copy(
             update={"experiment_id": f"{safe_name[:48]}-{run_id.rsplit('-', 1)[-1]}"}
         )
-        self.s.ledger.store_contract(state["session_id"], contract.experiment_id, contract.model_dump(mode="json"))
+        self.s.ledger.store_contract(
+            state["session_id"],
+            contract.experiment_id,
+            contract.model_dump(mode="json"),
+        )
         self._event(
-            event_state, "scientist", "research", "plan", ComponentStatus.SUCCEEDED,
+            event_state,
+            "scientist",
+            "research",
+            "plan",
+            ComponentStatus.SUCCEEDED,
             "One bounded experiment selected",
             {
                 "contract": contract.model_dump(mode="json"),
@@ -570,9 +1037,17 @@ class AutonomousResearchWorkflow:
             },
         )
         return {
-            "run_id": run_id, "experiment_contract": contract.model_dump(mode="json"), "error": "",
-            "error_category": "", "failure_stage": "", "recovery_attempt": 0,
-            "last_execution_error": "", "recovery_action": "", "retry_target": "",
+            "run_id": run_id,
+            "experiment_contract": contract.model_dump(mode="json"),
+            "error": "",
+            "error_category": "",
+            "failure_stage": "",
+            "recovery_attempt": 0,
+            "last_execution_error": "",
+            "last_research_error": "",
+            "recovery_action": "",
+            "retry_target": "",
+            "consecutive_research_failures": 0,
             "agent_input_tokens": state.get("agent_input_tokens", 0) + result.usage.input_tokens,
             "agent_output_tokens": state.get("agent_output_tokens", 0) + result.usage.output_tokens,
             "experiment_attempt_count": state.get("experiment_attempt_count", 0) + 1,
@@ -602,23 +1077,37 @@ class AutonomousResearchWorkflow:
                 f"Code Agent exceeded the {int(self.CODE_STAGE_TIMEOUT_SECONDS)}-second code-writing limit"
             ) from error
 
+    def _experiment_parent_ref(self, session_id: str, parent_run_id: str) -> str:
+        if parent_run_id == "B0":
+            return "HEAD"
+        for event in reversed(self.s.ledger.events(session_id)):
+            if (
+                event.run_id == parent_run_id
+                and event.component_id == "coder"
+                and event.event_type == "completed"
+            ):
+                commit = event.payload.get("commit")
+                if isinstance(commit, str) and commit:
+                    return commit
+        raise ValueError(
+            f"parent_run_id {parent_run_id!r} has no validated experiment commit; "
+            "branch from B0 or an evaluated run"
+        )
+
     async def code(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
         contract = ExperimentContract.model_validate(state["experiment_contract"])
         self._event(state, "coder", "patch", "started", ComponentStatus.RUNNING, "Generating isolated code change")
-        # Worktrees are namespaced by the system-assigned contract ID. The
-        # Research Agent often reuses human-friendly IDs such as "E1"; using
-        # those values directly previously collided with worktrees and ledger
-        # rows from earlier sessions.
         retry_attempt = state.get("recovery_attempt", 0)
         workspace_name = (
             contract.experiment_id
             if retry_attempt == 0
             else f"{contract.experiment_id}-retry{retry_attempt}"
         )
+        parent_ref = self._experiment_parent_ref(state["session_id"], contract.parent_run_id)
         workspace, parent_commit = self.s.workspace.create(
             workspace_name,
-            "HEAD",
+            parent_ref,
             required_paths=contract.allowed_files,
         )
         source_context = {}
@@ -631,25 +1120,22 @@ class AutonomousResearchWorkflow:
             self.s.bedrock_output_limit - state.get("agent_output_tokens", 0),
         )
         reference_code, reference_repositories = await self.s.knowledge.retrieval.reference_code_for_experiment(
-            contract.observed_evidence_ids, contract.primary_change,
-            session_id=state["session_id"], experiment_id=state.get("run_id", contract.experiment_id),
+            contract.observed_evidence_ids,
+            contract.primary_change,
+            session_id=state["session_id"],
+            experiment_id=state.get("run_id", contract.experiment_id),
         )
-        # Finding no reference code (a paper with no cited repository, or a
-        # fallback search that turns up nothing) is an expected, non-fatal
-        # outcome the Code Agent is designed to proceed without -- it is not
-        # a failure of the "Write the Code Change" stage, which is still
-        # actively running its own LLM call at this point (`propose_patch`
-        # below can take far longer than this lookup). Reporting it as
-        # ComponentStatus.FAILED previously froze the coder card on "Failed"
-        # for that entire stretch, and separately caused Experiments' failed-
-        # run detection (component_id "coder" + status "failed") to
-        # misclassify runs that went on to complete normally. RUNNING keeps
-        # the card accurate: this is a checkpoint inside ongoing work, not a
-        # terminal state either way.
         self._event(
-            state, "coder", "patch", "reference_code", ComponentStatus.RUNNING,
-            f"Reference code search found {len(reference_repositories)} repositories" if reference_repositories
-            else "No reference code found for the cited papers or fallback search",
+            state,
+            "coder",
+            "patch",
+            "reference_code",
+            ComponentStatus.RUNNING,
+            (
+                f"Reference code search found {len(reference_repositories)} repositories"
+                if reference_repositories
+                else "No reference code found for the cited papers or fallback search"
+            ),
             {"repositories": reference_repositories, "characters": len(reference_code)},
         )
         agent_context = {
@@ -658,6 +1144,7 @@ class AutonomousResearchWorkflow:
             "reference_code_available": bool(reference_code),
             "reference_code_repositories": reference_repositories,
             "remaining_output_tokens": remaining_output_tokens,
+            "hardware": self._hardware,
             "execution_constraints": {
                 "total_code_stage_wall_seconds": int(self.CODE_STAGE_TIMEOUT_SECONDS),
                 "output_mode": "complete replacement contents for changed files",
@@ -677,11 +1164,12 @@ class AutonomousResearchWorkflow:
             try:
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
                 self._verify_training_entrypoint(workspace)
-                self._verify_new_symbols_wired(workspace, contract)
+                self._verify_new_symbols_wired(workspace, contract, source_context)
                 activated = self._activate_patch_capability(
                     workspace,
                     source_context.get("src/flowstate/training/experiment.py", ""),
                 )
+                self._verify_contract_selection(workspace, contract)
             except Exception as first:
                 # Validation may fail after git apply has already changed the
                 # worktree. Restore the exact source snapshot before asking for
@@ -711,13 +1199,14 @@ class AutonomousResearchWorkflow:
                 result.usage.output_tokens += repair.usage.output_tokens
                 _, patch_hash, touched = self.s.workspace.apply(workspace, contract, proposal)
                 self._verify_training_entrypoint(workspace)
-                self._verify_new_symbols_wired(workspace, contract)
+                self._verify_new_symbols_wired(workspace, contract, source_context)
                 activated = self._activate_patch_capability(
                     workspace,
                     source_context.get("src/flowstate/training/experiment.py", ""),
                 )
+                self._verify_contract_selection(workspace, contract)
             if activated:
-                touched = sorted({*touched, "configs/experiments/bce_fm.yaml"})
+                touched = sorted({*touched, "configs/experiments/candidate.yaml"})
                 self._event(
                     state, "coder", "patch", "activation", ComponentStatus.SUCCEEDED,
                     f"Selected the loss branch this patch introduced: training.loss={activated}",
@@ -795,9 +1284,9 @@ class AutonomousResearchWorkflow:
             for node in ast.walk(tree)
             if isinstance(node, ast.Constant) and isinstance(node.value, str)
         }
-        missing_functions = sorted({"train", "main"} - functions)
+        missing_functions = sorted({"train", "predict", "main"} - functions)
         missing_artifacts = sorted(required_artifacts - string_literals)
-        if not missing_functions and not missing_artifacts and has_main_guard:
+        if not missing_functions and not missing_artifacts and has_main_guard and "--predict-data" in string_literals:
             return
         self.s.workspace.revert(workspace)
         problems = []
@@ -807,6 +1296,8 @@ class AutonomousResearchWorkflow:
             problems.append("missing __main__ guard that calls main()")
         if missing_artifacts:
             problems.append(f"missing required artifact writes {missing_artifacts}")
+        if "--predict-data" not in string_literals:
+            problems.append("missing feature-only checkpoint prediction CLI")
         raise ValueError(
             f"{relative} no longer satisfies the executable training contract: "
             + "; ".join(problems)
@@ -814,12 +1305,16 @@ class AutonomousResearchWorkflow:
         )
 
     _LOSS_BRANCH_PATTERN = re.compile(r'loss_name\s*==\s*["\']([^"\']+)["\']')
+    _TOP_LEVEL_SYMBOL_PATTERN = re.compile(
+        r"^(?:class|def|async\s+def)\s+([A-Za-z_][A-Za-z0-9_]*)",
+        re.MULTILINE,
+    )
 
     def _activate_patch_capability(self, workspace: Path, original_source: str) -> str | None:
         """Deterministically select the loss branch a patch just introduced.
 
         train() picks its loss branch by comparing `loss_name` (read from
-        configs/experiments/bce_fm.yaml) against string literals, so a patch
+        configs/experiments/candidate.yaml) against string literals, so a patch
         adding `loss_name == "X"` without setting training.loss to X is dead
         code. Activating the one branch introduced by the current proposal is
         faithful execution of its declared primary change and is logged.
@@ -837,7 +1332,7 @@ class AutonomousResearchWorkflow:
         """
         relative = "src/flowstate/training/experiment.py"
         experiment = workspace / relative
-        config_path = workspace / "configs/experiments/bce_fm.yaml"
+        config_path = workspace / "configs/experiments/candidate.yaml"
         if not experiment.is_file() or not config_path.is_file():
             return None
         patched = set(self._LOSS_BRANCH_PATTERN.findall(experiment.read_text(encoding="utf-8")))
@@ -853,7 +1348,7 @@ class AutonomousResearchWorkflow:
             self.s.workspace.revert(workspace)
             raise ValueError(
                 f"ambiguous activation: this patch adds {sorted(introduced)} loss branches to train() but "
-                f"configs/experiments/bce_fm.yaml selects none of them. Set training.loss to exactly the "
+                f"configs/experiments/candidate.yaml selects none of them. Set training.loss to exactly the "
                 f"branch this experiment should run, in this same patch."
             )
         branch = introduced.pop()
@@ -863,31 +1358,56 @@ class AutonomousResearchWorkflow:
         if count == 0:
             self.s.workspace.revert(workspace)
             raise ValueError(
-                f"cannot activate {branch!r}: configs/experiments/bce_fm.yaml has no training.loss line to set."
+                f"cannot activate {branch!r}: configs/experiments/candidate.yaml has no training.loss line to set."
             )
         config_path.write_text(updated, encoding="utf-8")
         return branch
 
-    _TOP_LEVEL_SYMBOL_PATTERN = re.compile(r"(?m)^(?:class|def)\s+(\w+)")
+    def _verify_contract_selection(self, workspace: Path, contract: ExperimentContract) -> None:
+        """Reject patches that silently run a simpler method than research selected."""
+        config_path = workspace / "configs/experiments/candidate.yaml"
+        experiment_path = workspace / "src/flowstate/training/experiment.py"
+        if not config_path.is_file() or not experiment_path.is_file():
+            raise ValueError("experiment config and executable training module are required")
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        selected_model = str(config.get("model", {}).get("name", "")).strip().lower()
+        declared_family = contract.method_family.strip().lower()
+        if contract.implementation_kind in {"architecture", "multi_task"} and selected_model != declared_family:
+            raise ValueError(
+                f"unfaithful implementation: research selected model family {declared_family!r}, "
+                f"but candidate.yaml selects {selected_model!r}. Implement and select the declared model; "
+                "do not reduce an architecture experiment to another FM loss."
+            )
+        training = config.get("training", {}) or {}
+        if "maximum_rows" in training:
+            raise ValueError(
+                "unfaithful implementation: training.maximum_rows is proxy-only and cannot be stored in "
+                "candidate.yaml because tier 4 must train and score every fixed-split row"
+            )
+        if "separate_task_heads" in contract.required_capabilities and not training.get("auxiliary_tasks"):
+            raise ValueError(
+                "unfaithful implementation: separate_task_heads was required but candidate.yaml "
+                "does not select any auxiliary_tasks"
+            )
+        if "grouped_ranking" in contract.required_capabilities and str(training.get("loss", "bce")) == "bce":
+            raise ValueError(
+                "unfaithful implementation: grouped_ranking was required but candidate.yaml still selects row-wise BCE"
+            )
+        source = experiment_path.read_text(encoding="utf-8")
+        if "custom_inference" in contract.required_capabilities and (
+            "def predict(" not in source or "--predict-data" not in source
+        ):
+            raise ValueError(
+                "unfaithful implementation: custom_inference requires a checkpoint-backed feature-only predict path"
+            )
 
-    def _verify_new_symbols_wired(self, workspace: Path, contract: ExperimentContract) -> None:
-        """Reject a patch that defines a new class/function nobody calls.
-
-        _activate_patch_capability only closes the loss-branch-string variant of
-        this failure (see its docstring). Every other capability shape -- a new
-        model class, a new forward()/constructor argument, a new helper function
-        -- has no safe deterministic auto-fix: wiring it in requires a real code
-        decision (which call site, which arguments, how outputs combine) that is
-        not safe to guess. Observed live and repeatedly in the ledger: MMoE heads,
-        sequence encoders, and temporal-reweighting patches defining a fully
-        correct new class/function in an allowed model file while never touching
-        the training entrypoint's model construction or loss call sites, so the
-        tier2 proxy run (a full GPU run) discovered a bit-identical ranking with
-        only a generic error. This catches that dead-code shape immediately, for
-        free, right after the patch is applied -- before any GPU time is spent --
-        and forces the one bounded in-call repair retry with the exact unreferenced
-        symbol and its defining file named, instead of a generic label.
-        """
+    def _verify_new_symbols_wired(
+        self,
+        workspace: Path,
+        contract: ExperimentContract,
+        source_context: dict[str, str] | None = None,
+    ) -> None:
+        """Reject a new class or function that the training entrypoint never uses."""
         relative = "src/flowstate/training/experiment.py"
         entrypoint = workspace / relative
         if not entrypoint.is_file():
@@ -895,17 +1415,20 @@ class AutonomousResearchWorkflow:
         entrypoint_text = entrypoint.read_text(encoding="utf-8")
         unwired: list[tuple[str, str]] = []
         for touched in contract.allowed_files:
-            if touched in (relative, "configs/experiments/bce_fm.yaml") or touched.startswith("tests/"):
+            if touched in (relative, "configs/experiments/candidate.yaml") or touched.startswith("tests/"):
                 continue
             path = workspace / touched
             if not path.is_file() or path.suffix != ".py":
                 continue
-            patched = set(self._TOP_LEVEL_SYMBOL_PATTERN.findall(path.read_text(encoding="utf-8")))
-            try:
-                head_source = self.s.workspace.file_at_head(workspace, touched)
-            except Exception:
-                head_source = ""
-            original = set(self._TOP_LEVEL_SYMBOL_PATTERN.findall(head_source))
+            patched = set(
+                self._TOP_LEVEL_SYMBOL_PATTERN.findall(path.read_text(encoding="utf-8"))
+            )
+            original_source = (
+                source_context.get(touched, "")
+                if source_context is not None
+                else self.s.workspace.file_at_head(workspace, touched)
+            )
+            original = set(self._TOP_LEVEL_SYMBOL_PATTERN.findall(original_source))
             for symbol in sorted(patched - original):
                 if not re.search(rf"\b{re.escape(symbol)}\b", entrypoint_text):
                     unwired.append((symbol, touched))
@@ -915,10 +1438,8 @@ class AutonomousResearchWorkflow:
         listed = "; ".join(f"{symbol!r} (defined in {file})" for symbol, file in unwired)
         raise ValueError(
             f"inert patch: patch defines new symbols that {relative} never references: {listed}. "
-            "A new class or function that train() never imports or calls cannot change "
-            "GAUC/nDCG@5 -- it is dead code. Import it and call it from the model "
-            f"construction, forward, or loss call sites inside {relative} in this same "
-            "patch, or delete it if it is not needed."
+            "Import and call every new model or feature function from the real model construction, "
+            "forward, loss, or inference path in the same patch."
         )
 
     async def execute(self, state: WorkflowState) -> dict[str, Any]:
@@ -940,6 +1461,41 @@ class AutonomousResearchWorkflow:
                 "error": message, "error_category": self.s.recovery.classify(message),
                 "failure_stage": "execute",
             }
+
+    @staticmethod
+    def _verify_runtime_contract(tier_output: Path, contract: ExperimentContract) -> None:
+        receipt_path = tier_output / "model" / "train_receipt.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        runtime_family = str(receipt.get("model_family", "")).strip().lower()
+        declared_family = contract.method_family.strip().lower()
+        if contract.implementation_kind in {"architecture", "multi_task"} and runtime_family != declared_family:
+            raise ValueError(
+                f"runtime method mismatch: contract selected {declared_family!r}, "
+                f"but training executed {runtime_family!r}"
+            )
+        if "chronological_history" in contract.required_capabilities and not receipt.get("uses_chronological_history"):
+            raise ValueError("runtime did not use the required chronological history inputs")
+        if "separate_task_heads" in contract.required_capabilities and not receipt.get("auxiliary_heads"):
+            raise ValueError("runtime did not train the required separate auxiliary heads")
+
+    @staticmethod
+    def _training_evidence(tier_output: Path, tier_receipt: dict[str, Any]) -> dict[str, Any]:
+        path = tier_output / "model" / "train_receipt.json"
+        if not path.is_file():
+            return {}
+        training = json.loads(path.read_text(encoding="utf-8"))
+        training["observed_gpu_seconds"] = tier_receipt.get("gpu_seconds")
+        training["observed_gpu_devices"] = tier_receipt.get("gpu_device_names", [])
+        return training
+
+    @staticmethod
+    def _training_summary(scale: str, training: dict[str, Any]) -> str:
+        if not training:
+            return f"{scale} training run"
+        family = str(training.get("model_family", "model"))
+        device = str(training.get("device_name") or training.get("device") or "unknown device")
+        rows = training.get("rows_valid")
+        return f"{scale} {family} training on {device}; {rows} validation rows scored"
 
     def _run_output(self, state: WorkflowState, contract: ExperimentContract) -> Path:
         return (
@@ -966,16 +1522,18 @@ class AutonomousResearchWorkflow:
                 "tier_receipts": receipts, "error": error,
                 "error_category": self.s.recovery.classify(error), "failure_stage": "execute",
             }
-        config = workspace / "configs/experiments/bce_fm.yaml"
+        config = workspace / "configs/experiments/candidate.yaml"
         tier2 = await self.s.funnel.tier2(workspace, Path(state["transform_dir"]), config, output / "tier2", 0)
         receipts.append(tier2.model_dump(mode="json"))
-        self._event(state, "trainer", "execute", "tier2", ComponentStatus.SUCCEEDED if tier2.status == "succeeded" else ComponentStatus.FAILED, "Smoke-scale proxy run", {"receipt": receipts[-1]})
+        tier2_training = self._training_evidence(output / "tier2", receipts[-1])
+        self._event(state, "trainer", "execute", "tier2", ComponentStatus.SUCCEEDED if tier2.status == "succeeded" else ComponentStatus.FAILED, self._training_summary("Smoke-scale", tier2_training), {"receipt": receipts[-1], "training": tier2_training})
         if tier2.status != "succeeded":
             error = tier2.error or "tier2 failed"
             return {
                 "tier_receipts": receipts, "error": error,
                 "error_category": self.s.recovery.classify(error), "failure_stage": "execute",
             }
+        self._verify_runtime_contract(output / "tier2", contract)
         if await self._behavior_unchanged_vs_baseline(
             state["session_id"], Path(state["transform_dir"]), output / "tier2", 0
         ):
@@ -992,7 +1550,8 @@ class AutonomousResearchWorkflow:
             }
         tier3 = await self.s.funnel.tier3(workspace, Path(state["transform_dir"]), config, output / "tier3", 0)
         receipts.append(tier3.model_dump(mode="json"))
-        self._event(state, "trainer", "execute", "tier3", ComponentStatus.SUCCEEDED if tier3.status == "succeeded" else ComponentStatus.FAILED, "Bounded proxy-scale run", {"receipt": receipts[-1]})
+        tier3_training = self._training_evidence(output / "tier3", receipts[-1])
+        self._event(state, "trainer", "execute", "tier3", ComponentStatus.SUCCEEDED if tier3.status == "succeeded" else ComponentStatus.FAILED, self._training_summary("Bounded proxy-scale", tier3_training), {"receipt": receipts[-1], "training": tier3_training})
         if tier3.status != "succeeded":
             error = tier3.error or "tier3 failed"
             return {
@@ -1001,13 +1560,15 @@ class AutonomousResearchWorkflow:
             }
         tier4 = await self.s.funnel.tier4(workspace, Path(state["transform_dir"]), config, output / "tier4", 0)
         receipts.append(tier4.model_dump(mode="json"))
-        self._event(state, "trainer", "execute", "tier4", ComponentStatus.SUCCEEDED if tier4.status == "succeeded" else ComponentStatus.FAILED, "Full-scale training run", {"receipt": receipts[-1]})
+        tier4_training = self._training_evidence(output / "tier4", receipts[-1])
+        self._event(state, "trainer", "execute", "tier4", ComponentStatus.SUCCEEDED if tier4.status == "succeeded" else ComponentStatus.FAILED, self._training_summary("Full-scale", tier4_training), {"receipt": receipts[-1], "training": tier4_training})
         if tier4.status != "succeeded":
             error = tier4.error or "tier4 failed"
             return {
                 "tier_receipts": receipts, "error": error,
                 "error_category": self.s.recovery.classify(error), "failure_stage": "execute",
             }
+        self._verify_runtime_contract(output / "tier4", contract)
         return {"tier_receipts": receipts, "error": "", "error_category": "", "failure_stage": ""}
 
     @staticmethod
@@ -1040,14 +1601,18 @@ class AutonomousResearchWorkflow:
     ) -> bool:
         key = (str(transform_dir), seed)
         if key not in self._reference_tier2_scores:
-            reference_workspace, _ = self.s.workspace.create(f"baseline-reference-{new_id('ref')}", "HEAD")
+            reference_workspace, _ = self.s.workspace.create(
+                f"baseline-reference-{new_id('ref')}",
+                "HEAD",
+                required_paths=["configs/experiments/candidate.yaml"],
+            )
             reference_output = (
                 self.s.artifacts / "runs" / session_id / "_baseline_reference"
                 / new_id("reference") / "tier2"
             )
             reference_receipt = await self.s.funnel.tier2(
                 reference_workspace, transform_dir,
-                reference_workspace / "configs/experiments/bce_fm.yaml", reference_output, seed,
+                reference_workspace / "configs/experiments/candidate.yaml", reference_output, seed,
             )
             reference_scores = reference_output / "model" / "valid_scores.npy"
             self._reference_tier2_scores[key] = (
@@ -1070,6 +1635,26 @@ class AutonomousResearchWorkflow:
 
     async def evaluate(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
+        try:
+            return await self._evaluate_once(state)
+        except Exception as error:
+            message = f"{type(error).__name__}: {error}"
+            self._event(
+                state,
+                "evaluator",
+                "validation",
+                "failed",
+                ComponentStatus.FAILED,
+                f"Validation packaging failed safely: {message}",
+                {"error": message},
+            )
+            return {
+                "error": message,
+                "error_category": self.s.recovery.classify(message),
+                "failure_stage": "evaluate",
+            }
+
+    async def _evaluate_once(self, state: WorkflowState) -> dict[str, Any]:
         tier4 = next(
             item for item in reversed(state.get("tier_receipts", []))
             if int(item["tier"]) == 4 and item["status"] == "succeeded"
@@ -1171,6 +1756,37 @@ class AutonomousResearchWorkflow:
             parent,
             duplicate_of_run_id=duplicate_of_run_id,
         )
+        contract = ExperimentContract.model_validate(state["experiment_contract"])
+        innovation_frontier = dict(state.get("innovation_frontier") or {})
+        strategy = getattr(self.s, "research_strategy", {}) or {}
+        fm_names = {
+            str(name).strip().lower()
+            for name in strategy.get(
+                "fm_family_names",
+                ["factorization_machine", "fm", "deepfm", "deep_factorization_machine"],
+            )
+        }
+        innovation_threshold = float(self.s.contract.baseline_valid["primary"]) + float(
+            strategy.get("innovation_minimum_delta_vs_baseline", 0.0)
+        )
+        if (
+            not duplicate_of_run_id
+            and contract.method_family.strip().lower() not in fm_names
+            and receipt.primary > innovation_threshold
+            and receipt.primary > float(innovation_frontier.get("primary", float("-inf")))
+        ):
+            innovation_frontier = {
+                "run_id": state["run_id"],
+                "experiment_id": contract.experiment_id,
+                "mechanism_id": contract.mechanism_id,
+                "method_family": contract.method_family,
+                "primary": receipt.primary,
+                "delta_vs_official_baseline": (
+                    receipt.primary - float(self.s.contract.baseline_valid["primary"])
+                ),
+                "purpose": "innovation_story_only",
+                "eligible_for_final_artifact": False,
+            }
         exhausted = self._budget_exhausted(state)
         budget_stop = bool(exhausted)
         stop = converged or budget_stop
@@ -1193,11 +1809,13 @@ class AutonomousResearchWorkflow:
                 "frontier": updated.model_dump(mode="json"),
                 "decision": decision,
                 "converged": converged,
+                "delta_vs_parent": receipt.primary - parent.primary,
+                "delta_vs_best": receipt.primary - best.primary,
+                "delta_vs_official_baseline": receipt.primary - float(self.s.contract.baseline_valid["primary"]),
                 "budget_stop": budget_stop,
                 "budget_reason": exhausted,
-                "experiment_id": ExperimentContract.model_validate(
-                    state["experiment_contract"]
-                ).experiment_id,
+                "experiment_id": contract.experiment_id,
+                "innovation_frontier": innovation_frontier,
                 "duplicate_of_run_id": duplicate_of_run_id,
             },
         )
@@ -1205,6 +1823,7 @@ class AutonomousResearchWorkflow:
             "frontier": updated.model_dump(mode="json"),
             "stop": stop,
             "stop_reason": "convergence" if converged else ("budget" if budget_stop else ""),
+            "innovation_frontier": innovation_frontier,
         }
         if updated.validation_best == state["run_id"]:
             values.update({
@@ -1219,20 +1838,32 @@ class AutonomousResearchWorkflow:
     # call on a new one -- which is what previously happened, causing the same
     # inert-patch mistake to repeat indefinitely.
     CODE_LEVEL_CATEGORIES = frozenset({"behavior_unchanged", "code_patch", "syntax_import_config"})
-    ABANDON_CONTRACT_CATEGORIES = frozenset({"code_stage_timeout", "experiment_scope"})
-
+    ABANDON_CONTRACT_CATEGORIES = frozenset({"code_stage_timeout", "experiment_scope", "timeout"})
 
     async def recover(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
-        attempt = state.get("recovery_attempt", 0) + 1
-        # A Research/Code Agent call can fail before an ExperimentContract
-        # exists (e.g. an Azure AI Foundry rate limit on the very first call
-        # of an iteration); fall back to one bounded attempt rather than
-        # crashing on the missing contract.
-        contract = ExperimentContract.model_validate(state["experiment_contract"]) if state.get("experiment_contract") else None
-        attempt_limit = contract.recovery_attempt_limit if contract else 1
+        research_origin = state.get("failure_stage") == "research"
+        contract = (
+            ExperimentContract.model_validate(state["experiment_contract"])
+            if state.get("experiment_contract") and not research_origin
+            else None
+        )
+        if research_origin:
+            attempt = state.get("consecutive_research_failures", 1)
+            attempt_limit = int(
+                (getattr(self.s, "research_strategy", {}) or {}).get(
+                    "maximum_consecutive_research_failures",
+                    2,
+                )
+            )
+        else:
+            attempt = state.get("recovery_attempt", 0) + 1
+            attempt_limit = contract.recovery_attempt_limit if contract else 1
         receipt = self.s.recovery.recover(
-            state["run_id"], state["error"], attempt, attempt_limit,
+            state["run_id"],
+            state["error"],
+            attempt,
+            attempt_limit,
             category=state.get("error_category") or None,
         )
         code_origin = state.get("failure_stage") in {"code", "execute"}
@@ -1241,53 +1872,118 @@ class AutonomousResearchWorkflow:
             and (code_origin or receipt.category in self.CODE_LEVEL_CATEGORIES)
         )
         retry_target = "code" if contract and retry_same_contract else "research"
+        research_limit_reached = research_origin and attempt >= attempt_limit
         event_payload = {
             **receipt.model_dump(mode="json"),
-            "retry_target": "research" if attempt > attempt_limit else retry_target,
+            "retry_target": (
+                "stop"
+                if research_limit_reached
+                else "research" if attempt > attempt_limit else retry_target
+            ),
             "experiment_id": contract.experiment_id if contract else None,
             "completed_experiments": state.get("experiment_count", 0),
             "experiment_attempts": state.get("experiment_attempt_count", 0),
         }
         self.s.ledger.store_recovery_receipt(
-            state["session_id"], state["run_id"], receipt.model_dump(mode="json")
+            state["session_id"],
+            state["run_id"],
+            receipt.model_dump(mode="json"),
         )
         self._event(
-            state, "recovery", "recovery", "recovery",
-            ComponentStatus.FAILED if attempt > attempt_limit else ComponentStatus.READY,
-            receipt.action, event_payload,
+            state,
+            "recovery",
+            "recovery",
+            "recovery",
+            (
+                ComponentStatus.FAILED
+                if attempt > attempt_limit or research_limit_reached
+                else ComponentStatus.READY
+            ),
+            receipt.action,
+            event_payload,
         )
+        if research_limit_reached:
+            frontier = FrontierState.model_validate(state["frontier"])
+            if state["run_id"] not in frontier.failed:
+                frontier.failed.append(state["run_id"])
+            self.s.ledger.store_frontier(state["session_id"], frontier)
+            self._event(
+                state,
+                "watchdog",
+                "decision",
+                "frontier",
+                ComponentStatus.FAILED,
+                (
+                    "Stopping after repeated invalid Research Agent contracts; "
+                    "no experiment or final package was fabricated"
+                ),
+                {
+                    "frontier": frontier.model_dump(mode="json"),
+                    "decision": "failed",
+                    "converged": False,
+                    "budget_stop": False,
+                    "budget_reason": "research_failure_limit",
+                    "experiment_id": None,
+                },
+            )
+            return {
+                "recovery_attempt": attempt,
+                "error": "",
+                "error_category": "",
+                "failure_stage": "",
+                "last_execution_error": "",
+                "retry_target": "research",
+                "frontier": frontier.model_dump(mode="json"),
+                "stop": True,
+                "stop_reason": "research_failure_limit",
+            }
         if attempt > attempt_limit or receipt.category == "metric_regression":
             frontier = FrontierState.model_validate(state["frontier"])
-            frontier.failed.append(state["run_id"])
+            if state["run_id"] not in frontier.failed:
+                frontier.failed.append(state["run_id"])
             stop_reason = self._budget_exhausted(state)
             stop = bool(stop_reason)
             if stop:
                 frontier = self.s.frontier.budget_stop(frontier)
                 self.s.ledger.store_frontier(state["session_id"], frontier)
                 self._event(
-                    state, "watchdog", "decision", "frontier", ComponentStatus.SUCCEEDED,
+                    state,
+                    "watchdog",
+                    "decision",
+                    "frontier",
+                    ComponentStatus.SUCCEEDED,
                     f"Stopping after exhausted recovery: {stop_reason}",
                     {
                         "frontier": frontier.model_dump(mode="json"),
-                        "decision": "failed", "converged": False, "budget_stop": True,
+                        "decision": "failed",
+                        "converged": False,
+                        "budget_stop": True,
                         "budget_reason": stop_reason,
                         "experiment_id": contract.experiment_id if contract else None,
                     },
                 )
             return {
-                "recovery_attempt": attempt, "error": "", "error_category": "",
-                "failure_stage": "", "last_execution_error": "",
-                "retry_target": "research", "frontier": frontier.model_dump(mode="json"),
-                "stop": stop, "stop_reason": "budget" if stop else "",
+                "recovery_attempt": attempt,
+                "error": "",
+                "error_category": "",
+                "failure_stage": "",
+                "last_execution_error": "",
+                "retry_target": "research",
+                "frontier": frontier.model_dump(mode="json"),
+                "stop": stop,
+                "stop_reason": "budget" if stop else "",
             }
         # Code and execution failures stay on the same run ID and contract.
         # They consume recovery attempts and resource budgets, not completed
         # validation-experiment slots.
         return {
-            "recovery_attempt": attempt, "error": "", "error_category": "",
+            "recovery_attempt": attempt,
+            "error": "",
+            "error_category": "",
             "last_execution_error": state.get("error", "") if retry_target == "code" else "",
             "recovery_action": receipt.action,
             "retry_target": retry_target,
+            "consecutive_research_failures": state.get("consecutive_research_failures", 0),
         }
 
     def _route_baseline(self, state: WorkflowState) -> str:
@@ -1337,10 +2033,19 @@ class AutonomousResearchWorkflow:
 
     async def run(self, session_id: str) -> WorkflowState:
         initial: WorkflowState = {
-            "session_id": session_id, "run_id": "workflow", "status": "running",
-            "agent_input_tokens": 0, "agent_output_tokens": 0,
-            "experiment_count": 0, "experiment_attempt_count": 0,
-            "recovery_attempt": 0, "stop": False, "started_at": time.time(),
+            "session_id": session_id,
+            "run_id": "workflow",
+            "status": "running",
+            "agent_input_tokens": 0,
+            "agent_output_tokens": 0,
+            "experiment_count": 0,
+            "experiment_attempt_count": 0,
+            "innovation_frontier": {},
+            "recovery_attempt": 0,
+            "consecutive_research_failures": 0,
+            "last_research_error": "",
+            "stop": False,
+            "started_at": time.time(),
         }
         self.s.ledger.set_session_status(session_id, ComponentStatus.RUNNING)
         checkpoint_path = self.s.ledger.database.with_name("langgraph.sqlite3")
@@ -1357,14 +2062,18 @@ class AutonomousResearchWorkflow:
                 ComponentStatus.BLOCKED
                 if stop_reason == "baseline_gate"
                 else ComponentStatus.FAILED
-                if stop_reason == "baseline_failure"
+                if stop_reason in {"baseline_failure", "research_failure_limit"}
                 else ComponentStatus.SUCCEEDED
             )
             self.s.ledger.set_session_status(session_id, terminal_status)
             terminal_summary = (
                 "Workflow blocked by the baseline integrity gate"
                 if terminal_status == ComponentStatus.BLOCKED
-                else "Workflow stopped because baseline execution or its safety checks failed"
+                else (
+                    "Workflow stopped after repeated invalid Research Agent contracts"
+                    if stop_reason == "research_failure_limit"
+                    else "Workflow stopped because baseline execution or its safety checks failed"
+                )
                 if terminal_status == ComponentStatus.FAILED
                 else "Validation research loop stopped safely; final hidden-test packaging awaits explicit confirmation"
             )

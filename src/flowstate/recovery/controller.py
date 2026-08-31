@@ -11,7 +11,7 @@ class RecoveryController:
         "syntax_import_config": ["minimal_code_repair", "rerun_tier_1"],
         "schema_data": ["expected_actual_schema_diff", "validated_adapter_or_config_correction"],
         "oom": ["halve_micro_batch", "enable_amp", "preserve_effective_batch_with_accumulation", "enable_checkpointing"],
-        "timeout": ["profile_bottleneck", "reduce_evaluation_cadence_or_proxy_breadth"],
+        "timeout": ["abandon_slow_method_and_select_different_model"],
         "code_stage_timeout": ["abandon_timed_out_contract"],
         "experiment_scope": ["abandon_oversized_contract"],
         "nan_divergence": ["restore_stable_settings", "check_labels_lr_precision_normalization"],

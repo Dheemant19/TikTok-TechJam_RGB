@@ -59,6 +59,8 @@ def test_training_entrypoint_guard_accepts_executable_contract(tmp_path: Path) -
     experiment.write_text(
         "def train():\n"
         "    return ('checkpoint.pt', 'valid_scores.npy', 'train_receipt.json')\n\n"
+        "def predict():\n"
+        "    return '--predict-data'\n\n"
         "def main():\n"
         "    train()\n\n"
         "if __name__ == '__main__':\n"
@@ -141,7 +143,7 @@ async def test_behavior_unchanged_vs_baseline_detects_dead_patches_and_caches_re
     tier2_calls = []
 
     class FakeWorkspace:
-        def create(self, experiment_id, parent):
+        def create(self, experiment_id, parent, **_kwargs):
             return tmp_path / "reference_workspace", "commit-hash"
 
     class FakeFunnel:
@@ -186,15 +188,12 @@ def test_ranking_guard_rejects_different_scores_with_identical_within_user_order
 async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_path: Path, monkeypatch) -> None:
     from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
 
-    contract = ExperimentContract(
-        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
-        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
-        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-        fallback_run_id="B0", recovery_attempt_limit=1,
-    )
+    contract = ExperimentContract(experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+    observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+    falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+    comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+    budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+    fallback_run_id="B0", recovery_attempt_limit=1,)
     proposal = PatchProposal(unified_diff="diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-a\n+b\n", tests=[], explanation="x")
 
     workspace = tmp_path / "workspace"
@@ -217,6 +216,10 @@ async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_p
             model_dir = output / "model"
             model_dir.mkdir(parents=True, exist_ok=True)
             np.save(model_dir / "valid_scores.npy", scores)
+            (model_dir / "train_receipt.json").write_text(
+                '{"model_family":"factorization_machine","uses_chronological_history":false,"auxiliary_heads":[]}',
+                encoding="utf-8",
+            )
             return SimpleNamespace(status="succeeded", model_dump=lambda mode: {}, error=None)
 
         async def tier3(self, *_a, **_k):
@@ -224,7 +227,7 @@ async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_p
             return SimpleNamespace(status="succeeded", model_dump=lambda mode: {}, error=None)
 
     class FakeWorkspace:
-        def create(self, experiment_id, parent):
+        def create(self, experiment_id, parent, **_kwargs):
             return tmp_path / "reference_workspace", "commit-hash"
 
     services = SimpleNamespace(
@@ -259,15 +262,12 @@ async def test_execute_contains_unhandled_exceptions_as_recoverable_errors(tmp_p
     # failure. It must become a routed, recoverable error instead.
     from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
 
-    contract = ExperimentContract(
-        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
-        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
-        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-        fallback_run_id="B0", recovery_attempt_limit=1,
-    )
+    contract = ExperimentContract(experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+    observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+    falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+    comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+    budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+    fallback_run_id="B0", recovery_attempt_limit=1,)
     proposal = PatchProposal(unified_diff="diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-a\n+b\n", tests=[], explanation="x")
 
     class ExplodingFunnel:
@@ -321,14 +321,14 @@ def test_recover_node_has_outgoing_edges_back_into_the_loop() -> None:
 def test_activation_selects_the_loss_branch_the_patch_introduced(tmp_path: Path) -> None:
     # Observed live on every cycle: the agent implemented a real BPR loss behind
     # a brand-new `loss_name == "bpr_longview"` branch while leaving
-    # configs/experiments/bce_fm.yaml at loss: bce, so the new code was
+    # configs/experiments/candidate.yaml at loss: bce, so the new code was
     # unreachable. Two rounds of explicit prompting plus feeding the exact
     # diagnosis back did not stop it, so the switch is thrown deterministically.
     workspace = tmp_path / "ws"
     (workspace / "src/flowstate/training").mkdir(parents=True)
     (workspace / "configs/experiments").mkdir(parents=True)
     experiment = workspace / "src/flowstate/training/experiment.py"
-    config = workspace / "configs/experiments/bce_fm.yaml"
+    config = workspace / "configs/experiments/candidate.yaml"
 
     head_source = 'if loss_name == "bpr":\n    pass\n'
     experiment.write_text('if loss_name == "bpr_longview":\n    pass\n', encoding="utf-8")
@@ -359,7 +359,7 @@ def test_activation_ignores_patches_that_add_no_loss_branch(tmp_path: Path) -> N
     (workspace / "configs/experiments").mkdir(parents=True)
     source = 'if loss_name == "bpr":\n    pass\n'
     (workspace / "src/flowstate/training/experiment.py").write_text(source, encoding="utf-8")
-    config = workspace / "configs/experiments/bce_fm.yaml"
+    config = workspace / "configs/experiments/candidate.yaml"
     config.write_text("training:\n  loss: bce\n", encoding="utf-8")
 
     services = SimpleNamespace(workspace=SimpleNamespace(
@@ -387,7 +387,7 @@ def test_activation_uses_agent_source_snapshot_not_stale_git_head(tmp_path: Path
         patched_source,
         encoding="utf-8",
     )
-    config = workspace / "configs/experiments/bce_fm.yaml"
+    config = workspace / "configs/experiments/candidate.yaml"
     config.write_text(
         "training:\n  loss: bce\n  recency_half_life_days: 7\n",
         encoding="utf-8",
@@ -414,7 +414,7 @@ def test_activation_raises_when_multiple_new_branches_are_ambiguous(tmp_path: Pa
     (workspace / "src/flowstate/training/experiment.py").write_text(
         'if loss_name == "a":\n    pass\nif loss_name == "b":\n    pass\n', encoding="utf-8"
     )
-    (workspace / "configs/experiments/bce_fm.yaml").write_text("training:\n  loss: bce\n", encoding="utf-8")
+    (workspace / "configs/experiments/candidate.yaml").write_text("training:\n  loss: bce\n", encoding="utf-8")
 
     reverted = {"value": False}
     services = SimpleNamespace(workspace=SimpleNamespace(
@@ -440,6 +440,167 @@ def _minimal_contract(allowed_files: list[str]):
         fallback_run_id="B0", recovery_attempt_limit=2,
     )
 
+def _policy_workflow() -> AutonomousResearchWorkflow:
+    services = SimpleNamespace(
+        research_strategy={
+            "fm_choosing_score": 0.15,
+            "fm_family_names": [
+                "factorization_machine",
+                "fm",
+                "deepfm",
+                "deep_factorization_machine",
+            ],
+            "minimum_non_fm_between_fm": 3,
+            "require_non_fm_first": False,
+            "semantic_duplicate_similarity": 0.72,
+            "innovation_minimum_delta_vs_baseline": 0.0,
+            "ensemble_minimum_delta_vs_best": 0.002,
+            "minimum_eligible_models_for_ensemble": 2,
+        },
+        contract=SimpleNamespace(baseline_valid={"primary": 0.6016}),
+    )
+    return AutonomousResearchWorkflow(services)
+
+
+def test_fm_family_requires_three_non_fm_experiments_between_attempts() -> None:
+    workflow = _policy_workflow()
+    first = workflow._research_diversity_policy([])
+    blocked = workflow._research_diversity_policy([
+        {"method_family": "factorization_machine", "mechanism_id": "fm_bpr"},
+        {"method_family": "din", "mechanism_id": "din_bpr"},
+        {"method_family": "mmoe", "mechanism_id": "mmoe_bpr"},
+    ])
+    allowed = workflow._research_diversity_policy([
+        {"method_family": "factorization_machine", "mechanism_id": "fm_bpr"},
+        {"method_family": "din", "mechanism_id": "din_bpr"},
+        {"method_family": "mmoe", "mechanism_id": "mmoe_bpr"},
+        {"method_family": "dcnv2", "mechanism_id": "dcnv2_bpr"},
+    ])
+    deepfm_blocked = workflow._research_diversity_policy([
+        {"method_family": "deepfm", "mechanism_id": "deepfm_bce"},
+    ])
+    initial_fm_allowed = workflow._research_diversity_policy([
+        {"method_family": "din", "mechanism_id": "din_bpr"},
+        {"method_family": "ple", "mechanism_id": "ple_bpr"},
+        {"method_family": "dcnv2", "mechanism_id": "dcnv2_bpr"},
+    ])
+    repeated_family = workflow._research_diversity_policy([
+        {"method_family": "din", "mechanism_id": "din_bpr"},
+        {"method_family": "mmoe", "mechanism_id": "mmoe_bce"},
+        {"method_family": "mmoe", "mechanism_id": "mmoe_mgda"},
+    ])
+
+    assert first["fm_family_allowed"] is True
+    assert blocked["required_model_scope"] == "non_fm"
+    assert blocked["non_fm_experiments_since_last_fm"] == 2
+    assert allowed["fm_family_allowed"] is True
+    assert initial_fm_allowed["fm_family_allowed"] is True
+    assert deepfm_blocked["fm_family_allowed"] is False
+    assert repeated_family["blocked_model_families"] == ["mmoe"]
+
+
+def test_semantic_duplicate_blocks_renamed_hypothesis_but_allows_one_exact_tuning_round() -> None:
+    workflow = _policy_workflow()
+    previous = {
+        "mechanism_id": "din_history_bpr",
+        "hypothesis": "DIN chronological history attention improves within-user ranking",
+        "primary_change": "Add chronological history attention with BPR loss",
+    }
+    renamed = _minimal_contract(["src/flowstate/training/experiment.py"]).model_copy(update={
+        "hypothesis": "Chronological history attention in DIN improves within-user ranking",
+        "primary_change": "Use BPR loss with chronological history attention",
+        "mechanism_id": "din_attention_pairwise_v2",
+        "method_family": "din",
+    })
+    tuning = renamed.model_copy(update={
+        "mechanism_id": "din_history_bpr",
+        "iteration_strategy": "tune_current_model",
+    })
+
+    duplicate, similarity = workflow._semantic_duplicate(renamed, [previous])
+    tuned_duplicate, _ = workflow._semantic_duplicate(tuning, [previous])
+
+    assert duplicate == "din_history_bpr"
+    assert similarity >= 0.72
+    assert tuned_duplicate is None
+
+
+def test_innovation_frontier_tracks_best_non_fm_above_baseline_only() -> None:
+    workflow = _policy_workflow()
+    frontier = workflow._innovation_frontier([
+        {
+            "run_id": "E1",
+            "experiment_id": "E1",
+            "method_family": "factorization_machine",
+            "metrics": {"primary": 0.6040},
+        },
+        {
+            "run_id": "E2",
+            "experiment_id": "E2",
+            "method_family": "din",
+            "metrics": {"primary": 0.6020},
+        },
+        {
+            "run_id": "E3",
+            "experiment_id": "E3",
+            "method_family": "dcnv2",
+            "metrics": {"primary": 0.6010},
+        },
+    ])
+
+    assert frontier["run_id"] == "E2"
+    assert frontier["method_family"] == "din"
+    assert frontier["eligible_for_final_artifact"] is False
+    assert frontier["purpose"] == "innovation_story_only"
+
+
+def test_ensemble_requires_non_fm_candidate_and_epsilon_sized_gain() -> None:
+    workflow = _policy_workflow()
+    weak_ensemble = _minimal_contract(["src/flowstate/models/candidate.py"]).model_copy(update={
+        "implementation_kind": "ensemble",
+        "method_family": "ensemble",
+        "mechanism_id": "fm_din_score_blend",
+        "minimum_primary_improvement": 0.0005,
+    })
+    policy = workflow._research_diversity_policy([])
+
+    with pytest.raises(ValueError, match="2 distinct validated model families"):
+        workflow._validate_ensemble_policy(weak_ensemble, {}, policy)
+
+    policy["ensemble_candidates"] = [
+        {"run_id": "E2", "method_family": "din", "primary": 0.602},
+        {"run_id": "E3", "method_family": "dcnv2", "primary": 0.603},
+    ]
+    with pytest.raises(ValueError, match="validated non-FM innovation candidate"):
+        workflow._validate_ensemble_policy(weak_ensemble, {}, policy)
+    with pytest.raises(ValueError, match="at least 0.002 improvement"):
+        workflow._validate_ensemble_policy(
+            weak_ensemble,
+            {"run_id": "E2", "method_family": "din", "primary": 0.602},
+            policy,
+        )
+
+    qualifying = weak_ensemble.model_copy(update={"minimum_primary_improvement": 0.002})
+    workflow._validate_ensemble_policy(
+        qualifying,
+        {"run_id": "E2", "method_family": "din", "primary": 0.602},
+        policy,
+    )
+
+
+def test_ensemble_candidates_require_distinct_families_above_baseline() -> None:
+    workflow = _policy_workflow()
+    candidates = workflow._eligible_ensemble_candidates([
+        {"run_id": "E1", "method_family": "din", "metrics": {"primary": 0.6020}},
+        {"run_id": "E2", "method_family": "din", "metrics": {"primary": 0.6030}},
+        {"run_id": "E3", "method_family": "dcnv2", "metrics": {"primary": 0.6010}},
+        {"run_id": "E4", "method_family": "sasrec", "metrics": {"primary": 0.6040}},
+    ])
+
+    assert [(item["run_id"], item["method_family"]) for item in candidates] == [
+        ("E4", "sasrec"),
+        ("E2", "din"),
+    ]
 
 def test_new_symbol_wiring_check_rejects_a_class_train_never_calls(tmp_path: Path) -> None:
     # Reproduced from run-20260830T062501677461Z-e014e119 (EXP_mmoe_aux_longview_v1):
@@ -565,15 +726,12 @@ async def test_code_agent_patch_call_has_one_ten_minute_deadline(monkeypatch) ->
 async def test_code_node_labels_stage_deadline_for_contract_abandonment(tmp_path: Path, monkeypatch) -> None:
     from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
-    contract = ExperimentContract(
-        experiment_id="E-timeout", parent_run_id="B0", hypothesis="Pairwise ranking loss",
-        observed_evidence_ids=[], primary_change="swap to pairwise loss", allowed_files=["a.py"],
-        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-        fallback_run_id="B0", recovery_attempt_limit=2,
-    )
+    contract = ExperimentContract(experiment_id="E-timeout", parent_run_id="B0", hypothesis="Pairwise ranking loss",
+    observed_evidence_ids=[], primary_change="swap to pairwise loss", allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+    falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+    comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+    budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+    fallback_run_id="B0", recovery_attempt_limit=2,)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -619,15 +777,12 @@ async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_resear
     # misclassified as infrastructure and each burned a fresh research plan.
     from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
-    contract = ExperimentContract(
-        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
-        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
-        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-        fallback_run_id="B0", recovery_attempt_limit=2,
-    )
+    contract = ExperimentContract(experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+    observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+    falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+    comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+    budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+    fallback_run_id="B0", recovery_attempt_limit=2,)
     inert_error = (
         "patch produced no measurable change in ranking behavior: proxy-scale "
         "within-user validation ordering is identical to the unpatched experiment baseline"
@@ -672,15 +827,12 @@ async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_resear
 async def test_code_agent_timeout_abandons_contract_and_returns_to_research(monkeypatch) -> None:
     from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
-    contract = ExperimentContract(
-        experiment_id="E-timeout", parent_run_id="B0", hypothesis="Pairwise ranking loss",
-        observed_evidence_ids=[], primary_change="swap to pairwise loss", allowed_files=["a.py"],
-        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-        fallback_run_id="B0", recovery_attempt_limit=2,
-    )
+    contract = ExperimentContract(experiment_id="E-timeout", parent_run_id="B0", hypothesis="Pairwise ranking loss",
+    observed_evidence_ids=[], primary_change="swap to pairwise loss", allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+    falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+    comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+    budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+    fallback_run_id="B0", recovery_attempt_limit=2,)
     recovery_events: list[dict] = []
     workflow = AutonomousResearchWorkflow(SimpleNamespace(
         recovery=RecoveryController(), maximum_experiments=10,
@@ -714,18 +866,72 @@ async def test_code_agent_timeout_abandons_contract_and_returns_to_research(monk
 
 
 @pytest.mark.asyncio
+async def test_repeated_invalid_research_contracts_stop_instead_of_looping(monkeypatch) -> None:
+    stored_frontiers: list[FrontierState] = []
+    events: list[tuple[str, str]] = []
+    services = SimpleNamespace(
+        recovery=RecoveryController(),
+        research_strategy={"maximum_consecutive_research_failures": 2},
+        maximum_experiments=10,
+        bedrock_input_limit=10_000,
+        bedrock_output_limit=10_000,
+        total_wall_seconds=0,
+        total_gpu_hours=0.0,
+        ledger=SimpleNamespace(
+            store_recovery_receipt=lambda *_args: None,
+            store_frontier=lambda _session, frontier: stored_frontiers.append(frontier),
+        ),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(
+        workflow,
+        "_event",
+        lambda _state, component, _stage, _event_type, _status, summary, _payload=None: events.append(
+            (component, summary)
+        ),
+    )
+    state = {
+        "session_id": "s",
+        "run_id": "research-invalid-2",
+        "error": "ensemble is unavailable until two distinct models qualify",
+        "error_category": "experiment_scope",
+        "failure_stage": "research",
+        "consecutive_research_failures": 2,
+        "experiment_count": 1,
+        "experiment_attempt_count": 4,
+        "recovery_attempt": 0,
+        "frontier": {
+            "validation_best": "E2",
+            "stable_fallback": "B0",
+            "accepted_parent": "E2",
+            "locked": False,
+        },
+    }
+
+    result = await workflow.recover(state)
+
+    assert result["stop"] is True
+    assert result["stop_reason"] == "research_failure_limit"
+    assert workflow._route_recovery({**state, **result}) == "stop"
+    assert "research-invalid-2" in stored_frontiers[-1].failed
+    assert any(component == "watchdog" and "repeated invalid" in summary for component, summary in events)
+
+
+@pytest.mark.asyncio
 async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path, monkeypatch) -> None:
     from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
-    contract = ExperimentContract(
-        experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
-        observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["a.py"],
-        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-        fallback_run_id="B0", recovery_attempt_limit=1,
-    )
+    contract = ExperimentContract(experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+    observed_evidence_ids=[], primary_change="swap to BPR", allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+    falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+    comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+    budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+    fallback_run_id="B0", recovery_attempt_limit=1,)
     services = SimpleNamespace(
         recovery=RecoveryController(), maximum_experiments=10, frontier=SimpleNamespace(),
         bedrock_input_limit=10_000, bedrock_output_limit=10_000, total_wall_seconds=0, total_gpu_hours=0.0,
@@ -933,15 +1139,14 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
                 raise ValueError("Research Agent cited evidence not supplied by MCP")
             from flowstate.agents.azure_foundry import AgentUsage
             from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
-            contract = ExperimentContract(
-                experiment_id="E2", parent_run_id="B0", hypothesis="A genuinely new mechanism, not repeated",
-                observed_evidence_ids=[], primary_change="try something new", allowed_files=["a.py"],
-                prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-                falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-                comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-                budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-                fallback_run_id="B0", recovery_attempt_limit=1,
-            )
+            contract = ExperimentContract(experiment_id="E2", parent_run_id="B0", hypothesis="A genuinely new mechanism, not repeated",
+            observed_evidence_ids=[], primary_change="try something new", mechanism_id="new_mechanism",
+            decision_rationale="Prior BPR evidence motivates a different bounded mechanism.",
+            allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+            falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+            comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+            budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+            fallback_run_id="B0", recovery_attempt_limit=1,)
             return SimpleNamespace(value=contract, usage=AgentUsage(input_tokens=10, output_tokens=10, model_id="fake"))
 
 
@@ -970,10 +1175,13 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
         "experiment_count": 3, "agent_input_tokens": 0, "agent_output_tokens": 0,
         "recovery_attempt": 2,  # simulates an unrelated earlier failure's leftover count
+        "consecutive_research_failures": 2,
+        "last_research_error": "an unrelated earlier Research Agent error",
     }
 
     failure_result = await workflow.research(base_state)
     assert failure_result["recovery_attempt"] == 0
+    assert failure_result["consecutive_research_failures"] == 1
     assert failure_result["error"]
     assert seen_contexts[-1]["runs"][0] == {
         **prior_contract,
@@ -991,21 +1199,21 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
     fail_next["value"] = False
     success_result = await workflow.research({**base_state, "recovery_attempt": 2})
     assert success_result["recovery_attempt"] == 0
+    assert success_result["consecutive_research_failures"] == 0
     assert success_result["error"] == ""
 
 
 @pytest.mark.asyncio
-async def test_research_query_rotates_priority_area_by_experiment_count(tmp_path: Path, monkeypatch) -> None:
+async def test_research_query_rotates_priority_area_by_attempt_count(tmp_path: Path, monkeypatch) -> None:
     # Reproduced live: the query passed to research_card() was a single
     # hardcoded literal string forever, so 69 contracts across 22 sessions
     # cited only 5 distinct paper_ids total out of 20 curated papers spanning
     # 7 priority areas. The query and its priority_area filter must now vary
-    # with how many contracts this session has already produced. No
-    # trust_tier filter -- curated and discovered (Hugging Face) papers are both
-    # ranked and handed to the agent -- but every call now requires the
-    # cited evidence to carry verified code (EvidenceFilters(require_code=True)),
-    # and every call bypasses the 7-day query cache so it genuinely searches
-    # again each experiment.
+    # with every bounded research attempt, including failed Research Agent
+    # calls that never produced a contract. No trust_tier filter -- curated
+    # and discovered (Hugging Face) papers are both ranked and handed to the
+    # agent -- but every call requires verified code
+    # (EvidenceFilters(require_code=True)) and bypasses the 7-day query cache.
     profile_path = tmp_path / "profile.json"
     profile_path.write_text("{}", encoding="utf-8")
 
@@ -1028,15 +1236,14 @@ async def test_research_query_rotates_priority_area_by_experiment_count(tmp_path
 
     class FakeAgents:
         async def research(self, _context):
-            contract = ExperimentContract(
-                experiment_id="E", parent_run_id="B0", hypothesis="Some sufficiently long hypothesis text",
-                observed_evidence_ids=[], primary_change="try something", allowed_files=["a.py"],
-                prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-                falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-                comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-                budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-                fallback_run_id="B0", recovery_attempt_limit=1,
-            )
+            contract = ExperimentContract(experiment_id="E", parent_run_id="B0", hypothesis="Some sufficiently long hypothesis text",
+            observed_evidence_ids=[], primary_change="try something", mechanism_id=f"rotation_{len(seen_calls)}",
+            decision_rationale="The next priority area follows the observed experiment rotation.",
+            allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+            falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+            comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+            budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+            fallback_run_id="B0", recovery_attempt_limit=1,)
             return SimpleNamespace(value=contract, usage=AgentUsage(input_tokens=10, output_tokens=10, model_id="fake"))
 
     prior_count = {"value": 0}
@@ -1070,6 +1277,7 @@ async def test_research_query_rotates_priority_area_by_experiment_count(tmp_path
     queries = workflow._PRIORITY_AREA_QUERIES
     for i in range(len(rotation) + 1):  # one full cycle plus one, to prove it wraps
         prior_count["value"] = i
+        state["experiment_attempt_count"] = i
         await workflow.research(state)
         expected_area = rotation[i % len(rotation)]
         assert seen_calls[-1]["hypothesis"] == queries[expected_area]
@@ -1114,15 +1322,14 @@ async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: 
             seen_contexts.append(context)
             from flowstate.agents.azure_foundry import AgentUsage
             from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
-            contract = ExperimentContract(
-                experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
-                observed_evidence_ids=[paper.content_hash], primary_change="swap to BPR", allowed_files=["a.py"],
-                prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-                falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-                comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-                budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-                fallback_run_id="B0", recovery_attempt_limit=1,
-            )
+            contract = ExperimentContract(experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+            observed_evidence_ids=[paper.content_hash], primary_change="swap to BPR", mechanism_id="bpr_citation",
+            decision_rationale="The cited ranking evidence supports this bounded loss change.",
+            allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+            falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+            comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+            budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+            fallback_run_id="B0", recovery_attempt_limit=1,)
             return SimpleNamespace(value=contract, usage=AgentUsage(input_tokens=10, output_tokens=10, model_id="fake"))
 
     services = SimpleNamespace(
@@ -1181,15 +1388,14 @@ async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, m
         async def research(self, context):
             from flowstate.agents.azure_foundry import AgentUsage
             from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
-            contract = ExperimentContract(
-                experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
-                observed_evidence_ids=["fabricated-paper-id"], primary_change="swap to BPR", allowed_files=["a.py"],
-                prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
-                falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
-                comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
-                budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
-                fallback_run_id="B0", recovery_attempt_limit=1,
-            )
+            contract = ExperimentContract(experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
+            observed_evidence_ids=["fabricated-paper-id"], primary_change="swap to BPR", mechanism_id="invalid_citation",
+            decision_rationale="The supplied evidence was selected for this bounded loss change.",
+            allowed_files=["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"], prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+            falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+            comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+            budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+            fallback_run_id="B0", recovery_attempt_limit=1,)
             return SimpleNamespace(value=contract, usage=AgentUsage(input_tokens=10, output_tokens=10, model_id="fake"))
 
     services = SimpleNamespace(
@@ -1602,3 +1808,45 @@ async def test_completed_experiment_budget_increments_only_after_official_valida
         assert result["error"] == ""
         assert workflow._route_evaluate(result) == "decide"
     assert state["experiment_attempt_count"] == 9
+
+
+def test_contract_selection_rejects_persistent_proxy_row_limit(tmp_path: Path) -> None:
+    workspace = tmp_path / "limited"
+    experiment = workspace / "src/flowstate/training/experiment.py"
+    config = workspace / "configs/experiments/candidate.yaml"
+    experiment.parent.mkdir(parents=True)
+    config.parent.mkdir(parents=True)
+    experiment.write_text("def predict():\n    pass\n", encoding="utf-8")
+    config.write_text(
+        "model:\n  name: factorization_machine\ntraining:\n  loss: bce\n  maximum_rows: 100000\n",
+        encoding="utf-8",
+    )
+    workflow = AutonomousResearchWorkflow(SimpleNamespace())
+    contract = _minimal_contract(
+        ["src/flowstate/training/experiment.py", "configs/experiments/candidate.yaml"]
+    )
+
+    with pytest.raises(ValueError, match="tier 4 must train and score every fixed-split row"):
+        workflow._verify_contract_selection(workspace, contract)
+
+
+@pytest.mark.asyncio
+async def test_evaluation_alignment_failure_routes_to_recovery(monkeypatch) -> None:
+    services = SimpleNamespace(recovery=RecoveryController())
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    async def fail_alignment(_state):
+        raise RuntimeError("prediction columns are not aligned")
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_evaluate_once", fail_alignment)
+    monkeypatch.setattr(workflow, "_event", lambda *_args, **_kwargs: None)
+
+    result = await workflow.evaluate({"session_id": "s", "run_id": "r"})
+
+    assert result["failure_stage"] == "evaluate"
+    assert result["error_category"] == "schema_data"
+    assert workflow._route_evaluate(result) == "recover"

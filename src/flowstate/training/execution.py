@@ -11,10 +11,12 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 import psutil
 from pydantic import BaseModel, ConfigDict, Field
 
 from flowstate.contract.challenge import ChallengeContract
+import yaml
 from flowstate.integrity.gates import PhaseBoundaryValidator
 from flowstate.ledger.workflow import canonical_hash, new_id
 
@@ -37,6 +39,7 @@ class TierReceipt(BaseModel):
     peak_gpu_memory_mb: float | None
     gpu_seconds: float | None = None
     stdout_path: Path
+    gpu_device_names: list[str] = Field(default_factory=list)
     stderr_path: Path
     output_directory: Path
     error: str | None = None
@@ -54,6 +57,7 @@ class ResourceMonitor:
         # CUDA compute context. None means NVML could not observe the device at
         # all, which must stay null rather than be reported as zero usage.
         self.gpu_seconds: float | None = None
+        self.gpu_device_names: set[str] = set()
         self._last_sample: float | None = None
         self._nvml_ready = False
         if pynvml:
@@ -91,6 +95,10 @@ class ResourceMonitor:
                 for item in pynvml.nvmlDeviceGetComputeRunningProcesses(handle):
                     if item.pid not in pids:
                         continue
+                    name = pynvml.nvmlDeviceGetName(handle)
+                    if isinstance(name, bytes):
+                        name = name.decode(errors="replace")
+                    self.gpu_device_names.add(str(name))
                     device_active = True
                     if item.usedGpuMemory is not None:
                         total += int(item.usedGpuMemory)
@@ -153,6 +161,173 @@ class ExecutionFunnel:
             stream.write(message + "\n")
         document = receipt.model_dump(exclude={"receipt_hash"})
         document.update(status="failed", comparable=False, error=message)
+        return self._rehash_receipt(document)
+
+    @staticmethod
+    def _failed_receipt(receipt: TierReceipt, message: str) -> TierReceipt:
+        with receipt.stderr_path.open("a", encoding="utf-8") as stream:
+            if receipt.stderr_path.stat().st_size:
+                stream.write("\n")
+            stream.write(message + "\n")
+        document = receipt.model_dump(exclude={"receipt_hash"})
+        document.update(status="failed", comparable=False, error=message[-4000:])
+        return ExecutionFunnel._rehash_receipt(document)
+
+    def _validate_score_artifacts(self, receipt: TierReceipt) -> TierReceipt:
+        if receipt.status != "succeeded":
+            return receipt
+        try:
+            training = json.loads(
+                (receipt.output_directory / "model/train_receipt.json").read_text(encoding="utf-8")
+            )
+            scores = np.load(receipt.output_directory / "model/valid_scores.npy", allow_pickle=False)
+            checkpoint = receipt.output_directory / "model/checkpoint.pt"
+            required_fields = {"model_family", "device", "rows_train", "rows_valid", "parameters"}
+            missing_fields = sorted(required_fields - training.keys())
+            if missing_fields:
+                raise ValueError(f"training receipt is missing fields: {missing_fields}")
+            if scores.ndim != 1 or len(scores) != int(training["rows_valid"]):
+                raise ValueError("validation scores have the wrong shape or row count")
+            if not np.isfinite(scores).all() or float(np.std(scores)) <= 1e-8:
+                raise ValueError("validation scores are non-finite or constant")
+            if checkpoint.stat().st_size <= 0 or int(training["parameters"]) <= 0:
+                raise ValueError("checkpoint is empty or model reports no trainable parameters")
+        except Exception as error:
+            return self._failed_receipt(
+                receipt,
+                f"training artifacts failed semantic validation: {type(error).__name__}: {error}",
+            )
+        return receipt
+
+    def _validate_full_scale_rows(
+        self,
+        receipt: TierReceipt,
+        transform_dir: Path,
+    ) -> TierReceipt:
+        if receipt.status != "succeeded":
+            return receipt
+        try:
+            training = json.loads(
+                (receipt.output_directory / "model/train_receipt.json").read_text(encoding="utf-8")
+            )
+            scores = np.load(receipt.output_directory / "model/valid_scores.npy", allow_pickle=False)
+            with np.load(transform_dir / "train.npz", allow_pickle=False) as train:
+                expected_train = len(train["X"])
+            with np.load(transform_dir / "valid.npz", allow_pickle=False) as valid:
+                expected_valid = len(valid["X"])
+            actual_train = int(training["rows_train"])
+            actual_valid = int(training["rows_valid"])
+            if actual_train != expected_train:
+                raise ValueError(
+                    f"full-scale training row count mismatch: used {actual_train}, expected {expected_train}"
+                )
+            if actual_valid != expected_valid or len(scores) != expected_valid:
+                raise ValueError(
+                    "full-scale validation row count mismatch: "
+                    f"receipt={actual_valid}, scores={len(scores)}, expected={expected_valid}"
+                )
+        except Exception as error:
+            return self._failed_receipt(
+                receipt,
+                f"full-scale artifacts failed row alignment validation: {type(error).__name__}: {error}",
+            )
+        return receipt
+
+    def _validate_requested_device(self, receipt: TierReceipt, config: Path) -> TierReceipt:
+        if receipt.status != "succeeded":
+            return receipt
+        try:
+            document = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
+            requested = str(document.get("device", "auto")).strip().lower()
+            if not (requested == "cuda" or requested.startswith("cuda:")):
+                return receipt
+            training = json.loads(
+                (receipt.output_directory / "model/train_receipt.json").read_text(encoding="utf-8")
+            )
+            actual = str(training.get("device", "")).strip().lower()
+            device_name = str(training.get("device_name", "")).strip()
+            if not actual.startswith("cuda:") or not device_name:
+                raise ValueError(
+                    f"device={requested!r} was requested, but training reported {actual!r} ({device_name!r})"
+                )
+            if receipt.gpu_seconds is not None and receipt.gpu_seconds <= 0:
+                raise ValueError(
+                    f"device={requested!r} was requested, but NVML observed no CUDA compute context"
+                )
+            if receipt.gpu_device_names and device_name not in receipt.gpu_device_names:
+                raise ValueError(
+                    f"training reported GPU {device_name!r}, but NVML observed {receipt.gpu_device_names!r}"
+                )
+        except Exception as error:
+            return self._failed_receipt(
+                receipt,
+                f"training device verification failed: {type(error).__name__}: {error}",
+            )
+        return receipt
+
+    async def _validate_feature_only_prediction(
+        self,
+        receipt: TierReceipt,
+        workspace: Path,
+        transform_dir: Path,
+    ) -> TierReceipt:
+        receipt = self._validate_score_artifacts(self._validate_training_artifacts(receipt))
+        if receipt.status != "succeeded":
+            return receipt
+        check_root = receipt.output_directory / "prediction_check"
+        feature_path = receipt.output_directory / "feature_only_validation.npz"
+        score_path = check_root / "scores.npy"
+        training = json.loads(
+            (receipt.output_directory / "model/train_receipt.json").read_text(encoding="utf-8")
+        )
+        row_count = int(training["rows_valid"])
+        allowed = {"X", "users", "videos", "date", "time_ms", "hourmin", "duration_ms"}
+        with np.load(transform_dir / "valid.npz", allow_pickle=False) as source:
+            arrays = {key: source[key][:row_count] for key in source.files if key in allowed}
+        np.savez_compressed(feature_path, **arrays)
+        command = [
+            sys.executable,
+            "-m",
+            "flowstate.training.experiment",
+            "--predict-data",
+            str(feature_path),
+            "--checkpoint",
+            str(receipt.output_directory / "model/checkpoint.pt"),
+            "--output",
+            str(score_path),
+        ]
+        check = await self._run(
+            receipt.tier,
+            command,
+            workspace,
+            check_root,
+            False,
+            min(180, self.timeout_seconds),
+        )
+        if check.status != "succeeded" or not score_path.is_file():
+            return self._failed_receipt(
+                receipt,
+                "feature-only checkpoint prediction failed; the model cannot be packaged safely: "
+                + (check.error or "prediction produced no score artifact"),
+            )
+        expected = np.load(receipt.output_directory / "model/valid_scores.npy", allow_pickle=False)
+        actual = np.load(score_path, allow_pickle=False)
+        if expected.shape != actual.shape or not np.allclose(expected, actual, rtol=1e-4, atol=1e-5):
+            return self._failed_receipt(
+                receipt,
+                "feature-only checkpoint prediction does not reproduce validation scores; "
+                "training may depend on labels or state unavailable at final submission",
+            )
+        document = receipt.model_dump(exclude={"receipt_hash"})
+        document["wall_seconds"] = float(receipt.wall_seconds + check.wall_seconds)
+        document["peak_rss_mb"] = max(receipt.peak_rss_mb, check.peak_rss_mb)
+        if receipt.gpu_seconds is None or check.gpu_seconds is None:
+            document["gpu_seconds"] = receipt.gpu_seconds
+        else:
+            document["gpu_seconds"] = float(receipt.gpu_seconds + check.gpu_seconds)
+        document["gpu_device_names"] = sorted(
+            set(receipt.gpu_device_names) | set(check.gpu_device_names)
+        )
         return self._rehash_receipt(document)
 
 
@@ -224,6 +399,7 @@ class ExecutionFunnel:
             "command": command, "return_code": process.returncode, "wall_seconds": time.perf_counter() - started,
             "peak_rss_mb": monitor.peak_rss / 1024 / 1024, "peak_gpu_memory_mb": monitor.peak_gpu,
             "gpu_seconds": monitor.gpu_seconds,
+            "gpu_device_names": sorted(monitor.gpu_device_names),
             "stdout_path": stdout_path, "stderr_path": stderr_path, "output_directory": output,
             "error": (stdout.decode(errors="replace") + stderr.decode(errors="replace"))[-4000:] if status != "succeeded" else None,
         }
@@ -288,14 +464,17 @@ class ExecutionFunnel:
     async def tier2(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:
         command = [sys.executable, "-m", "flowstate.training.experiment", "--transform-dir", str(transform_dir), "--config", str(config), "--output", str(output / "model"), "--max-rows", "100000", "--max-batches", "100", "--seed", str(seed)]
         receipt = await self._run(2, command, workspace, output, False, min(900, self.timeout_seconds))
-        return self._validate_training_artifacts(receipt)
+        return await self._validate_feature_only_prediction(receipt, workspace, transform_dir)
 
     async def tier3(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:
         command = [sys.executable, "-m", "flowstate.training.experiment", "--transform-dir", str(transform_dir), "--config", str(config), "--output", str(output / "model"), "--max-rows", str(int(self.proxy_config["maximum_rows"])), "--seed", str(seed)]
         receipt = await self._run(3, command, workspace, output, False, min(int(self.proxy_config["maximum_wall_seconds"]), self.timeout_seconds))
-        return self._validate_training_artifacts(receipt)
+        return await self._validate_feature_only_prediction(receipt, workspace, transform_dir)
 
     async def tier4(self, workspace: Path, transform_dir: Path, config: Path, output: Path, seed: int) -> TierReceipt:
         command = [sys.executable, "-m", "flowstate.training.experiment", "--transform-dir", str(transform_dir), "--config", str(config), "--output", str(output / "model"), "--seed", str(seed)]
         receipt = await self._run(4, command, workspace, output, True, self.timeout_seconds)
-        return self._validate_training_artifacts(receipt)
+        receipt = self._validate_score_artifacts(self._validate_training_artifacts(receipt))
+        receipt = self._validate_full_scale_rows(receipt, transform_dir)
+        receipt = self._validate_requested_device(receipt, config)
+        return await self._validate_feature_only_prediction(receipt, workspace, transform_dir)

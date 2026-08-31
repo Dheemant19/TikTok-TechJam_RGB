@@ -37,7 +37,7 @@ export function Experiments() {
       <h1 style={{ fontFamily: "var(--font-display)", fontSize: 32, fontWeight: 560, letterSpacing: "-0.012em", marginBottom: "var(--space-2)" }}>Experiments</h1>
       <p style={{ color: "var(--text-2)", fontSize: 12.5, marginTop: 0 }}>
         {baseline
-          ? `Every run compared against the official FM baseline (${formatMetric(baseline.primary)} primary), not an intermediate best.`
+          ? `The official FM baseline (${formatMetric(baseline.primary)} primary) anchors reported improvement; promotion compares each candidate with the current validation best.`
           : "The official FM baseline has not been reproduced yet in this session."}
       </p>
       {attempts.length > 0 && (

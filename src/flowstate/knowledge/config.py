@@ -118,6 +118,7 @@ class BudgetDocument(StrictModel):
     limits: dict[str, int | float]
     mcp: MCPBudgetConfig
     proxy_tier: dict[str, int | float]
+    research_strategy: dict[str, Any]
     resource_sampling: dict[str, int | float]
 
 

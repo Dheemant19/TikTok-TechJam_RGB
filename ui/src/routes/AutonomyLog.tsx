@@ -56,9 +56,8 @@ export function AutonomyLog() {
       <header className="autonomy-log__header">
         <h1>Autonomy Log</h1>
         <p>
-          Chronological record of every stage action and outcome. This is the same evidence the Live Workflow view surfaces
-          in real time. Rows with an "Observer" badge are monitoring updates for stages that have run past five minutes,
-          not ledger events.
+          Chronological evidence for every decision, including the exact model family selected, validated code outcome,
+          training result, recovery, and hardware decision. “Observer” rows are monitoring updates, not ledger events.
         </p>
       </header>
 
@@ -77,6 +76,7 @@ export function AutonomyLog() {
                 <th scope="col" style={th}>Time</th>
                 <th scope="col" style={th}>Sequence</th>
                 <th scope="col" style={th}>Stage</th>
+                <th scope="col" style={th}>Method</th>
                 <th scope="col" style={th}>Action</th>
                 <th scope="col" style={th}>Status</th>
               </tr>
@@ -88,6 +88,7 @@ export function AutonomyLog() {
                     <td className="mono tabular" style={td}>{formatTime(entry.row.occurredAt)}</td>
                     <td className="mono tabular" style={td}>{entry.row.sequence}</td>
                     <td style={td}>{entry.row.componentLabel}</td>
+                    <td className="mono" style={td}>{entry.row.method ?? "—"}</td>
                     <td style={{ ...td, color: "var(--text-1)" }}>{entry.row.action}</td>
                     <td className="mono" style={td}>{entry.row.status}</td>
                   </tr>
@@ -98,6 +99,7 @@ export function AutonomyLog() {
                       <span style={noticeBadge}>{entry.row.stillRunning ? "Observer" : "Monitoring"}</span>
                     </td>
                     <td style={td}>{entry.row.componentLabel}</td>
+                    <td className="mono" style={td}>Monitoring</td>
                     <td style={{ ...td, color: "var(--text-1)" }}>{noticeMessage(entry.row)}</td>
                     <td className="mono" style={td}>
                       {entry.row.stillRunning ? "Still running" : "Finished"} · {formatDuration(entry.row.elapsedMs)}
