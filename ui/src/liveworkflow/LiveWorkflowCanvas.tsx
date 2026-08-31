@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { GROUP_LABELS, GROUP_ORDER, NODES } from "../data/nodeRegistry";
 import { computeInitialPositions, contentBounds, laneColorFor, NODE_H, NODE_W, Vec2 } from "./laneData";
 import { NodeCard } from "./NodeCard";
@@ -99,6 +99,7 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow, idleEdgeSpeed = 1 
 
   const nodeStatus = useRunStore((s) => s.nodeStatus);
   const nodeElapsed = useRunStore((s) => s.nodeElapsed);
+  const activeTransitionEdge = useRunStore((s) => s.activeTransitionEdge);
 
   const dragInfo = useRef<DragInfo | null>(null);
   const groupDragInfo = useRef<GroupDragInfo | null>(null);
@@ -107,19 +108,48 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow, idleEdgeSpeed = 1 
   const canvasRef = useRef<HTMLDivElement>(null);
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
+  const positionsRef = useRef(positions);
   panRef.current = pan;
   zoomRef.current = zoom;
+  positionsRef.current = positions;
+
+  // Recenter is a full view reset: return to 100% and then center the current
+  // content bounds. The same behavior is used by the button and F shortcut.
+  const recenter = useCallback(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const bounds = contentBounds(positionsRef.current);
+    zoomRef.current = 1;
+    setZoom(1);
+    setPan({ x: rect.width / 2 - bounds.centerX, y: rect.height / 2 - bounds.centerY });
+  }, []);
 
   // Center the pipeline in the viewport on first mount, instead of leaving it
   // anchored to the top-left corner (the transform's local origin).
   useEffect(() => {
-    const el = canvasRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const bounds = contentBounds(positions);
-    setPan({ x: rect.width / 2 - bounds.centerX, y: rect.height / 2 - bounds.centerY });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    recenter();
+  }, [recenter]);
+
+  // "F" recenters the workflow, mirroring the mount-time centering, as long
+  // as focus isn't inside a form control or the stage-focus dialog (where a
+  // bare keystroke should type/act locally instead of panning the canvas).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "f" && event.key !== "F") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const active = document.activeElement;
+      const tag = active?.tagName;
+      const isFormField =
+        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || (active instanceof HTMLElement && active.isContentEditable);
+      const inDialog = active instanceof Element && active.closest('[role="dialog"]') !== null;
+      if (isFormField || inDialog) return;
+      event.preventDefault();
+      recenter();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [recenter]);
 
   const handleDragMove = (e: PointerEvent) => {
     const info = dragInfo.current;
@@ -274,6 +304,7 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow, idleEdgeSpeed = 1 
               reducedMotion={reducedMotion}
               isDragging={draggingId === node.id || draggingGroup === node.group}
               isSelected={selectedId === node.id && overlayOpen}
+              isArriving={activeTransitionEdge?.to === node.id}
               onPointerDownCard={(e) => startDrag(node.id, e)}
               onOpen={(rect) => handleOpen(node.id, rect)}
             />
@@ -288,7 +319,20 @@ export function LiveWorkflowCanvas({ reducedMotion, isNarrow, idleEdgeSpeed = 1 
         Drag canvas · scroll to zoom · select a stage
       </div>
 
-      <div className="workflow-canvas__zoom mono tabular" aria-label={`Canvas zoom ${Math.round(zoom * 100)} percent`}>
+      <button
+        type="button"
+        className="workflow-canvas__recenter"
+        onClick={recenter}
+        title="Reset workflow view"
+        aria-label="Reset workflow view to 100 percent"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="4.4" stroke="currentColor" strokeWidth="1.3" />
+          <path d="M8 1.2v2.5M8 12.3v2.5M1.2 8h2.5M12.3 8h2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      </button>
+
+      <div className="workflow-canvas__zoom tabular" aria-label={`Canvas zoom ${Math.round(zoom * 100)} percent`}>
         {Math.round(zoom * 100)}%
       </div>
 

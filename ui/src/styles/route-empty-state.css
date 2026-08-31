@@ -1,0 +1,157 @@
+.route-empty-state {
+  --empty-accent: var(--primary);
+  position: relative;
+  display: grid;
+  justify-items: center;
+  min-height: min(500px, 58vh);
+  margin-top: var(--space-6);
+  padding: clamp(42px, 7vw, 86px) 28px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--empty-accent) 16%, var(--border));
+  border-radius: calc(var(--radius-lg) + 4px);
+  background:
+    radial-gradient(circle at 50% 32%, color-mix(in srgb, var(--empty-accent) 10%, transparent), transparent 34%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 93%, transparent), color-mix(in srgb, var(--surface-2) 76%, transparent));
+  box-shadow: var(--shadow-card);
+  text-align: center;
+  isolation: isolate;
+}
+
+.route-empty-state::before,
+.route-empty-state::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border: 1px solid color-mix(in srgb, var(--empty-accent) 12%, transparent);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.route-empty-state::before {
+  width: 310px;
+  height: 310px;
+  top: -190px;
+  right: -100px;
+}
+
+.route-empty-state::after {
+  width: 190px;
+  height: 190px;
+  bottom: -120px;
+  left: -54px;
+}
+
+.route-empty-state__glass {
+  display: grid;
+  place-items: center;
+  width: 128px;
+  height: 128px;
+  margin-bottom: 28px;
+  border: 1px solid color-mix(in srgb, white 38%, var(--empty-accent) 14%);
+  border-radius: 34px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 36%, transparent), transparent 56%),
+    color-mix(in srgb, var(--surface-1) 64%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 58%, transparent),
+    0 26px 56px -34px color-mix(in srgb, var(--empty-accent) 74%, transparent),
+    0 16px 34px -26px rgba(19, 42, 67, 0.55);
+  backdrop-filter: blur(20px) saturate(132%);
+}
+
+.route-empty-state__icon {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border: 1px solid color-mix(in srgb, var(--empty-accent) 22%, var(--border));
+  border-radius: 25px;
+  color: var(--empty-accent);
+  background: color-mix(in srgb, var(--empty-accent) 8%, var(--surface-1));
+}
+
+.route-empty-state__icon svg {
+  width: 58px;
+  height: 58px;
+}
+
+.route-empty-state__copy {
+  max-width: 590px;
+}
+
+.route-empty-state__copy h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 760;
+  letter-spacing: -0.025em;
+}
+
+.route-empty-state__copy p {
+  margin: 12px auto 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.route-empty-state__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--empty-accent) 24%, var(--border));
+  border-radius: 10px;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  font-size: 12px;
+  font-weight: 720;
+  text-decoration: none;
+  transition: color 180ms ease, border-color 180ms ease, transform 220ms var(--ease-instrument), background-color 180ms ease;
+}
+
+.route-empty-state__action:hover {
+  border-color: color-mix(in srgb, var(--empty-accent) 48%, var(--border));
+  color: var(--empty-accent);
+  background: color-mix(in srgb, var(--empty-accent) 7%, var(--surface-1));
+  transform: translateY(-2px);
+}
+
+.route-empty-state__action:focus-visible {
+  outline: 2px solid var(--empty-accent);
+  outline-offset: 3px;
+}
+
+.route-empty-state__action svg {
+  transition: transform 220ms var(--ease-instrument);
+}
+
+.route-empty-state__action:hover svg {
+  transform: translateX(3px);
+}
+
+@media (max-width: 720px) {
+  .route-empty-state {
+    min-height: 440px;
+    padding-inline: 20px;
+  }
+
+  .route-empty-state__glass {
+    width: 112px;
+    height: 112px;
+    border-radius: 30px;
+  }
+
+  .route-empty-state__icon {
+    width: 76px;
+    height: 76px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-empty-state__action,
+  .route-empty-state__action svg {
+    transition: none;
+  }
+}

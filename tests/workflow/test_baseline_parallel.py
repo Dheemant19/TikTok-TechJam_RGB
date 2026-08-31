@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from rigor_rs.contract.challenge import load_challenge_contract
-from rigor_rs.training.baseline import BaselineReproducer
-from rigor_rs.contract.models import MetricReceipt
+from flowstate.contract.challenge import load_challenge_contract
+from flowstate.training.baseline import BaselineReproducer
+from flowstate.contract.models import MetricReceipt
 
 
 def test_parallel_official_fm_matches_sequential_results(tmp_path: Path) -> None:

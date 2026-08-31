@@ -24,7 +24,7 @@ limits:
   per_run_timeout_seconds: 5400
   recovery_attempts_per_run: 2
 
-# OpenAlex/GitHub calls are free APIs (no LLM $ cost); these bound local
+# Hugging Face Papers/GitHub calls are free APIs (no LLM $ cost); these bound local
 # compute/memory and keep raw tool responses reasonable. The context compiler
 # (configs/agents/azure_foundry.yaml maximum_evidence_characters/maximum_mcp_evidence_records)
 # separately bounds what actually reaches the agents, so these can be generous.

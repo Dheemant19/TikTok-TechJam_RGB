@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { api } from "../api/client";
 import { asArray, asRecord, field } from "../api/json";
+import { RouteEmptyState } from "../components/RouteEmptyState";
 import type { JsonRecord } from "../api/types";
 import { useRunStore } from "../liveworkflow/runStore";
 
@@ -13,11 +14,6 @@ function stringOf(record: JsonRecord | undefined, key: string): string {
   return typeof value === "string" ? value : "-";
 }
 
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div style={{ ...cardStyle, marginTop: "var(--space-6)", textAlign: "center", color: "var(--text-2)", fontSize: 12.5 }}>{message}</div>
-  );
-}
 
 export function DataProfile() {
   const events = useRunStore((state) => state.events);
@@ -76,8 +72,21 @@ export function DataProfile() {
         )}
       </p>
 
-      {error && <EmptyState message={`Could not load the data profile: ${error}`} />}
-      {!error && !profile && <EmptyState message="No data was produced for this check yet. Start a run from Live Workflow to populate this page." />}
+      {error && (
+        <RouteEmptyState
+          icon="data"
+          title="Data profile unavailable"
+          description={`The latest profile could not be loaded: ${error}`}
+          actionLabel="Return to Live Workflow"
+        />
+      )}
+      {!error && !profile && (
+        <RouteEmptyState
+          icon="data"
+          title="No data profile yet"
+          description="Start or select a run to inspect split health, feature coverage, label balance, and the frozen transform used by every experiment."
+        />
+      )}
 
       {profile && (
         <>
@@ -99,10 +108,10 @@ export function DataProfile() {
                   return (
                     <tr key={index}>
                       <td style={td}>{stringOf(row, "split")}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "rows")?.toLocaleString() ?? "-"}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "users")?.toLocaleString() ?? "-"}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "videos")?.toLocaleString() ?? "-"}</td>
-                      <td style={td} className="mono tabular">{((numberOf(row, "long_view_rate") ?? 0) * 100).toFixed(1)}%</td>
+                      <td style={td} className="tabular">{numberOf(row, "rows")?.toLocaleString() ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "users")?.toLocaleString() ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "videos")?.toLocaleString() ?? "-"}</td>
+                      <td style={td} className="tabular">{((numberOf(row, "long_view_rate") ?? 0) * 100).toFixed(1)}%</td>
                     </tr>
                   );
                 })}
@@ -127,7 +136,7 @@ export function DataProfile() {
                     <tr key={index}>
                       <td style={td}>{stringOf(row, "split")}</td>
                       <td style={td}>{stringOf(row, "label_group")}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "users")?.toLocaleString() ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "users")?.toLocaleString() ?? "-"}</td>
                     </tr>
                   );
                 })}
@@ -154,11 +163,11 @@ export function DataProfile() {
                   return (
                     <tr key={index}>
                       <td style={td}>{stringOf(row, "split")}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "min") ?? "-"}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "median") ?? "-"}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "mean")?.toFixed(1) ?? "-"}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "p95") ?? "-"}</td>
-                      <td style={td} className="mono tabular">{numberOf(row, "max") ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "min") ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "median") ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "mean")?.toFixed(1) ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "p95") ?? "-"}</td>
+                      <td style={td} className="tabular">{numberOf(row, "max") ?? "-"}</td>
                     </tr>
                   );
                 })}
@@ -169,7 +178,7 @@ export function DataProfile() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-5)", marginTop: "var(--space-5)" }}>
             <section style={cardStyle}>
               <p style={sectionHeading}>Missing values by field</p>
-              <dl className="mono" style={{ fontSize: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: "var(--space-1) var(--space-3)" }}>
+              <dl className="tabular" style={{ fontSize: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: "var(--space-1) var(--space-3)" }}>
                 {Object.entries(missing ?? {}).map(([key, value]) => (
                   <div key={key} style={{ display: "contents" }}>
                     <dt style={{ color: "var(--text-2)" }}>{key}</dt>
@@ -180,7 +189,7 @@ export function DataProfile() {
             </section>
             <section style={cardStyle}>
               <p style={sectionHeading}>Field cardinality</p>
-              <dl className="mono" style={{ fontSize: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: "var(--space-1) var(--space-3)" }}>
+              <dl className="tabular" style={{ fontSize: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: "var(--space-1) var(--space-3)" }}>
                 {Object.entries(cardinalities ?? {}).map(([key, value]) => (
                   <div key={key} style={{ display: "contents" }}>
                     <dt style={{ color: "var(--text-2)" }}>{key}</dt>

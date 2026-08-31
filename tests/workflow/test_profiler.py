@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
-from rigor_rs.contract.challenge import load_challenge_contract
-from rigor_rs.contract.models import DataArtifact, ProfileConfig, SplitTaint, TransformSpec
-from rigor_rs.data.profiler import PreprocessorService, ProfilerService
+from flowstate.contract.challenge import load_challenge_contract
+from flowstate.contract.models import DataArtifact, ProfileConfig, SplitTaint, TransformSpec
+from flowstate.data.profiler import PreprocessorService, ProfilerService
 
 
 LOG_HEADER = [

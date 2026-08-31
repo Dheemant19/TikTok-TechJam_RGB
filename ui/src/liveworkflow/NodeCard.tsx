@@ -38,6 +38,7 @@ interface Props {
   reducedMotion: boolean;
   isDragging: boolean;
   isSelected: boolean;
+  isArriving?: boolean;
   mode?: "canvas" | "focus" | "context";
   interactive?: boolean;
   size?: { width: number; minHeight: number };
@@ -74,6 +75,7 @@ export function NodeCard({
   isDragging,
   isSelected,
   mode = "canvas",
+  isArriving = false,
   interactive = true,
   size,
   onPointerDownCard,
@@ -95,6 +97,18 @@ export function NodeCard({
     "--node-shadow": colors.shadow,
     "--rest-tilt": restTiltFor(node.id),
     opacity: mode === "canvas" && isSelected ? 0 : status === "waiting" && node.isRecovery ? 0.76 : 1,
+    // The overlay opens on `opacity 240ms var(--ease-focus)` (see
+    // `.stage-focus-shell` in experience.css -- that custom property is
+    // scoped to `.stage-focus-root`, a tree this canvas card never lives
+    // inside, so the curve is inlined here rather than referenced). Fading
+    // the source card out on the same duration keeps the hand-off from
+    // card to overlay continuous instead of an instant pop before the
+    // overlay has visually appeared (AGENTS.md #3, gap 1). Reduced motion
+    // collapses this to an immediate swap, mirroring the reducedMotion
+    // branch in useFlipInspector's openNode.
+    transition: mode === "canvas" && isSelected
+      ? `opacity ${reducedMotion ? 0 : 240}ms cubic-bezier(0.2, 0.8, 0.2, 1)`
+      : undefined,
     pointerEvents: mode === "canvas" && isSelected ? "none" : undefined,
   };
 
@@ -120,7 +134,7 @@ export function NodeCard({
       data-node-id={node.id}
       aria-hidden={!interactive || (mode === "context" && isSelected) ? true : undefined}
       tabIndex={!interactive || (mode === "context" && isSelected) ? -1 : undefined}
-      className={`workflow-node workflow-node--${mode} ${isRunning ? "is-running" : ""} ${node.isRecovery ? "is-recovery" : ""} ${isDragging ? "is-dragging" : ""}`}
+      className={`workflow-node workflow-node--${mode} ${isRunning ? "is-running" : ""} ${isArriving && !reducedMotion ? "is-arriving" : ""} ${node.isRecovery ? "is-recovery" : ""} ${isDragging ? "is-dragging" : ""}`}
       style={cardStyle}
       onPointerDown={onPointerDownCard}
       onClick={(e: ReactMouseEvent<HTMLButtonElement>) => {

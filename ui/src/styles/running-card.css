@@ -1,0 +1,85 @@
+/* AGENTS.md #7: a running process card comes forward in 3D -- a restrained,
+ * static lift (translateZ + a small scale-up + a lane-colored depth shadow),
+ * not a bouncing animation. The existing `.is-running` rule in
+ * experience.css keeps its glow/box-shadow pulse (`runGlow`); this file only
+ * adds/owns the depth transform so the two never fight over one property. */
+
+.workflow-node {
+  transition: transform 380ms var(--ease-instrument, cubic-bezier(0.22, 0.9, 0.32, 1));
+}
+
+.workflow-node.is-running {
+  transform: perspective(900px) rotate(var(--rest-tilt)) translateZ(14px) scale(1.035);
+  z-index: 22;
+  box-shadow:
+    inset 0 0 0 2px var(--node-b),
+    0 30px 54px -22px var(--node-shadow),
+    0 18px 38px -24px rgba(19, 42, 67, 0.5);
+}
+
+.workflow-node.is-running:hover,
+.workflow-node.is-running:focus-visible {
+  transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) rotate(var(--rest-tilt)) translateY(-3px) translateZ(20px) scale(1.045);
+}
+
+/* The card acknowledges the handoff only when the edge signal reaches it:
+ * one short depth pulse near the end of the 1.5s route animation. */
+.workflow-node--canvas.is-running.is-arriving:not(.is-dragging) {
+  animation:
+    nodeArrival 400ms 1050ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    runGlow 1.55s ease-in-out infinite;
+}
+
+.focus-architecture-pane .workflow-node--focus.is-running.is-arriving {
+  animation:
+    focusNodeArrival 400ms 1050ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    focusRunGlow 1.7s ease-in-out infinite;
+}
+
+@keyframes nodeArrival {
+  0%,
+  100% {
+    transform: perspective(900px) rotate(var(--rest-tilt)) translateZ(14px) scale(1.035);
+  }
+  48% {
+    transform: perspective(900px) rotate(var(--rest-tilt)) translateY(-2px) translateZ(24px) scale(1.052);
+  }
+}
+
+@keyframes focusNodeArrival {
+  0%,
+  100% {
+    transform: perspective(1000px) translateZ(30px) scale(1.02);
+  }
+  48% {
+    transform: perspective(1000px) translateY(-2px) translateZ(42px) scale(1.035);
+  }
+}
+
+/* Dragging always wins: a card being dragged never keeps the running lift,
+ * so the lift transform never fights the drag's own position tracking. */
+.workflow-node.is-dragging.is-running,
+.workflow-node.is-dragging.is-running:hover,
+.workflow-node.is-dragging.is-running:focus-visible {
+  transform: perspective(900px) rotate(var(--rest-tilt));
+  z-index: 40;
+}
+
+.focus-architecture-pane .workflow-node--focus.is-running {
+  transform: perspective(1000px) translateZ(30px) scale(1.02);
+}
+
+.focus-architecture-pane .workflow-node--focus.is-running:hover,
+.focus-architecture-pane .workflow-node--focus.is-running:focus-visible {
+  transform: perspective(1000px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateZ(40px) scale(1.03);
+}
+@media (prefers-reduced-motion: reduce) {
+  .workflow-node {
+    transition: none;
+  }
+
+  .workflow-node.is-running,
+  .focus-architecture-pane .workflow-node--focus.is-running {
+    box-shadow: inset 0 0 0 2px var(--node-b), 0 10px 22px -14px rgba(19, 42, 67, 0.45);
+  }
+}

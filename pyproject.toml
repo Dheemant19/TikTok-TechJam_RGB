@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rigor-rs"
+name = "flowstate"
 version = "0.1.0"
 description = "Local autonomous recommender-system research workflow"
 requires-python = ">=3.12,<3.13"
@@ -37,11 +37,11 @@ test = [
 ]
 
 [project.scripts]
-rigor-rs = "rigor_rs.cli:main"
-rigor-rs-mcp = "rigor_rs.mcp.server:main"
+flowstate = "flowstate.cli:main"
+flowstate-mcp = "flowstate.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rigor_rs"]
+packages = ["src/flowstate"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }

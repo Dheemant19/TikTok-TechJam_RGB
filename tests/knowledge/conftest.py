@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from rigor_rs.knowledge.config import KnowledgeConfig, load_knowledge_config
-from rigor_rs.knowledge.store import KnowledgeStore
+from flowstate.knowledge.config import KnowledgeConfig, load_knowledge_config
+from flowstate.knowledge.store import KnowledgeStore
 
 
 class FakeEmbeddings:
@@ -33,7 +33,7 @@ def test_config(tmp_path: Path) -> KnowledgeConfig:
     data["embedding"]["model_manifest"] = tmp_path / "models/manifest.json"
     data["embedding"]["dimensions"] = 16
     data["embedding"]["allow_initial_download"] = False
-    data["providers"]["openalex"]["enabled"] = False
+    data["providers"]["huggingface_papers"]["enabled"] = False
     data["providers"]["github"]["enabled"] = False
     return KnowledgeConfig.model_validate(data)
 

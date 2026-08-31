@@ -88,6 +88,7 @@
   background: var(--primary);
   box-shadow: 0 7px 18px -9px color-mix(in srgb, var(--primary) 72%, transparent);
   will-change: transform, width;
+  transition: opacity 160ms ease;
 }
 
 .top-nav__link {
@@ -1361,6 +1362,21 @@
   min-width: 0;
 }
 
+.stage-focus__header-copy.is-transitioning {
+  animation: focusHeaderIn 1120ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes focusHeaderIn {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 .stage-focus__header-meta {
   display: flex;
   align-items: center;
@@ -1522,33 +1538,19 @@
 
 .focus-architecture__scene.is-incoming {
   z-index: 2;
-  animation: focusSceneIn 780ms var(--ease-focus) both;
-}
-
-.focus-architecture__scene.is-outgoing {
-  z-index: 1;
-  animation: focusSceneOut 780ms var(--ease-focus) both;
+  backface-visibility: hidden;
+  will-change: opacity, transform;
+  animation: focusSceneIn 1120ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
 @keyframes focusSceneIn {
   from {
-    opacity: 0;
-    transform: rotateY(12deg) translate3d(8%, 0, -80px) scale(0.96);
+    opacity: 0.18;
+    transform: translate3d(32px, 0, 0) scale(0.99);
   }
   to {
     opacity: 1;
-    transform: rotateY(0deg) translate3d(0, 0, 0) scale(1);
-  }
-}
-
-@keyframes focusSceneOut {
-  from {
-    opacity: 1;
-    transform: rotateY(0deg) translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: rotateY(-12deg) translate3d(-8%, 0, -80px) scale(0.96);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
@@ -1773,17 +1775,20 @@
   min-height: 0;
   overflow: hidden;
   background: var(--surface-1);
+  contain: paint;
 }
 
 .stage-focus__details-layer.is-transitioning {
-  animation: focusDetailsIn 780ms var(--ease-focus) both;
+  backface-visibility: hidden;
+  will-change: opacity, transform;
+  animation: focusDetailsIn 1120ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
   pointer-events: none;
 }
 
 @keyframes focusDetailsIn {
   from {
-    opacity: 0;
-    transform: translate3d(7%, 0, -30px);
+    opacity: 0.12;
+    transform: translate3d(40px, 0, 0);
   }
   to {
     opacity: 1;
@@ -2397,6 +2402,7 @@
   .stage-focus-backdrop,
   .stage-focus-shell,
   .stage-focus__content,
+  .stage-focus__header-copy,
   .stage-focus__section-progress span,
   .stage-focus__close,
   .focus-architecture__scene,

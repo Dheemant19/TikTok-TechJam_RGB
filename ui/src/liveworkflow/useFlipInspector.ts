@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FocusPhase, OverlayRect, StageFocusState } from "./stageNavigation";
 
 const CLOSE_TRANSITION_MS = 650;
-const STAGE_TRANSITION_MS = 780;
+const STAGE_TRANSITION_MS = 1120;
 
 export function useFlipInspector(reducedMotion: boolean) {
   const [state, setState] = useState<StageFocusState>({
@@ -68,6 +68,12 @@ export function useFlipInspector(reducedMotion: boolean) {
 
   useEffect(() => () => clearScheduledWork(), [clearScheduledWork]);
 
+  // `rect` is the clicked card's `getBoundingClientRect()`, read synchronously
+  // inside the click handler in `NodeCard`/`LiveWorkflowCanvas.handleOpen`
+  // (never cached ahead of time). `getBoundingClientRect()` always resolves
+  // post-transform viewport coordinates, so it already accounts for the
+  // canvas's pan/zoom `transform: translate(...) scale(...)` -- no separate
+  // measurement or transform math is needed here (AGENTS.md #3).
   const openNode = useCallback((id: string, rect: OverlayRect) => {
     clearScheduledWork();
     if (!selectedRef.current || phaseRef.current === "closed" || phaseRef.current === "closing") {

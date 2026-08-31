@@ -112,6 +112,33 @@ const BUILDERS: Record<string, (state: NodeRuntimeState) => Partial<NodeDetail>>
       output: [{ label: halt ? "Reason" : "Decision", value: (halt ?? checks)?.plain_summary ?? "Pending" }],
     };
   },
+  initial_baseline: (state) => {
+    const payload = latestPayload(state);
+    const baselineResult = asRecord(field(payload, "baseline_result"));
+    const seeds = asArray(field(baselineResult, "seeds")) ?? [];
+    const seedMetrics = seeds.map((seed) => asRecord(field(asRecord(seed), "metrics"))).filter((value): value is JsonRecord => value !== undefined);
+    const averageSeedMetric = (key: string): number | undefined => {
+      const values = seedMetrics.map((metric) => asNumber(field(metric, key))).filter((value): value is number => value !== undefined);
+      return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+    };
+    const errorMessage = field(payload, "error");
+    return {
+      facts: [
+        { label: "Baseline seeds", value: seedMetrics.length > 0 ? String(seedMetrics.length) : "Not yet available" },
+        { label: "GAUC", value: scalarText(averageSeedMetric("gauc")) },
+        { label: "nDCG@5", value: scalarText(averageSeedMetric("ndcg_at_5")) },
+        { label: "Primary score", value: scalarText(averageSeedMetric("primary")) },
+      ],
+      output: [
+        {
+          label: "Baseline receipt",
+          value: seedMetrics.length > 0
+            ? "Official FM baseline reproduced within organizer tolerance"
+            : typeof errorMessage === "string" ? errorMessage : "Not yet available",
+        },
+      ],
+    };
+  },
   knowledge_mcp: (state) => {
     const payload = latestPayload(state);
     const supporting = asArray(field(payload, "supporting")) ?? [];
@@ -164,6 +191,23 @@ const BUILDERS: Record<string, (state: NodeRuntimeState) => Partial<NodeDetail>>
             ? "All fast tests passed"
             : scalarText(field(receipt, "error"), "Failed with no captured output") || "Failed with no captured output",
         },
+      ],
+    };
+  },
+  proxy_gate: (state) => {
+    const lastEvent = state.events[state.events.length - 1];
+    const receipt = asRecord(field(latestPayload(state), "receipt"));
+    const tierLabel = lastEvent?.event_type ? lastEvent.event_type.toUpperCase() : "Not yet available";
+    return {
+      facts: [
+        { label: "Filter tier", value: tierLabel },
+        { label: "Result", value: lastEvent ? (lastEvent.status === "succeeded" ? "Passed proxy filter" : "Filtered out (rejected)") : "Not yet evaluated" },
+        { label: "Comparability", value: "Filter-only -- not comparable to official metrics" },
+      ],
+      output: [
+        { label: "Proxy status", value: lastEvent?.plain_summary ?? "Not yet available" },
+        { label: "Wall seconds", value: receipt ? scalarText(field(receipt, "wall_seconds")) : "Not calculated yet" },
+        { label: "Official metrics", value: "Not updated by this stage" },
       ],
     };
   },

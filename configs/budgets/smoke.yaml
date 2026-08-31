@@ -1,7 +1,7 @@
 schema_version: 1
 
 # Bounded smoke-test budget for the verification workflow described in
-# Plan_Workflow.md (`uv run python -m rigor_rs.cli run --budget
+# Plan_Workflow.md (`uv run python -m flowstate.cli run --budget
 # configs/budgets/smoke.yaml`). Not for competition use: one experiment only,
 # short timeouts, small Azure AI Foundry allocation. See
 # configs/budgets/competition.yaml for the real run's limits.

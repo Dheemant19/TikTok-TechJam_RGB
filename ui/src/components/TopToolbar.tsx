@@ -1,17 +1,10 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTheme } from "../hooks/useTheme";
 import { useRunStore } from "../liveworkflow/runStore";
+import { PRIMARY_ROUTES } from "../data/routeRegistry";
 
-const DESTINATIONS = [
-  { to: "/", label: "Live Workflow" },
-  { to: "/data-profile", label: "Data Profile" },
-  { to: "/experiments", label: "Experiments" },
-  { to: "/research", label: "Research Library" },
-  { to: "/resources", label: "Resources" },
-  { to: "/package", label: "Final Package" },
-];
 
 interface PillSpring {
   left: number;
@@ -66,15 +59,21 @@ export function TopToolbar({ pillFluidity = 0.45 }: TopToolbarProps) {
     initialized: false,
   });
 
-  const activeIndex = DESTINATIONS.findIndex((destination) =>
+  const activeIndex = PRIMARY_ROUTES.findIndex((destination) =>
     destination.to === "/" ? location.pathname === "/" : location.pathname.startsWith(destination.to)
   );
 
   useLayoutEffect(() => {
     const measure = () => {
-      const active = linkRefs.current[activeIndex];
       const indicator = indicatorRef.current;
-      if (!active || !indicator) return;
+      if (!indicator) return;
+      if (activeIndex < 0) {
+        indicator.style.opacity = "0";
+        return;
+      }
+      const active = linkRefs.current[activeIndex];
+      if (!active) return;
+      indicator.style.opacity = "1";
 
       const spring = springRef.current;
       spring.targetLeft = active.offsetLeft;
@@ -192,7 +191,7 @@ export function TopToolbar({ pillFluidity = 0.45 }: TopToolbarProps) {
         </div>
         {!isNarrow && (
           <div className="top-toolbar__brand-copy">
-            <strong>RIGOR-RS</strong>
+            <strong>FlowState</strong>
             <span>Workflow Observer</span>
           </div>
         )}
@@ -200,7 +199,7 @@ export function TopToolbar({ pillFluidity = 0.45 }: TopToolbarProps) {
 
       <nav ref={navRef} className="top-nav" aria-label="Primary navigation">
         <span ref={indicatorRef} className="top-nav__indicator" aria-hidden="true" />
-        {DESTINATIONS.map((destination, index) => (
+        {PRIMARY_ROUTES.map((destination, index) => (
           <NavLink
             key={destination.to}
             ref={(element) => {
@@ -210,7 +209,7 @@ export function TopToolbar({ pillFluidity = 0.45 }: TopToolbarProps) {
             end={destination.to === "/"}
             className={({ isActive }) => `top-nav__link ${isActive ? "is-active" : ""}`}
           >
-            {isNarrow ? destination.label.split(" ")[0] : destination.label}
+            {isNarrow ? destination.shortLabel : destination.label}
           </NavLink>
         ))}
       </nav>
@@ -220,13 +219,14 @@ export function TopToolbar({ pillFluidity = 0.45 }: TopToolbarProps) {
         {!isNarrow && (
           <NavLink
             to="/autonomy"
+            aria-label="Autonomy Log"
             className={({ isActive }) => `autonomy-link ${isActive ? "is-active" : ""}`}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="9" />
               <path d="M12 7v5l3 3" />
             </svg>
-            Autonomy Log
+            <span>Autonomy Log</span>
           </NavLink>
         )}
         {onLiveWorkflow && !isNarrow && <RunControls />}
@@ -260,33 +260,163 @@ function ThemeToggle() {
   );
 }
 
+const SESSION_STATUS_COLOR: Record<string, string> = {
+  waiting: "var(--status-waiting)",
+  ready: "var(--status-waiting)",
+  running: "var(--status-running)",
+  paused: "var(--status-attention)",
+  succeeded: "var(--status-success)",
+  failed: "var(--status-failed)",
+  rejected: "var(--status-attention)",
+  skipped: "var(--status-waiting)",
+  blocked: "var(--status-failed)",
+};
+
+// A raw session_id (`session-20260901T101503482913Z-a1b2c3d4`) tells a user
+// nothing at a glance -- the row must lead with when the session started,
+// not its opaque identifier. The full id remains available as a tooltip for
+// anyone who needs to correlate it with logs.
+function formatSessionDate(createdAt: string): string {
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return "Unknown start time";
+  return created.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 function SessionPicker() {
   const sessions = useRunStore((state) => state.sessions);
   const sessionId = useRunStore((state) => state.sessionId);
   const attach = useRunStore((state) => state.attach);
+  const deleteSession = useRunStore((state) => state.deleteSession);
   const refreshSessions = useRunStore((state) => state.refreshSessions);
+  const [deleting, setDeleting] = useState(false);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const activeSession = sessions.find((session) => session.session_id === sessionId);
+  const status = activeSession?.status.toLowerCase();
+  const canDelete = !!activeSession && !["ready", "running", "paused"].includes(status ?? "");
+
+  // `deleteSession()` only cleared `deleting` on the catch branch -- on
+  // success it always changes `sessionId` (deleting the attached session
+  // detaches, per runStore.deleteSession), but the button itself never
+  // unmounts, so the flag stayed stuck true forever after the first
+  // successful delete, showing a permanent spinner on every session picked
+  // afterward. Reset it whenever the attached session changes for any
+  // reason, not only the one this component itself triggered.
+  useEffect(() => {
+    setDeleting(false);
+  }, [sessionId]);
+
+  // Closing on outside pointer activity and Escape matches native `<select>`
+  // dismissal behavior without relying on any native dropdown chrome (whose
+  // unstyleable Windows/Chromium focus ring was the "weird blue line").
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   if (sessions.length === 0) return null;
   return (
-    <select
-      className="toolbar-button toolbar-button--quiet"
-      value={sessionId ?? ""}
-      onMouseDown={() => void refreshSessions()}
-      onChange={(event) => {
-        if (event.target.value) void attach(event.target.value);
-      }}
-      aria-label="Select session"
-      title="Select a session to view"
-    >
-      <option value="" disabled>
-        Sessions...
-      </option>
-      {sessions.map((session) => (
-        <option key={session.session_id} value={session.session_id}>
-          {session.session_id.slice(0, 24)} - {session.status}
-        </option>
-      ))}
-    </select>
+    <div className="session-control">
+      <div className="session-picker" ref={rootRef}>
+        <svg className="session-picker__icon" width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <ellipse cx="10" cy="5" rx="5.8" ry="2.6" stroke="currentColor" strokeWidth="1.35" />
+          <path d="M4.2 5v5c0 1.45 2.6 2.65 5.8 2.65s5.8-1.2 5.8-2.65V5M4.2 10v5c0 1.45 2.6 2.65 5.8 2.65s5.8-1.2 5.8-2.65v-5" stroke="currentColor" strokeWidth="1.35" />
+        </svg>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="session-picker__trigger"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label="Select session"
+          title={activeSession ? activeSession.session_id : "Select a session to view"}
+          onClick={() => {
+            if (!open) void refreshSessions();
+            setOpen((value) => !value);
+          }}
+        >
+          {activeSession ? (
+            <>
+              <span className="session-picker__trigger-date">{formatSessionDate(activeSession.created_at)}</span>
+              <span className="session-picker__trigger-status" style={{ color: SESSION_STATUS_COLOR[status ?? ""] ?? "var(--text-2)" }}>
+                {activeSession.status.length ? activeSession.status[0].toUpperCase() + activeSession.status.slice(1) : activeSession.status}
+              </span>
+            </>
+          ) : (
+            <span className="session-picker__trigger-date">Select a session</span>
+          )}
+        </button>
+        <svg className={`session-picker__chevron ${open ? "is-open" : ""}`} width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+          <path d="m3.5 5.25 3.5 3.5 3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {open && (
+          <ul className="session-picker__menu" role="listbox" aria-label="Sessions">
+            {sessions.map((session) => (
+              <li key={session.session_id} role="none">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={session.session_id === sessionId}
+                  className={`session-picker__option ${session.session_id === sessionId ? "is-selected" : ""}`}
+                  title={session.session_id}
+                  onClick={() => {
+                    setOpen(false);
+                    if (session.session_id !== sessionId) void attach(session.session_id);
+                  }}
+                >
+                  <span className="session-picker__option-date">{formatSessionDate(session.created_at)}</span>
+                  <span className="session-picker__option-status" style={{ color: SESSION_STATUS_COLOR[session.status.toLowerCase()] ?? "var(--text-2)" }}>
+                  {session.status.length ? session.status[0].toUpperCase() + session.status.slice(1) : session.status}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {canDelete && (
+        <button
+          type="button"
+          className="session-delete"
+          disabled={deleting}
+          aria-label="Delete selected session"
+          title="Delete selected session"
+          onClick={async () => {
+            const label = activeSession ? `the session from ${formatSessionDate(activeSession.created_at)}` : "this session";
+            if (!window.confirm(`Delete ${label}? This removes its saved run history from this machine.`)) return;
+            setDeleting(true);
+            try {
+              await deleteSession();
+            } catch {
+              setDeleting(false);
+            }
+          }}
+        >
+          {deleting ? <span className="toolbar-spinner" aria-hidden="true" /> : (
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M4 5.5h10M7 5.5V3.8c0-.5.4-.9.9-.9h2.2c.5 0 .9.4.9.9v1.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M5.2 5.5 5.9 14.3a1 1 0 0 0 1 .9h4.2a1 1 0 0 0 1-.9l.7-8.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M7.5 8v5M9 8v5M10.5 8v5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+          )}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -333,22 +463,23 @@ function RunControls() {
 
   return (
     <div className="run-controls">
-      <span className="mono tabular" style={{ fontSize: 11, color: "var(--text-2)" }} title={sessionId}>
-        {phase === "live" ? "Live" : phase === "retrying" ? "Reconnecting..." : phase} - {sessionId.slice(0, 24)}
+      <span className="connection-chip" data-phase={phase} title={error ?? undefined}>
+        <svg className="connection-chip__glyph" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M2.5 8h2l1.35-3.1L8.1 11l1.6-4h3.8" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span>{phase === "live" ? "Live" : phase === "retrying" ? "Reconnecting" : phase === "connecting" ? "Connecting" : phase}</span>
       </span>
       <SessionPicker />
-      <button type="button" onClick={() => void detach()} className="toolbar-button toolbar-button--quiet">
-        Detach
+      <button type="button" onClick={() => void detach()} className="toolbar-icon-action" aria-label="Detach from session" title="Detach from session">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M8.1 5.2H5.4A1.4 1.4 0 0 0 4 6.6v6.8a1.4 1.4 0 0 0 1.4 1.4h2.7M12.2 6.5 15.7 10l-3.5 3.5M7.1 10h8.2" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
       {allowed.includes("pause") && (
-        <button type="button" onClick={() => void pauseRun()} className="toolbar-button toolbar-button--quiet">
-          Pause
-        </button>
+        <button type="button" onClick={() => void pauseRun()} className="toolbar-button toolbar-button--quiet">Pause</button>
       )}
       {allowed.includes("resume") && (
-        <button type="button" onClick={() => void resumeRun()} className="toolbar-button toolbar-button--run">
-          Resume
-        </button>
+        <button type="button" onClick={() => void resumeRun()} className="toolbar-button toolbar-button--run">Resume</button>
       )}
       {allowed.includes("cancel") && (
         <button

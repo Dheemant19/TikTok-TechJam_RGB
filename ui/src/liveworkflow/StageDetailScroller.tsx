@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type CSSProperties } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, type CSSProperties } from "react";
 import type { NodeDef, NodeStatus } from "../data/nodeRegistry";
 import { GROUP_LABELS } from "../data/nodeRegistry";
 import { laneColorFor, type FieldRow, type HistoryRow, type NodeDetail } from "./laneData";
@@ -7,6 +7,14 @@ import { stageProgressLabel, type DetailSectionId } from "./stageNavigation";
 
 const REDACTED_VALUE = "Hidden to protect data and credentials";
 
+/** Imperative handle exposed to `StageFocusView` so the vertical section
+ * rail (AGENTS.md #2) can drive the scroller without a second source of
+ * scroll-position truth -- the `IntersectionObserver` below remains the
+ * only thing that reports the active section back up. */
+export interface StageDetailScrollerHandle {
+  scrollToSection: (id: DetailSectionId) => void;
+}
+
 interface Props {
   node: NodeDef;
   detail: NodeDetail;
@@ -14,6 +22,7 @@ interface Props {
   elapsedMs: number;
   nextNode: NodeDef | null;
   transitioning: boolean;
+  reducedMotion: boolean;
   onAdvance: () => void;
   onActiveSectionChange: (section: DetailSectionId) => void;
 }
@@ -68,16 +77,17 @@ function HistoryEntry({ entry }: { entry: HistoryRow }) {
   );
 }
 
-export function StageDetailScroller({
+export const StageDetailScroller = forwardRef<StageDetailScrollerHandle, Props>(function StageDetailScroller({
   node,
   detail,
   status,
   elapsedMs,
   nextNode,
   transitioning,
+  reducedMotion,
   onAdvance,
   onActiveSectionChange,
-}: Props) {
+}, ref) {
   const colors = laneColorFor(node);
   const scrollRef = useRef<HTMLDivElement>(null);
   const advanceLockRef = useRef(false);
@@ -96,16 +106,45 @@ export function StageDetailScroller({
     onActiveSectionChange("summary");
   }, [node.id, onActiveSectionChange]);
 
+  // Smooth-scrolls (or instant-jumps, under reduced motion) the scroller to
+  // the requested section -- the single entry point the vertical rail in
+  // `StageFocusView` uses to drive this component. A programmatic scroll
+  // still fires the `IntersectionObserver` below mid-flight (and, for short
+  // sections that don't fill the viewport, can settle on a *different*
+  // section than the one just requested -- e.g. clicking "History" while
+  // "Output" is still nominally more visible by intersection ratio), which
+  // would silently overwrite the user's explicit click. `suppressObserverUntilRef`
+  // gives the requested section a brief grace window to win outright; manual
+  // scrolling still drives the active section immediately afterward.
+  const suppressObserverUntilRef = useRef(0);
+  const sectionVisibilityRef = useRef(new Map<Element, boolean>());
+  const scrollToSection = useCallback((id: DetailSectionId) => {
+    const root = scrollRef.current;
+    const target = root?.querySelector<HTMLElement>(`[data-section="${id}"]`);
+    suppressObserverUntilRef.current = Date.now() + 600;
+    target?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+  }, [reducedMotion]);
+
+  useImperativeHandle(ref, () => ({ scrollToSection }), [scrollToSection]);
+
   useEffect(() => {
     const root = scrollRef.current;
     if (!root || typeof IntersectionObserver === "undefined") return;
     const sections = Array.from(root.querySelectorAll<HTMLElement>("[data-section]"));
+    sectionVisibilityRef.current.clear();
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        const section = visible?.target instanceof HTMLElement ? visible.target.dataset.section as DetailSectionId : undefined;
+        for (const entry of entries) {
+          sectionVisibilityRef.current.set(entry.target, entry.isIntersecting);
+        }
+        if (Date.now() < suppressObserverUntilRef.current) return;
+        // IntersectionObserver only reports targets whose state changed in
+        // the current callback. Keep visibility for every section so a short
+        // trailing section can still win after an earlier section changes.
+        const lastVisible = [...sections]
+          .reverse()
+          .find((candidate) => sectionVisibilityRef.current.get(candidate));
+        const section = lastVisible?.dataset.section as DetailSectionId | undefined;
         if (section) onActiveSectionChange(section);
       },
       { root, rootMargin: "-8% 0px -58% 0px", threshold: [0.05, 0.2, 0.4, 0.7, 1] },
@@ -301,4 +340,4 @@ export function StageDetailScroller({
       </section>
     </div>
   );
-}
+});

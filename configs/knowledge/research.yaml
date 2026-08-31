@@ -22,10 +22,8 @@ embedding:
   allow_initial_download: true
 
 providers:
-  openalex:
+  huggingface_papers:
     enabled: true
-    api_key_env: OPENALEX_API_KEY
-    contact_email_env: OPENALEX_MAILTO
     timeout_seconds: 20
     requests_per_second: 5
     retry_limit: 3
@@ -49,6 +47,9 @@ transport:
 
 retrieval:
   reciprocal_rank_constant: 60
+  # Fraction of evidence slots reserved for the curated bank. The remainder
+  # is reserved for Hugging Face discoveries; 0.5 gives both sources equal slots.
+  curated_bank_share: 0.4
   cache_ttl_seconds: 604800
   maximum_search_results: 8
   maximum_code_results: 5

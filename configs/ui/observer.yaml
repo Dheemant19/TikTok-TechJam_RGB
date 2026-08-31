@@ -7,7 +7,7 @@ server:
   static_assets_directory: ui/dist
 
 frontend:
-  project_name: RIGOR-RS
+  project_name: FlowState
   logo_asset: null
   default_challenge_config: configs/challenge/kuairand_pure.yaml
   default_budget_config: configs/budgets/competition.yaml

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { RouteEmptyState } from "../components/RouteEmptyState";
 import { selectResearchEvidence } from "../liveworkflow/selectors";
 import { useRunStore } from "../liveworkflow/runStore";
 
@@ -14,21 +15,11 @@ export function ResearchLibrary() {
       </p>
 
       {cards.length === 0 ? (
-        <div
-          style={{
-            marginTop: "var(--space-6)",
-            background: "var(--surface-1)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            boxShadow: "var(--shadow-card)",
-            padding: "var(--space-5)",
-            textAlign: "center",
-            color: "var(--text-2)",
-            fontSize: 12.5,
-          }}
-        >
-          No research evidence retrieved yet. Start a run from Live Workflow to populate this page.
-        </div>
+        <RouteEmptyState
+          icon="research"
+          title="No research evidence yet"
+          description="Start a run to collect the papers, methods, and counter-evidence the research agent uses to justify its next experiment."
+        />
       ) : (
         <ol
           style={{
@@ -74,7 +65,7 @@ export function ResearchLibrary() {
                 </span>
                 <span
                   className="mono"
-                  title="Where this evidence was retrieved from: the curated seed bank or a live OpenAlex fetch."
+                  title="Where this evidence was retrieved from: the curated seed bank or a live Hugging Face Papers fetch."
                   style={{
                     fontSize: 10.5,
                     color: "var(--text-2)",

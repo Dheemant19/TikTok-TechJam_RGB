@@ -1,4 +1,4 @@
-// Mirrors src/rigor_rs/contract/models.py. Keep field names identical to the
+// Mirrors src/flowstate/contract/models.py. Keep field names identical to the
 // backend's `model_dump(mode="json")` output -- the browser must not invent a
 // second status vocabulary or metric schema (Plan_UI.md #1.4).
 

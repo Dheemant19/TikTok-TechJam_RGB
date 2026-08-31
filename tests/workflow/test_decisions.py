@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rigor_rs.contract.challenge import load_challenge_contract
-from rigor_rs.contract.models import MetricReceipt
-from rigor_rs.integrity.gates import evaluator_metamorphic_checks
-from rigor_rs.ledger.workflow import canonical_hash
-from rigor_rs.orchestration.frontier import FrontierManager
-from rigor_rs.recovery.controller import RecoveryController
+from flowstate.contract.challenge import load_challenge_contract
+from flowstate.contract.models import MetricReceipt
+from flowstate.integrity.gates import evaluator_metamorphic_checks
+from flowstate.ledger.workflow import WorkflowLedger, canonical_hash
+from flowstate.orchestration.frontier import FrontierManager
+from flowstate.recovery.controller import RecoveryController
 
 
 def metric(run_id: str, primary: float, comparable: bool = True, scope: str = "validation") -> MetricReceipt:
@@ -37,6 +37,43 @@ def test_convergence_counts_only_comparable_full_validation() -> None:
     assert state.validation_best == "B0"
     assert state.no_improvement_count == 3
 
+
+
+def test_duplicate_predictions_are_rejected_not_marked_ambiguous() -> None:
+    manager = FrontierManager(epsilon=0.002, patience=3)
+    state = manager.register_baseline("B0")
+    baseline = metric("B0", 0.60)
+    duplicate = metric("E2", 0.6019)
+
+    updated, decision, stop = manager.decide(
+        state,
+        duplicate,
+        "E2",
+        baseline,
+        baseline,
+        duplicate_of_run_id="E1",
+    )
+
+    assert decision == "reject"
+    assert updated.rejected == ["E2"]
+    assert updated.no_improvement_count == 0
+    assert not stop
+
+
+def test_ledger_finds_prior_run_with_identical_predictions(tmp_path: Path) -> None:
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
+    session_id = ledger.create_session()
+    first = metric("E1", 0.601).model_dump(mode="json")
+    second = metric("E2", 0.602).model_dump(mode="json")
+    second["prediction_artifact_id"] = first["prediction_artifact_id"]
+
+    ledger.store_metric_receipt(session_id, "E1", first)
+
+    assert ledger.prior_run_for_prediction(
+        session_id,
+        second["prediction_artifact_id"],
+        "E2",
+    ) == "E1"
 
 def test_recovery_recipes_are_bounded() -> None:
     controller = RecoveryController()

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export type Theme = "light" | "dark";
 
-const STORAGE_KEY = "rigor-theme";
+const STORAGE_KEY = "flowstate-theme";
 
 function readTheme(): Theme {
   if (typeof document === "undefined") return "light";

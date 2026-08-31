@@ -5,8 +5,8 @@ import json
 import httpx
 import pytest
 
-from rigor_rs.knowledge.providers.base import ProviderFailure, RetryingHTTPClient
-from rigor_rs.knowledge.providers.openalex import OpenAlexProvider
+from flowstate.knowledge.providers.base import ProviderFailure, RetryingHTTPClient
+from flowstate.knowledge.providers.huggingface_papers import HuggingFacePapersProvider
 
 
 @pytest.mark.asyncio
@@ -43,38 +43,115 @@ async def test_provider_retries_429_with_bound() -> None:
 
 
 @pytest.mark.asyncio
-async def test_openalex_preserves_retraction_and_license() -> None:
-    payload = {
-        "id": "https://openalex.org/W1",
-        "display_name": "Retracted Example",
-        "publication_year": 2024,
-        "is_retracted": True,
-        "ids": {"doi": "https://doi.org/10.1/example"},
-        "authorships": [],
-        "primary_location": {"source": {"display_name": "Venue"}},
-        "best_oa_location": {"license": "cc-by", "landing_page_url": "https://example.test/paper"},
-        "abstract_inverted_index": {"safe": [0], "abstract": [1]},
-        "referenced_works": [],
-    }
+async def test_huggingface_search_hard_checks_github_repo() -> None:
+    entries = [
+        {"paper": {"id": "2401.00001", "title": "No Code Here", "authors": [], "publishedAt": "2024-01-01T00:00:00.000Z", "summary": "s"}},
+        {"paper": {
+            "id": "2401.00002", "title": "Has Code", "authors": [{"name": "A"}],
+            "publishedAt": "2024-01-02T00:00:00.000Z", "summary": "s",
+            "githubRepo": "https://github.com/example/has-code",
+        }},
+    ]
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=json.dumps(payload).encode())
+        return httpx.Response(200, content=json.dumps(entries).encode())
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        provider = OpenAlexProvider(api_key="test", mailto=None, timeout_seconds=1, retry_limit=0, client=client)
-        work = await provider.get_work("W1")
-    assert work is not None
-    assert work.retracted
-    assert work.license == "cc-by"
-    assert work.abstract == "safe abstract"
-    assert work.identifiers.doi == "10.1/example"
+        provider = HuggingFacePapersProvider(timeout_seconds=1, retry_limit=0, client=client)
+        result = await provider.search("recommendation", None, 1, session_id="s1")
+
+    assert len(result.records) == 1
+    record = result.records[0]
+    assert record.paper_id == "huggingface:2401.00002"
+    assert str(record.github_repositories[0].url) == "https://github.com/example/has-code"
+
+
+@pytest.mark.asyncio
+async def test_huggingface_search_returns_requested_fresh_code_linked_papers() -> None:
+    requested_limits: list[int] = []
+    entries = [
+        {"paper": {
+            "id": f"2401.0000{index}", "title": f"Paper {index}", "authors": [],
+            "publishedAt": "2024-01-02T00:00:00.000Z", "summary": "ranking",
+            "githubRepo": f"https://github.com/example/paper-{index}",
+        }}
+        for index in range(1, 5)
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        limit = int(request.url.params["limit"])
+        requested_limits.append(limit)
+        return httpx.Response(200, content=json.dumps(entries[:limit]).encode())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = HuggingFacePapersProvider(timeout_seconds=1, retry_limit=0, client=client)
+        result = await provider.search("recommendation", None, 3, session_id="s1")
+
+    assert requested_limits == [3]
+    assert [record.paper_id for record in result.records] == [
+        "huggingface:2401.00001",
+        "huggingface:2401.00002",
+        "huggingface:2401.00003",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_huggingface_search_never_repeats_a_paper_within_a_session() -> None:
+    seen_paper = {
+        "paper": {
+            "id": "2401.00002", "title": "Has Code", "authors": [],
+            "publishedAt": "2024-01-02T00:00:00.000Z", "summary": "s",
+            "githubRepo": "https://github.com/example/has-code",
+        },
+    }
+    fresh_paper = {
+        "paper": {
+            "id": "2401.00003", "title": "Also Has Code", "authors": [],
+            "publishedAt": "2024-01-03T00:00:00.000Z", "summary": "s",
+            "githubRepo": "https://github.com/example/also-has-code",
+        },
+    }
+    requested_limits: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        limit = int(request.url.params["limit"])
+        requested_limits.append(limit)
+        # The API's own top-ranked result never changes; only a wider page
+        # size reveals a second, still-relevant candidate.
+        entries = [seen_paper] if limit == 1 else [seen_paper, fresh_paper]
+        return httpx.Response(200, content=json.dumps(entries).encode())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = HuggingFacePapersProvider(timeout_seconds=1, retry_limit=0, client=client)
+        first = await provider.search("recommendation", None, 1, session_id="s1")
+        second = await provider.search("recommendation", None, 1, session_id="s1")
+
+    assert first.records[0].paper_id == "huggingface:2401.00002"
+    assert second.records[0].paper_id == "huggingface:2401.00003"
+    # First call found a fresh candidate on the very first (limit=1) page;
+    # the second call had to escalate exactly once (limit=1 then limit=5)
+    # because its only candidate on the first page was already seen.
+    assert requested_limits == [1, 1, 5]
+
+
+@pytest.mark.asyncio
+async def test_huggingface_get_work_returns_none_on_404() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, content=b"{}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = HuggingFacePapersProvider(timeout_seconds=1, retry_limit=0, client=client)
+        work = await provider.get_work("9999.99999")
+
+    assert work is None
+
 
 
 @pytest.mark.asyncio
 async def test_github_get_readme_decodes_base64_content() -> None:
     import base64
 
-    from rigor_rs.knowledge.providers.github import GitHubProvider
+    from flowstate.knowledge.providers.github import GitHubProvider
 
     readme_text = "# BPR\n\nUsage:\n```python\nmodel = BPR(n_users, n_items)\n```\n"
 
@@ -93,7 +170,7 @@ async def test_github_get_readme_decodes_base64_content() -> None:
 
 @pytest.mark.asyncio
 async def test_github_get_readme_returns_none_on_404() -> None:
-    from rigor_rs.knowledge.providers.github import GitHubProvider
+    from flowstate.knowledge.providers.github import GitHubProvider
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"message": "Not Found"})
@@ -106,7 +183,7 @@ async def test_github_get_readme_returns_none_on_404() -> None:
 
 @pytest.mark.asyncio
 async def test_github_list_python_files_excludes_tests_and_ranks_by_depth() -> None:
-    from rigor_rs.knowledge.providers.github import GitHubProvider
+    from flowstate.knowledge.providers.github import GitHubProvider
 
     tree_payload = {
         "tree": [
@@ -138,7 +215,7 @@ async def test_github_list_python_files_excludes_tests_and_ranks_by_depth() -> N
 async def test_github_get_file_content_decodes_base64() -> None:
     import base64
 
-    from rigor_rs.knowledge.providers.github import GitHubProvider
+    from flowstate.knowledge.providers.github import GitHubProvider
 
     source = "class BPR(nn.Module):\n    pass\n"
 

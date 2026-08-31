@@ -1,7 +1,7 @@
-# Plan_UI.md — RIGOR-RS Workflow Observer
+# Plan_UI.md — FlowState Workflow Observer
 
 ## Context
-Build a local, single-machine web app that shows the RIGOR-RS run as a live, n8n-style workflow without turning the competition pipeline into an editable diagram. Users can start, pause, resume, and cancel a run through guarded controls; the CLI and integrity kernel remain authoritative. Selecting any engine, agent, or safety gate opens its current input, output, artifacts, timing, and past attempts. The Data Profiler owns preprocessing and visualization, so its node must expose the fitted train-only transform receipt and human-readable data charts as first-class output.
+Build a local, single-machine web app that shows the FlowState run as a live, n8n-style workflow without turning the competition pipeline into an editable diagram. Users can start, pause, resume, and cancel a run through guarded controls; the CLI and integrity kernel remain authoritative. Selecting any engine, agent, or safety gate opens its current input, output, artifacts, timing, and past attempts. The Data Profiler owns preprocessing and visualization, so its node must expose the fitted train-only transform receipt and human-readable data charts as first-class output.
 
 No UI scaffold currently exists: the repository has no `package.json`, `ui/`, `web/`, or frontend source tree. Create the UI under `ui/`; do not place frontend dependencies in the Python package.
 
@@ -134,7 +134,7 @@ No UI scaffold currently exists: the repository has no `package.json`, `ui/`, `w
 
 ## Required from the project owner
 - No paid UI hosting, analytics account, icon license, font license, or design service is required.
-- Provide the desired project name/logo asset only if branding beyond `RIGOR-RS` is wanted; otherwise use text branding and Lucide icons.
+- Provide the desired project name/logo asset only if branding beyond `FlowState` is wanted; otherwise use text branding and Lucide icons.
 - Provide no dataset rows or secrets to the frontend. The workflow configuration supplies local dataset paths to the backend.
 
 ## Assumptions & contingencies

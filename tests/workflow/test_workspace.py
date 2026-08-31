@@ -1,13 +1,14 @@
 from __future__ import annotations
+import sys
 
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
-from rigor_rs.integrity.gates import IntegrityViolation
-from rigor_rs.orchestration.workspace import WorkspaceManager
+from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
+from flowstate.integrity.gates import IntegrityViolation
+from flowstate.orchestration.workspace import WorkspaceManager
 
 
 def run(*args: str, cwd: Path) -> None:
@@ -74,6 +75,20 @@ def test_patch_scope_and_git_apply_check(tmp_path: Path) -> None:
     )
     with pytest.raises(IntegrityViolation, match="patch failed git apply --check"):
         manager.apply(workspace, contract(["model.py"]), invalid)
+    existing_as_new = PatchProposal(
+        unified_diff=(
+            "diff --git a/model.py b/model.py\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n"
+            "+++ b/model.py\n"
+            "@@ -0,0 +1 @@\n"
+            "+LOSS = 'bpr'\n"
+        ),
+        explanation="incorrectly adds an existing file",
+        tests=[],
+    )
+    with pytest.raises(IntegrityViolation, match="declares an existing file as new"):
+        manager.validate_proposal(workspace, contract(["model.py"]), existing_as_new)
     bare_hunk = PatchProposal(
         unified_diff=(
             "diff --git a/model.py b/model.py\n"
@@ -89,6 +104,64 @@ def test_patch_scope_and_git_apply_check(tmp_path: Path) -> None:
     with pytest.raises(IntegrityViolation, match="invalid unified-diff hunk header"):
         manager.validate_proposal(workspace, contract(["model.py"]), bare_hunk)
 
+
+
+def test_create_snapshots_uncommitted_allowed_source(tmp_path: Path) -> None:
+    repo = tmp_path / "repo-uncommitted"
+    repo.mkdir()
+    run("git", "init", cwd=repo)
+    (repo / "model.py").write_text("LOSS = 'bce'\n", encoding="utf-8")
+    run("git", "add", ".", cwd=repo)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "model.py").write_bytes(b"LOSS = 'pairwise'\n")
+
+    manager = WorkspaceManager(repo, tmp_path / "worktrees-uncommitted")
+    workspace, _ = manager.create("E-uncommitted", required_paths=["model.py"])
+
+    assert (workspace / "model.py").read_text(encoding="utf-8") == "LOSS = 'pairwise'\n"
+    proposal = PatchProposal(
+        unified_diff=(
+            "diff --git a/model.py b/model.py\n"
+            "--- a/model.py\n"
+            "+++ b/model.py\n"
+            "@@ -1 +1 @@\n"
+            "-LOSS = 'pairwise'\n"
+            "+LOSS = 'listwise'\n"
+        ),
+        explanation="align loss",
+        tests=[],
+    )
+    patch, _, _ = manager.apply(workspace, contract(["model.py"]), proposal)
+    assert b"\r\n" not in patch.read_bytes()
+    assert (workspace / "model.py").read_text(encoding="utf-8") == "LOSS = 'listwise'\n"
+
+    (workspace / "new.py").write_text("CREATED = True\n", encoding="utf-8")
+    manager.restore_sources(
+        workspace,
+        ["model.py", "new.py"],
+        {"model.py": "LOSS = 'pairwise'\n"},
+    )
+    assert (workspace / "model.py").read_bytes() == b"LOSS = 'pairwise'\n"
+    assert not (workspace / "new.py").exists()
+    repaired = PatchProposal(
+        unified_diff=(
+            "diff --git a/model.py b/model.py\n"
+            "--- a/model.py\n"
+            "+++ b/model.py\n"
+            "@@ -1 +1 @@\n"
+            "-LOSS = 'pairwise'\n"
+            "+LOSS = 'softmax'\n"
+        ),
+        explanation="repair after validation failure",
+        tests=[],
+    )
+    manager.apply(workspace, contract(["model.py"]), repaired)
+    assert (workspace / "model.py").read_text(encoding="utf-8") == "LOSS = 'softmax'\n"
 
 def test_apply_rejects_and_reverts_syntactically_invalid_python(tmp_path: Path) -> None:
     # Reproduced live: the agent returns file content inside a JSON string, so a
@@ -129,7 +202,7 @@ def test_create_checks_out_only_runtime_and_contract_files(tmp_path: Path) -> No
     repo.mkdir()
     run("git", "init", cwd=repo)
     files = {
-        "src/rigor_rs/runtime.py": "VALUE = 1\n",
+        "src/flowstate/runtime.py": "VALUE = 1\n",
         "configs/experiments/bce_fm.yaml": "training: {}\n",
         "kuairand-starter-kit/evaluate.py": "def evaluate(*args): return {}\n",
         "tests/workflow/test_experiment.py": "def test_contract(): pass\n",
@@ -157,7 +230,7 @@ def test_create_checks_out_only_runtime_and_contract_files(tmp_path: Path) -> No
     )
 
     assert (workspace / ".git").is_file()
-    assert (workspace / "src/rigor_rs/runtime.py").is_file()
+    assert (workspace / "src/flowstate/runtime.py").is_file()
     assert (workspace / "configs/experiments/bce_fm.yaml").is_file()
     assert (workspace / "kuairand-starter-kit/evaluate.py").is_file()
     assert (workspace / "tests/workflow/test_experiment.py").is_file()
@@ -166,3 +239,39 @@ def test_create_checks_out_only_runtime_and_contract_files(tmp_path: Path) -> No
     assert not (workspace / ".agents").exists()
     assert not (workspace / "docs").exists()
     assert not (workspace / "ui").exists()
+
+
+def test_create_materializes_live_flowstate_package_for_isolated_import(tmp_path: Path) -> None:
+    repo = tmp_path / "repo4"
+    repo.mkdir()
+    run("git", "init", cwd=repo)
+    (repo / "tracked.txt").write_text("committed\n", encoding="utf-8")
+    run("git", "add", "tracked.txt", cwd=repo)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+         "commit", "-m", "init"],
+        cwd=repo, check=True, capture_output=True,
+    )
+
+    package = repo / "src" / "flowstate"
+    module = package / "training" / "experiment.py"
+    module.parent.mkdir(parents=True)
+    (package / "__init__.py").write_text("MARKER = 'isolated-worktree'\n", encoding="utf-8")
+    module.write_text("VALUE = 'generated-code'\n", encoding="utf-8")
+
+    manager = WorkspaceManager(repo, tmp_path / "worktrees4")
+    workspace, _ = manager.create(
+        "E4",
+        required_paths=["src/flowstate/training/experiment.py"],
+    )
+
+    assert (workspace / "src/flowstate/__init__.py").is_file()
+    assert (workspace / "src/flowstate/training/experiment.py").is_file()
+    script = (
+        f"import sys; sys.path.insert(0, {str(workspace / 'src')!r}); "
+        "import flowstate; import flowstate.training.experiment as experiment; "
+        "print(flowstate.MARKER + ':' + experiment.VALUE)"
+    )
+    assert run_output(sys.executable, "-c", script, cwd=workspace).strip() == (
+        "isolated-worktree:generated-code"
+    )

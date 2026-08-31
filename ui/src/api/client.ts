@@ -11,8 +11,12 @@ async function asJson<T>(response: Response): Promise<T> {
     throw new Error(detail ?? `${response.status} ${response.statusText}`);
   }
   // The observer API is this frontend's only server; its FastAPI response
-  // models (rigor_rs/contract/models.py) are the schema of record.
+  // models (flowstate/contract/models.py) are the schema of record.
   return (await response.json()) as T;
+}
+
+async function asEmpty(response: Response): Promise<void> {
+  if (!response.ok) await asJson<unknown>(response);
 }
 
 function postJson<T>(url: string, body: JsonRecord): Promise<T> {
@@ -28,6 +32,15 @@ export const api = {
 
   startSession: (challengeConfigPath: string, budgetConfigPath: string): Promise<{ session_id: string; snapshot_url: string }> =>
     postJson("/api/v1/sessions", { challenge_config_path: challengeConfigPath, budget_config_path: budgetConfigPath }),
+
+  deleteSession: (sessionId: string): Promise<void> =>
+    fetch(`/api/v1/sessions/${sessionId}`, { method: "DELETE" }).then(asEmpty),
+
+  packageFileUrl: (
+    sessionId: string,
+    filename: "predictions.csv" | "manifest.json",
+  ): string =>
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/package/${filename}`,
 
   getSnapshot: (sessionId: string): Promise<SessionSnapshotDTO> =>
     fetch(`/api/v1/sessions/${sessionId}/snapshot`).then((response) => asJson(response)),
@@ -64,7 +77,7 @@ export function subscribeToEvents(
   const source = new EventSource(`/api/v1/sessions/${sessionId}/events?after_sequence=${afterSequence}`);
   source.addEventListener("open", () => onConnectionChange("open"));
   source.addEventListener("run_event", (message) => {
-    // The server only ever puts RunEvent JSON (rigor_rs.contract.models.RunEvent) on this channel.
+    // The server only ever puts RunEvent JSON (flowstate.contract.models.RunEvent) on this channel.
     const messageEvent = message as MessageEvent<string>;
     onEvent(JSON.parse(messageEvent.data) as RunEventDTO);
   });

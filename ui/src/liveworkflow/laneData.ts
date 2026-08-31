@@ -57,6 +57,34 @@ export function contentBounds(positions: Record<string, Vec2>): Bounds {
   return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2 };
 }
 
+/**
+ * The y a rejected-decision loop arch (e.g. watchdog -> knowledge_mcp) must
+ * clear to stay above every card it visually crosses. Only the lanes
+ * strictly between the two endpoints' own lanes are obstacles -- the
+ * endpoint lanes themselves are excluded because the arch starts/ends AT
+ * those nodes rather than passing over them, and an unrelated lane (e.g.
+ * Data, never between Decide and Research) must never inflate the
+ * clearance the way using every node's global minimum y previously did.
+ * `LaneScaffold`/`FocusLaneScaffolds` render each lane's box 58px above its
+ * own topmost node; clearing that chrome by another 40px reads as a real
+ * overpass rather than a graze. Shared by `EdgesLayer` (the actual path)
+ * and `FocusArchitecturePane` (which must reserve enough vertical room in
+ * its own fit-to-view bounds so the arch is never clipped).
+ */
+export function loopClearanceY(positions: Record<string, Vec2>, from: string, to: string): number {
+  const fromNode = NODES.find((node) => node.id === from);
+  const toNode = NODES.find((node) => node.id === to);
+  if (!fromNode || !toNode) return Math.min(positions[from]?.y ?? 0, positions[to]?.y ?? 0);
+  const fromLane = laneIndex(fromNode.group);
+  const toLane = laneIndex(toNode.group);
+  const crossedGroups = GROUP_ORDER.slice(Math.min(fromLane, toLane) + 1, Math.max(fromLane, toLane));
+  const crossedNodes = NODES.filter((node) => crossedGroups.includes(node.group));
+  const crossedTopY = crossedNodes.length > 0
+    ? Math.min(...crossedNodes.map((node) => positions[node.id].y))
+    : Math.min(positions[from].y, positions[to].y);
+  return crossedTopY - 58 - 40;
+}
+
 export function computeInitialPositions(): Record<string, Vec2> {
   const laneCursor: Record<number, number> = {};
   const pos: Record<string, Vec2> = {};
@@ -128,6 +156,14 @@ export const NODE_DETAILS: Record<string, NodeDetail> = {
     output: [],
     history: [],
   },
+  initial_baseline: {
+    summary:
+      "Reproduces the official Factorization Machine baseline on the frozen validation split. This score is the fixed target every experiment is compared against for the rest of the run.",
+    facts: [],
+    input: [{ label: "Transform receipt", value: "From Inspect & Prepare Data" }],
+    output: [],
+    history: [],
+  },
   knowledge_mcp: {
     summary: "Searches curated and auto-ingested research sources for evidence relevant to the current experiment frontier.",
     facts: [],
@@ -156,6 +192,14 @@ export const NODE_DETAILS: Record<string, NodeDetail> = {
     summary: "Runs a fast, cheap test suite to catch broken code before committing to a full training run.",
     facts: [],
     input: [{ label: "Patch", value: "From Write the Code Change" }],
+    output: [],
+    history: [],
+  },
+  proxy_gate: {
+    summary:
+      "Runs a cheap, small-scale training pass to filter out patches with no measurable effect before committing GPU time to a full run. Proxy scores are filter-only and are never compared to the official GAUC, nDCG@5, or primary score.",
+    facts: [],
+    input: [{ label: "Patch", value: "From Run Fast Safety Tests" }],
     output: [],
     history: [],
   },

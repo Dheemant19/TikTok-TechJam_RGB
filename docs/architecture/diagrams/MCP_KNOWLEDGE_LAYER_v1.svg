@@ -114,7 +114,7 @@
 
 <!-- ================= CLUSTER 3: PROCESSING PIPELINE ================= -->
 <rect x="20" y="570" width="1760" height="300" rx="10" fill="#f0fdf4" stroke="#86efac"/>
-<text x="900" y="592" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#166534">⚙️  PROCESSING PIPELINE  (deterministic — same trust rules as the RIGOR-RS core)</text>
+<text x="900" y="592" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#166534">⚙️  PROCESSING PIPELINE  (deterministic — same trust rules as the FlowState core)</text>
 
 <!-- n8 License & Retraction Gate -->
 <g>
@@ -196,7 +196,7 @@
 <text x="1476" y="668" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#15803d"> sha256 content hash</text>
 <text x="1452" y="690" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#374151">• Reproducibility + cache key</text>
 <text x="1452" y="703" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#374151">• Same hashing discipline as</text>
-<text x="1452" y="716" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#374151">  the rest of RIGOR-RS (§6.1)</text>
+<text x="1452" y="716" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#374151">  the rest of FlowState (§6.1)</text>
 </g>
 
 <!-- ================= CLUSTER 4: KNOWLEDGE STORE ================= -->
@@ -243,7 +243,7 @@
 <text x="1444" y="982" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">• source, query, timestamp,</text>
 <text x="1444" y="995" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#475569">  content hash — every fetch</text>
 <text x="1444" y="1013" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#0f766e">↳ optionally mirrors into the</text>
-<text x="1444" y="1026" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#0f766e">  main RIGOR-RS Run Ledger</text>
+<text x="1444" y="1026" font-family="Helvetica,Arial,sans-serif" font-size="9" fill="#0f766e">  main FlowState Run Ledger</text>
 </g>
 
 <!-- ================= CLUSTER 5: SERVING LAYER ================= -->
@@ -308,7 +308,7 @@
 
 <!-- ================= CLUSTER 6: EXISTING COMPONENTS ================= -->
 <rect x="20" y="1640" width="1760" height="170" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-dasharray="6,3"/>
-<text x="900" y="1662" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#334155">EXISTING RIGOR-RS COMPONENTS  (defined in ARCHITECTURE_v2 §7 — unchanged)</text>
+<text x="900" y="1662" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" font-size="13" fill="#334155">EXISTING FlowState COMPONENTS  (defined in ARCHITECTURE_v2 §7 — unchanged)</text>
 
 <g>
 <rect x="160" y="1680" width="650" height="110" rx="8" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6,3"/>
@@ -356,7 +356,7 @@
 <text x="1352" y="1875" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#374151">Serving layer</text>
 
 <rect x="1500" y="1862" width="16" height="16" rx="3" fill="#dbeafe" stroke="#3b82f6" stroke-dasharray="3,2"/>
-<text x="1522" y="1875" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#374151">Existing RIGOR-RS component</text>
+<text x="1522" y="1875" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#374151">Existing FlowState component</text>
 
 <text x="40" y="1900" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#475569">Authority: this MCP stays literature-tier per ARCHITECTURE_v2 §4.1 (rank 6, below organizer / measured / replicated evidence). Within that tier,</text>
 <text x="40" y="1916" font-family="Helvetica,Arial,sans-serif" font-size="9.5" fill="#475569">curated papers are marked trust_tier=curated and are preferred over trust_tier=auto_ingested when both support the same claim.</text>

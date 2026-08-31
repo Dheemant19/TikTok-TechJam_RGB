@@ -1,10 +1,10 @@
-# Handoff: RIGOR-RS Workflow Observer — Live Workflow Canvas
+# Handoff: FlowState Workflow Observer — Live Workflow Canvas
 
 ## Overview
-An interactive, draggable workflow canvas showing the RIGOR-RS 14-node pipeline (Data → Research → Code & Safety → Train & Score → Decide & Package). Users can pan/zoom the canvas, drag nodes, click "Run Workflow" to watch nodes execute in sequence with live timers and a traveling progress indicator along the active connection, and click any node to open a Stripe-style morph-in inspector with Summary/Input/Output/History tabs.
+An interactive, draggable workflow canvas showing the FlowState 14-node pipeline (Data → Research → Code & Safety → Train & Score → Decide & Package). Users can pan/zoom the canvas, drag nodes, click "Run Workflow" to watch nodes execute in sequence with live timers and a traveling progress indicator along the active connection, and click any node to open a Stripe-style morph-in inspector with Summary/Input/Output/History tabs.
 
 ## About the Design Files
-The bundled file (`RIGOR-RS_Workflow_design.html`) is a **design reference** built as a single self-contained interactive HTML prototype — not production code to copy directly. It uses inline styles and a lightweight custom component runtime specific to the prototyping tool it was built in. Per `Plan_UI.md`, the target implementation should be a **Vite + React + TypeScript app** using `@xyflow/react` for the canvas, `motion` for transitions, TanStack Query for data, and Radix UI for accessible primitives — recreate this design's visuals and interactions in that stack, wiring it to the real observer API instead of the mock data used here.
+The bundled file (`FlowState_Workflow_design.html`) is a **design reference** built as a single self-contained interactive HTML prototype — not production code to copy directly. It uses inline styles and a lightweight custom component runtime specific to the prototyping tool it was built in. Per `Plan_UI.md`, the target implementation should be a **Vite + React + TypeScript app** using `@xyflow/react` for the canvas, `motion` for transitions, TanStack Query for data, and Radix UI for accessible primitives — recreate this design's visuals and interactions in that stack, wiring it to the real observer API instead of the mock data used here.
 
 ## Fidelity
 **High-fidelity.** Colors, spacing, shapes, type sizes, and animation timings below are final; recreate them precisely. Content (node labels, mock summaries/metrics) is placeholder/demo data — replace with real API data per the endpoints in `Plan_UI.md`.
@@ -15,7 +15,7 @@ This prototype covers one view: **Live Workflow**.
 ### Live Workflow canvas
 - **Purpose**: Observe the pipeline run live, inspect any component's input/output/history, and (optionally) drag nodes to reposition them for reading (session-local only — never changes execution order).
 - **Layout**: Full-viewport. A 68px translucent (`rgba(255,255,255,.78)`, `backdrop-filter: blur(14px)`) top toolbar sits above a pannable/zoomable canvas with a dotted background (`radial-gradient(#d9dfe9 1px, transparent 1px)`, 22px grid, on `#f4f6fa`).
-- **Toolbar**: Left — 34px logo mark (10px radius, blue gradient `#60a5fa→#3b82f6`) + "RIGOR-RS" (15px/800) + "Workflow Observer" subtitle (11px/600, `#94a3b8`). Right — an "Environment: Production" pill, a "Reset" button, and a primary "Run Workflow" button (blue gradient, 12px radius, white 800-weight text, shows a spinning ring + "Running…" while active, becomes "Run Again" once done).
+- **Toolbar**: Left — 34px logo mark (10px radius, blue gradient `#60a5fa→#3b82f6`) + "FlowState" (15px/800) + "Workflow Observer" subtitle (11px/600, `#94a3b8`). Right — an "Environment: Production" pill, a "Reset" button, and a primary "Run Workflow" button (blue gradient, 12px radius, white 800-weight text, shows a spinning ring + "Running…" while active, becomes "Run Again" once done).
 - **Canvas**: 5 lanes left to right, each lane a vertical stack of node cards, connected by curved SVG bezier edges:
   - Lane 0 — Data (cyan): Training Data, Inspect & Prepare Data, Check Data Safety
   - Lane 1 — Research (violet): Find Research Evidence, Choose the Next Experiment
@@ -79,4 +79,4 @@ This prototype covers one view: **Live Workflow**.
 No external images or icon fonts. Badges use CSS shapes (border-radius / rotated square / clip-path polygons) with a 2-letter monogram, not icon glyphs. Fonts loaded from Google Fonts (Manrope, JetBrains Mono).
 
 ## Files
-- `RIGOR-RS_Workflow_design.html` — the full interactive prototype (open directly in a browser).
+- `FlowState_Workflow_design.html` — the full interactive prototype (open directly in a browser).

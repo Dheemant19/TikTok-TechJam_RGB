@@ -466,6 +466,66 @@ wheels = [
 ]
 
 [[package]]
+name = "flowstate"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "fastembed" },
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "langchain-azure-ai" },
+    { name = "langchain-core" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint-sqlite" },
+    { name = "mcp", extra = ["cli"] },
+    { name = "numpy" },
+    { name = "nvidia-ml-py" },
+    { name = "polars" },
+    { name = "psutil" },
+    { name = "pyarrow" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "torch" },
+    { name = "typer" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.116,<1" },
+    { name = "fastembed", specifier = ">=0.7,<1" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "huggingface-hub", specifier = ">=0.35,<2" },
+    { name = "langchain-azure-ai", specifier = ">=1.2,<2" },
+    { name = "langchain-core", specifier = ">=0.3,<2" },
+    { name = "langgraph", specifier = ">=0.6,<2" },
+    { name = "langgraph-checkpoint-sqlite", specifier = ">=2,<4" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.28,<2" },
+    { name = "numpy", specifier = ">=2.2,<3" },
+    { name = "nvidia-ml-py", specifier = ">=13,<14" },
+    { name = "polars", specifier = ">=1.32,<2" },
+    { name = "psutil", specifier = ">=7,<8" },
+    { name = "pyarrow", specifier = ">=20,<24" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4,<9" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.2,<2" },
+    { name = "python-dotenv", specifier = ">=1.1,<2" },
+    { name = "pyyaml", specifier = ">=6.0,<7" },
+    { name = "torch", specifier = "==2.11.0+cu128", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "typer", specifier = ">=0.20,<1" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
+]
+provides-extras = ["test"]
+
+[[package]]
 name = "frozenlist"
 version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1754,66 +1814,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
 ]
-
-[[package]]
-name = "rigor-rs"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "fastembed" },
-    { name = "httpx" },
-    { name = "huggingface-hub" },
-    { name = "langchain-azure-ai" },
-    { name = "langchain-core" },
-    { name = "langgraph" },
-    { name = "langgraph-checkpoint-sqlite" },
-    { name = "mcp", extra = ["cli"] },
-    { name = "numpy" },
-    { name = "nvidia-ml-py" },
-    { name = "polars" },
-    { name = "psutil" },
-    { name = "pyarrow" },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "torch" },
-    { name = "typer" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-test = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.116,<1" },
-    { name = "fastembed", specifier = ">=0.7,<1" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "huggingface-hub", specifier = ">=0.35,<2" },
-    { name = "langchain-azure-ai", specifier = ">=1.2,<2" },
-    { name = "langchain-core", specifier = ">=0.3,<2" },
-    { name = "langgraph", specifier = ">=0.6,<2" },
-    { name = "langgraph-checkpoint-sqlite", specifier = ">=2,<4" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.28,<2" },
-    { name = "numpy", specifier = ">=2.2,<3" },
-    { name = "nvidia-ml-py", specifier = ">=13,<14" },
-    { name = "polars", specifier = ">=1.32,<2" },
-    { name = "psutil", specifier = ">=7,<8" },
-    { name = "pyarrow", specifier = ">=20,<24" },
-    { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4,<9" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.2,<2" },
-    { name = "python-dotenv", specifier = ">=1.1,<2" },
-    { name = "pyyaml", specifier = ">=6.0,<7" },
-    { name = "torch", specifier = "==2.11.0+cu128", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "typer", specifier = ">=0.20,<1" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
-]
-provides-extras = ["test"]
 
 [[package]]
 name = "rpds-py"

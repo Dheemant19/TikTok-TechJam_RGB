@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -8,10 +9,10 @@ import psutil
 import torch
 import pytest
 
-from rigor_rs.contract.challenge import load_challenge_contract
-from rigor_rs.recovery.controller import RecoveryController
-from rigor_rs.training.execution import ExecutionFunnel
-from rigor_rs.training.experiment import predict, resolve_device
+from flowstate.contract.challenge import load_challenge_contract
+from flowstate.recovery.controller import RecoveryController
+from flowstate.training.execution import ExecutionFunnel
+from flowstate.training.experiment import predict, resolve_device
 
 
 def test_pytest_targets_normalize_commands_and_ignore_missing_paths(tmp_path: Path) -> None:
@@ -63,6 +64,33 @@ async def test_run_captures_stdout_only_failures_in_error_field(tmp_path: Path) 
     assert receipt.error
     assert "ERROR collecting test" in receipt.error
 
+
+@pytest.mark.asyncio
+async def test_run_cancellation_stops_the_active_process(tmp_path: Path) -> None:
+    funnel = object.__new__(ExecutionFunnel)
+    marker = tmp_path / "process-survived.txt"
+    run = asyncio.create_task(
+        funnel._run(
+            tier=1,
+            command=[
+                sys.executable,
+                "-c",
+                f"import pathlib,time; time.sleep(2); pathlib.Path({str(marker)!r}).write_text('alive')",
+            ],
+            cwd=tmp_path,
+            output=tmp_path / "cancelled-tier",
+            comparable=False,
+            timeout=30,
+        )
+    )
+    await asyncio.sleep(0.2)
+
+    run.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    await asyncio.sleep(2)
+    assert not marker.exists()
 
 @pytest.mark.asyncio
 async def test_tier1_does_not_run_unrelated_full_suite_when_no_scoped_test_exists(tmp_path: Path) -> None:
@@ -156,7 +184,7 @@ def test_cuda_device_request_resolves_unspecified_index(monkeypatch) -> None:
     assert str(resolve_device("cuda")) == "cuda:0"
 
 def test_checkpoint_prediction_uses_training_model_contract(tmp_path: Path) -> None:
-    from rigor_rs.models.experimental import FactorizationMachine
+    from flowstate.models.experimental import FactorizationMachine
 
     model = FactorizationMachine(20, 4)
     checkpoint = tmp_path / "checkpoint.pt"
@@ -184,7 +212,7 @@ def test_checkpoint_prediction_uses_training_model_contract(tmp_path: Path) -> N
 def test_gpu_seconds_stay_null_when_nvml_cannot_observe_the_device() -> None:
     # GPU-hours must be measured, never invented. When NVML is unavailable the
     # value stays null so the UI reads "not measured" rather than "0 hours".
-    from rigor_rs.training.execution import ResourceMonitor
+    from flowstate.training.execution import ResourceMonitor
 
     monitor = object.__new__(ResourceMonitor)
     monitor.process = psutil.Process()
@@ -205,7 +233,7 @@ def test_gpu_seconds_stay_null_when_nvml_cannot_observe_the_device() -> None:
 def test_gpu_seconds_accumulate_only_while_the_process_holds_the_device(monkeypatch) -> None:
     from types import SimpleNamespace
 
-    import rigor_rs.training.execution as execution
+    import flowstate.training.execution as execution
 
     monitor = object.__new__(execution.ResourceMonitor)
     monitor.process = psutil.Process()

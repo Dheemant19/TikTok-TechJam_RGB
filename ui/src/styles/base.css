@@ -1,5 +1,13 @@
 @import "./tokens.css";
 @import "./experience.css";
+@import "./running-card.css";
+@import "./edges.css";
+@import "./stage-rail.css";
+@import "./canvas-controls.css";
+@import "./route-edge-navigation.css";
+@import "./shell-controls.css";
+@import "./autonomy-log.css";
+@import "./route-empty-state.css";
 
 * {
   box-sizing: border-box;
@@ -63,9 +71,12 @@ a:hover {
 }
 
 code,
-.mono,
-.tabular {
+.mono {
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular {
   font-variant-numeric: tabular-nums;
 }
 

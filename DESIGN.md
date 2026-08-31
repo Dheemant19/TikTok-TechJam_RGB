@@ -1,5 +1,5 @@
 ---
-name: RIGOR-RS Workflow Observer
+name: FlowState Workflow Observer
 description: A draggable, colorful workflow canvas recreated pixel-for-pixel from a design handoff, with a Stripe-style morphing inspector and a live run simulation.
 colors:
   surface-0: "#f4f6fa"
@@ -55,13 +55,13 @@ components:
     padding: "44px 16px 14px 16px"
 ---
 
-# Design System: RIGOR-RS Workflow Observer
+# Design System: FlowState Workflow Observer
 
 <!-- Revision history: this is the third visual world for this project. v1 was a
      near-black "instrument panel" (single amber accent, flat 2D/3D hybrid). v2 was
      a light 3D WebGL scene with per-group pastel/vivid colors. v3 -- this one --
      discards both in favor of an exact recreation of a supplied high-fidelity
-     design handoff (design_handoff_workflow_observer/RIGOR-RS_Workflow_design.html),
+     design handoff (design_handoff_workflow_observer/FlowState_Workflow_design.html),
      at the user's explicit direction ("use the exact code"). Colors, spacing,
      shapes, type sizes, and animation timings below are taken verbatim from that
      handoff, not invented. Only the accessibility layer (keyboard operability,

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { NODES, type NodeStatus } from "../data/nodeRegistry";
 import { laneColorFor, NODE_DETAILS } from "./laneData";
 import { FocusArchitecturePane } from "./FocusArchitecturePane";
-import { StageDetailScroller } from "./StageDetailScroller";
+import { StageDetailScroller, type StageDetailScrollerHandle } from "./StageDetailScroller";
 import { statusMeta } from "./NodeCard";
 import { buildNodeDetail } from "./nodeDetail";
 import { useRunStore } from "./runStore";
+import { selectLatestWatchdogDecision } from "./selectors";
 import {
   DETAIL_SECTIONS,
   laneMetaFor,
@@ -48,6 +49,7 @@ function sectionLabel(id: DetailSectionId): string {
   return DETAIL_SECTIONS.find((section) => section.id === id)?.label ?? "Summary";
 }
 
+
 export function StageFocusView({
   nodeId,
   previousNodeId,
@@ -64,15 +66,23 @@ export function StageFocusView({
 }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const focusLayerRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<StageDetailScrollerHandle>(null);
+  const sectionButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [activeSection, setActiveSection] = useState<DetailSectionId>("summary");
 
   // Keep hooks mounted while the closing animation clears the selected id.
   // The fallback also keeps hook order stable when the component is mounted before opening.
   const node = nodeForId(nodeId) ?? NODES[0];
   const nodeStates = useRunStore((state) => state.nodeStates);
+  const events = useRunStore((state) => state.events);
   const detail = useMemo(() => buildNodeDetail(node, nodeStates, NODE_DETAILS[node.id]), [node, nodeStates]);
 
-  const nextId = nextStageId(node.id);
+  // Branch-aware "Continue to": a rejected watchdog decision loops back into
+  // another research cycle instead of continuing to Save Run Evidence
+  // (AGENTS.md #5) -- this only changes what the UI points at next, never
+  // backend routing.
+  const watchdogDecision = useMemo(() => selectLatestWatchdogDecision(events), [events]);
+  const nextId = nextStageId(node.id, watchdogDecision);
   const nextNode = nodeForId(nextId);
   const colors = laneColorFor(node);
   const status = nodeStatus[node.id] ?? "waiting";
@@ -100,7 +110,7 @@ export function StageFocusView({
     let active = true;
     const timer = window.setTimeout(() => {
       if (active) closeRef.current?.focus();
-    }, reducedMotion ? 0 : 720);
+    }, reducedMotion ? 0 : 1160);
     return () => {
       active = false;
       window.clearTimeout(timer);
@@ -139,6 +149,46 @@ export function StageFocusView({
     onClose();
   };
 
+  // A process-card transition owns the scroll/section state race (the
+  // detail scroller resets to "summary" on every node change); disable the
+  // rail for that brief window and re-enable it once the incoming detail
+  // view is open, mirroring `isAdvancing` in useFlipInspector.
+  const railDisabled = phase === "transitioning";
+
+  const handleSelectSection = (id: DetailSectionId) => {
+    if (railDisabled) return;
+    scrollerRef.current?.scrollToSection(id);
+    setActiveSection(id);
+  };
+
+  const focusSectionButton = (id: DetailSectionId) => {
+    const index = DETAIL_SECTIONS.findIndex((section) => section.id === id);
+    sectionButtonRefs.current[index]?.focus();
+  };
+
+  // ArrowUp/ArrowDown/Home/End move focus and selection through the four
+  // sections regardless of which button in the row currently has focus.
+  // Escape is intentionally left unhandled here so it keeps bubbling to the
+  // root `onKeyDown` above, which still closes the whole stage view.
+  const handleRailKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (railDisabled) return;
+    const { key } = event;
+    if (key !== "ArrowUp" && key !== "ArrowDown" && key !== "Home" && key !== "End") return;
+    const row = (event.target as HTMLElement).closest<HTMLElement>("[data-rail-row]");
+    const currentId = (row?.dataset.railRow as DetailSectionId | undefined) ?? activeSection;
+    const currentIndex = DETAIL_SECTIONS.findIndex((section) => section.id === currentId);
+    const fromIndex = currentIndex < 0 ? 0 : currentIndex;
+    let nextIndex = fromIndex;
+    if (key === "ArrowDown") nextIndex = Math.min(DETAIL_SECTIONS.length - 1, fromIndex + 1);
+    else if (key === "ArrowUp") nextIndex = Math.max(0, fromIndex - 1);
+    else if (key === "Home") nextIndex = 0;
+    else nextIndex = DETAIL_SECTIONS.length - 1; // End
+    event.preventDefault();
+    const nextSectionId = DETAIL_SECTIONS[nextIndex].id;
+    handleSelectSection(nextSectionId);
+    focusSectionButton(nextSectionId);
+  };
+
   const announcement = `${node.label}. ${stageStatus.text}. ${sectionLabel(activeSection)} section.`;
   const transitionScene = phase === "transitioning" && previousNodeId !== null;
 
@@ -164,7 +214,7 @@ export function StageFocusView({
       >
         <div className="stage-focus__content">
           <header className="stage-focus__header">
-            <div className="stage-focus__header-copy">
+            <div key={node.id} className={`stage-focus__header-copy ${transitionScene ? "is-transitioning" : ""}`}>
               <div className="stage-focus__header-meta">
                 <span>{stageProgressLabel(node.id)}</span>
                 <span aria-hidden="true">/</span>
@@ -180,15 +230,6 @@ export function StageFocusView({
                 <span className="stage-focus__readonly">Read-only evidence</span>
               </div>
             </div>
-
-            <div className="stage-focus__section-progress" aria-label={`Current detail section: ${sectionLabel(activeSection)}`}>
-              {DETAIL_SECTIONS.map((section) => (
-                <span key={section.id} className={activeSection === section.id ? "is-active" : ""} aria-current={activeSection === section.id ? "true" : undefined}>
-                  {section.label}
-                </span>
-              ))}
-            </div>
-
             <button ref={closeRef} type="button" className="stage-focus__close" onClick={onClose} aria-label="Close stage focus">
               <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M4.5 4.5 15.5 15.5M15.5 4.5 4.5 15.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
@@ -199,19 +240,6 @@ export function StageFocusView({
           <div className="stage-focus__body">
             <div className={`stage-focus__architecture ${transitionScene ? "is-transitioning" : ""}`} aria-label="Live workflow architecture">
               <div className="focus-architecture__scenes">
-                {transitionScene && previousNodeId && (
-                  <div className="focus-architecture__scene is-outgoing" aria-hidden="true">
-                    <FocusArchitecturePane
-                      positions={positions}
-                      nodeStatus={nodeStatus}
-                      nodeElapsed={nodeElapsed}
-                      selectedNodeId={previousNodeId}
-                      reducedMotion={reducedMotion}
-                      interactive={false}
-                      onSelectNode={() => undefined}
-                    />
-                  </div>
-                )}
                 <div className={`focus-architecture__scene ${transitionScene ? "is-incoming" : "is-current"}`}>
                   <FocusArchitecturePane
                     positions={positions}
@@ -227,16 +255,46 @@ export function StageFocusView({
             </div>
 
             <div className={`stage-focus__details-layer ${transitionScene ? "is-transitioning" : ""}`} key={node.id}>
-              <StageDetailScroller
-                node={node}
-                detail={detail}
-                status={status}
-                elapsedMs={elapsedMs}
-                nextNode={nextNode}
-                transitioning={transitionScene}
-                onAdvance={() => nextId && onNavigate(nextId)}
-                onActiveSectionChange={setActiveSection}
-              />
+              <div className={`stage-focus__details-column ${isNarrow ? "is-narrow" : ""}`}>
+                <StageDetailScroller
+                  ref={scrollerRef}
+                  node={node}
+                  detail={detail}
+                  status={status}
+                  elapsedMs={elapsedMs}
+                  nextNode={nextNode}
+                  transitioning={transitionScene}
+                  reducedMotion={reducedMotion}
+                  onAdvance={() => nextId && onNavigate(nextId)}
+                  onActiveSectionChange={setActiveSection}
+                />
+
+                <nav
+                  className={`stage-focus__section-nav ${isNarrow ? "is-narrow" : ""} ${railDisabled ? "is-disabled" : ""}`}
+                  aria-label="Stage detail sections"
+                  onKeyDown={handleRailKeyDown}
+                >
+                  {DETAIL_SECTIONS.map((section, index) => {
+                    const isActive = activeSection === section.id;
+                    return (
+                      <div className="stage-focus__section-nav-row" data-rail-row={section.id} key={section.id}>
+                        <button
+                          type="button"
+                          ref={(element) => {
+                            sectionButtonRefs.current[index] = element;
+                          }}
+                          className="stage-focus__section-nav-label"
+                          onClick={() => handleSelectSection(section.id)}
+                          disabled={railDisabled}
+                          aria-current={isActive ? "location" : undefined}
+                        >
+                          <span>{section.label}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </nav>
+              </div>
             </div>
           </div>
         </div>

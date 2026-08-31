@@ -1,0 +1,45 @@
+/* AGENTS.md #8: the "Recenter workflow" canvas control.
+ * Owned by LiveWorkflowCanvas.tsx. */
+
+/* Sits in the lower-right control cluster, to the left of the zoom readout
+ * (which is 52px wide, right: 18px, bottom: 18px in experience.css) -- mirrors
+ * its glass-panel look without touching that shared file. A real <button>
+ * sized 44x44 CSS px gives a comfortable hit target even though the visible
+ * icon inside is smaller. */
+.workflow-canvas__recenter {
+  position: absolute;
+  z-index: 20;
+  right: 78px;
+  bottom: 15px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  box-shadow: 0 10px 28px -22px rgba(19, 42, 67, 0.6), inset 0 0 0 1px var(--border);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-instrument), color var(--dur-fast) var(--ease-instrument),
+    box-shadow var(--dur-fast) var(--ease-instrument);
+}
+
+.workflow-canvas__recenter:hover {
+  color: var(--primary);
+  box-shadow: 0 12px 30px -20px rgba(19, 42, 67, 0.66), inset 0 0 0 1px var(--border-strong);
+}
+
+/* Brief pressed feedback; a plain instant transform under reduced motion
+ * since --dur-fast collapses to 1ms there (tokens.css), so this stays a
+ * static state change rather than an animated one. */
+.workflow-canvas__recenter:active {
+  transform: scale(0.9);
+}
+
+.workflow-canvas__recenter:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

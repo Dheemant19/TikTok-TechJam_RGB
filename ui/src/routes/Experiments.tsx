@@ -1,4 +1,5 @@
 import { useMemo, type CSSProperties } from "react";
+import { RouteEmptyState } from "../components/RouteEmptyState";
 import { selectExperiments } from "../liveworkflow/selectors";
 import { useRunStore } from "../liveworkflow/runStore";
 
@@ -49,9 +50,11 @@ export function Experiments() {
       )}
 
       {rows.length === 0 ? (
-        <div style={{ ...cardStyle, marginTop: "var(--space-6)", textAlign: "center", color: "var(--text-2)", fontSize: 12.5, padding: "var(--space-5)" }}>
-          No experiments recorded yet. Start a run from Live Workflow to populate this page.
-        </div>
+        <RouteEmptyState
+          icon="experiments"
+          title="No experiments recorded"
+          description="Start a run to reproduce the official baseline, test bounded research ideas, and keep every accepted, rejected, or failed attempt visible."
+        />
       ) : (
         <div style={cardStyle}>
           <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
@@ -68,10 +71,10 @@ export function Experiments() {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
-                  <td style={td} className="mono">{row.label}</td>
-                  <td style={td} className="mono tabular">{formatMetric(row.gauc)}</td>
-                  <td style={td} className="mono tabular">{formatMetric(row.ndcg5)}</td>
-                  <td style={td} className="mono tabular">{formatMetric(row.primary)}</td>
+                  <td style={td}>{row.label}</td>
+                  <td style={td} className="tabular">{formatMetric(row.gauc)}</td>
+                  <td style={td} className="tabular">{formatMetric(row.ndcg5)}</td>
+                  <td style={td} className="tabular">{formatMetric(row.primary)}</td>
                   <td style={td}>{row.evidenceSource ?? "-"}</td>
                   <td style={{ ...td, color: STATUS_COLOR[row.status] }}>{STATUS_LABEL[row.status]}</td>
                 </tr>

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from rigor_rs.knowledge.cache import canonical_cache_key
-from rigor_rs.knowledge.models import EvidenceFilters
-from rigor_rs.knowledge.sanitize import sanitize_text
+from flowstate.knowledge.cache import canonical_cache_key
+from flowstate.knowledge.models import EvidenceFilters
+from flowstate.knowledge.sanitize import sanitize_text
 
 
 def test_sanitizer_removes_hidden_content_and_quarantines_instructions() -> None:
@@ -24,6 +24,6 @@ def test_sanitizer_preserves_normal_scientific_instruction_language() -> None:
 def test_cache_key_is_canonical() -> None:
     filters_a = EvidenceFilters(priority_area="ranking_loss_alignment", year_from=2018)
     filters_b = EvidenceFilters(year_from=2018, priority_area="ranking_loss_alignment")
-    key_a, _ = canonical_cache_key("openalex", "  Within-User   Ranking ", filters_a, "2026-08-27", 8)
-    key_b, _ = canonical_cache_key("openalex", "within-user ranking", filters_b, "2026-08-27", 8)
+    key_a, _ = canonical_cache_key("hybrid", "  Within-User   Ranking ", filters_a, "2026-08-27", 8)
+    key_b, _ = canonical_cache_key("hybrid", "within-user ranking", filters_b, "2026-08-27", 8)
     assert key_a == key_b

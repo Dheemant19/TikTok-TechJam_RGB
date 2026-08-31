@@ -1,4 +1,4 @@
-# Plan_Workflow.md — Complete RIGOR-RS Implementation
+# Plan_Workflow.md — Complete FlowState Implementation
 
 ## Context
 Implement Architecture v3 as a local, reproducible research system: validate the KuaiRand contract, reproduce the official FM validation baseline, let two Bedrock-backed LangChain agents plan and code one bounded experiment at a time, run deterministic safety/training/evaluation stages, recover within fixed limits, stop by the organizer rule, and package the validation-best artifact. Integrate the Research Knowledge MCP from `Plan_MCP.md` and the observer-plus-safe-controls app from `Plan_UI.md` through one append-only event/ledger contract. The Data Profiler is expanded into **Data Profiler & Preprocessor**: it owns train-only preprocessing artifacts and the aggregate visualization outputs shown to users.
@@ -22,7 +22,7 @@ The repository currently has architecture documents, the official starter kit, a
 2. Do not add LangSmith, a hosted database, Redis, Celery, Kubernetes, a cloud vector database, or paid monitoring. All durable state lives under local ignored directories; AWS Bedrock is the only planned metered service.
 3. Create the package tree:
    ```text
-   src/rigor_rs/
+   src/flowstate/
      cli/ contract/ integrity/ data/ features/ models/ training/
      evaluation/ agents/ orchestration/ recovery/ ledger/ reporting/
      api/ knowledge/ mcp/
@@ -33,7 +33,7 @@ The repository currently has architecture documents, the official starter kit, a
    ui/
    ```
    Generated `runs/`, `artifacts/`, `state/`, worktrees, raw data, credentials, model caches, and large predictions are ignored; lightweight example configs and redacted test fixtures are versioned.
-4. Expose one CLI at `python -m rigor_rs.cli` with commands:
+4. Expose one CLI at `python -m flowstate.cli` with commands:
    - `validate`
    - `profile`
    - `reproduce-baseline`
@@ -54,7 +54,7 @@ The repository currently has architecture documents, the official starter kit, a
    - `kuairand-starter-kit/baseline.py`
    - `kuairand-starter-kit/baseline_scores.json`
    - the dataset directory from `${KUAIRAND_DATA_DIR}`.
-2. Implement `ChallengeContract` in `src/rigor_rs/contract/challenge.py`. On load, derive benchmark, `long_view`, date ranges, GAUC/nDCG@5/primary rule, FM baseline config, epsilon, patience, and submission schema from the official starter files/config. Record SHA-256 hashes and reject a run if those files change after session start.
+2. Implement `ChallengeContract` in `src/flowstate/contract/challenge.py`. On load, derive benchmark, `long_view`, date ranges, GAUC/nDCG@5/primary rule, FM baseline config, epsilon, patience, and submission schema from the official starter files/config. Record SHA-256 hashes and reject a run if those files change after session start.
 3. Treat `kuairand-starter-kit/baseline_scores.json` as the current machine-readable baseline/convergence source. The Architecture v3 prose contains a different validation number; never hard-code either value. Display and compare the value loaded at runtime.
 4. Add `configs/budgets/competition.yaml` with required owner-supplied limits: total wall seconds, GPU-hours, Bedrock input/output tokens, maximum experiments, per-run timeout, recovery attempts, MCP provider calls/documents/response characters, and proxy tier limits. Schema validation fails closed when a required competition limit is absent; the system does not invent one.
 5. Add `configs/agents/bedrock.yaml` with environment-variable references for AWS region and Research/Coder model IDs, structured-output limits, temperature `0`, per-call timeout, and retry limit. Secrets use the normal AWS credential chain and never appear in YAML.
@@ -62,7 +62,7 @@ The repository currently has architecture documents, the official starter kit, a
 7. Project columns at read time. Development services can read train labels and validation labels only through the evaluator capability; test feature readers exclude `long_view` and every feedback label. Never call `submit.py --score --split test`.
 
 ### 3. Build the append-only ledger and event stream first
-1. Create `state/rigor.sqlite3` with transactional schema migrations and WAL mode. Use tables for sessions, run snapshots, append-only run events, experiment contracts, artifacts/lineage, metric receipts, resource samples/totals, claims, frontier entries, recovery attempts, manual interventions, and control requests.
+1. Create `state/flowstate.sqlite3` with transactional schema migrations and WAL mode. Use tables for sessions, run snapshots, append-only run events, experiment contracts, artifacts/lineage, metric receipts, resource samples/totals, claims, frontier entries, recovery attempts, manual interventions, and control requests.
 2. Use immutable IDs generated as UTC timestamp plus random suffix. Every state change appends a `RunEvent` with:
    `event_id`, `session_id`, `run_id`, monotonic `sequence`, `component_id`, `execution_id`, `stage`, `event_type`, `status`, `occurred_at`, `plain_summary`, `payload_json`, `artifact_ids`, and `previous_event_hash`; compute `event_hash` over canonical JSON to form a tamper-evident chain.
 3. Enforce uniqueness on `(session_id, sequence)` and artifact content hashes. Corrections append a new event referencing the incorrect event. No update/delete method exists for historical event payloads; mutable session/frontier snapshots are projections rebuilt from events.
@@ -173,16 +173,16 @@ The repository currently has architecture documents, the official starter kit, a
 - `kuairand-starter-kit/baseline_scores.json` — runtime source for baseline, random reference, seed noise, and convergence values; it overrides conflicting prose values.
 
 ## Verification
-1. Environment: from repository root run `uv sync --locked`, `uv run python -m rigor_rs.cli validate --challenge configs/challenge/kuairand_pure.yaml`, and expect hashes, schema/date/label checks, required-owner-setting checks, and no test-label access.
-2. Profiler/preprocessor: run `uv run python -m rigor_rs.cli profile ...` on a deterministic small fixture and then local data. Expect all three profile/visualization/transform receipts, train-only fitted state, unchanged row order, valid lineage, and no raw rows in LLM/UI artifacts. Mutate a validation-only category and verify it maps to UNK without changing vocabulary.
+1. Environment: from repository root run `uv sync --locked`, `uv run python -m flowstate.cli validate --challenge configs/challenge/kuairand_pure.yaml`, and expect hashes, schema/date/label checks, required-owner-setting checks, and no test-label access.
+2. Profiler/preprocessor: run `uv run python -m flowstate.cli profile ...` on a deterministic small fixture and then local data. Expect all three profile/visualization/transform receipts, train-only fitted state, unchanged row order, valid lineage, and no raw rows in LLM/UI artifacts. Mutate a validation-only category and verify it maps to UNK without changing vocabulary.
 3. Integrity: attempt train/validation overlap, protected-column removal, evaluator modification, NaN transform output, join expansion, noncontinuous row IDs, and test-label access. Expect fail-closed events before GPU work.
-4. Baseline gate: run `uv run python -m rigor_rs.cli reproduce-baseline ...`. Expect organizer FM validation metrics within configured tolerance, B0/stable-fallback registration, exact command/environment/artifact receipts, and zero novel contracts before success.
+4. Baseline gate: run `uv run python -m flowstate.cli reproduce-baseline ...`. Expect organizer FM validation metrics within configured tolerance, B0/stable-fallback registration, exact command/environment/artifact receipts, and zero novel contracts before success.
 5. Sanity control: run the deterministic shuffled-training-label check. Expect validation primary at or below configured random-valid bound; force a leaked feature fixture and expect the check to halt experimentation.
 6. MCP/agents: with the curated JSON ingested, run one Research Agent call and one Code Agent patch in a disposable worktree. Expect bounded context, valid cited evidence IDs, contract written before patch, protected-file enforcement, exact Bedrock token receipts, and no arbitrary agent shell access.
-7. Full smoke workflow: `uv run python -m rigor_rs.cli run --challenge ... --budget configs/budgets/smoke.yaml`. Expect ordered events through profile → research → patch → Tiers 1/2 → training → official validation → decision, a replayable final snapshot, and artifacts resolving by hash.
+7. Full smoke workflow: `uv run python -m flowstate.cli run --challenge ... --budget configs/budgets/smoke.yaml`. Expect ordered events through profile → research → patch → Tiers 1/2 → training → official validation → decision, a replayable final snapshot, and artifacts resolving by hash.
 8. Recovery: inject syntax failure, schema mismatch, simulated OOM, timeout, NaN loss, transient MCP outage, and metric regression in separate fixture runs. Expect the fixed bounded recipe, preserved original failure, stable fallback, accurate retry/intervention/resource fields, and no deleted history.
 9. Convergence: feed three deterministic comparable receipts that fail to exceed loaded epsilon. Expect stop exactly at configured patience and selection of validation-best rather than latest. Proxy receipts must not change the counter.
-10. UI: run `uv run python -m rigor_rs.cli serve-ui` and browser-drive the actual surface using Plan_UI.md checks: live SSE, safe controls, every node’s input/output, profiler charts, replay, recovery, metrics, resources, and responsive/accessibility modes.
+10. UI: run `uv run python -m flowstate.cli serve-ui` and browser-drive the actual surface using Plan_UI.md checks: live SSE, safe controls, every node’s input/output, profiler charts, replay, recovery, metrics, resources, and responsive/accessibility modes.
 11. Finalization rehearsal uses a synthetic/test fixture only. Expect clean replay, one prediction pass, official schema check, manifest links, and rejection of a second package attempt. Do not perform the real test finalization during development verification.
 12. Run focused contract/integration/recovery/reproducibility tests after the behavioral checks; they must defend event append-only behavior, official evaluator hashes/semantics, split taint, preprocessing fit boundary, baseline gate, proxy non-comparability, recovery limits, convergence, API redaction, and one-way finalization.
 

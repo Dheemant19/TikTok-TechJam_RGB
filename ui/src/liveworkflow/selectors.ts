@@ -1,6 +1,7 @@
 import { asArray, asRecord, field } from "../api/json";
 import type { JsonRecord, RunEventDTO } from "../api/types";
 import { NODES } from "../data/nodeRegistry";
+import { uiNodeIdForEvent } from "./eventMapping";
 
 function numberField(record: JsonRecord | undefined, key: string): number | null {
   const value = field(record, key);
@@ -12,13 +13,13 @@ function stringField(record: JsonRecord | undefined, key: string): string | null
   return typeof value === "string" ? value : null;
 }
 
-const TRUST_TIER_LABEL: Record<string, string> = { curated: "Curated bank", discovered: "OpenAlex" };
+const TRUST_TIER_LABEL: Record<string, string> = { curated: "Curated bank", discovered: "Hugging Face" };
 
 /** Papers ingested via search_evidence() carry a trust_tier of either
  * "curated" (the seed bank) or "discovered" (currently only ever populated
- * by the OpenAlex provider; see RetrievalService.search_evidence). GitHub
- * is not itself a retrieval source for a citation -- it is per-paper code
- * metadata attached during ingestion -- so it is reported as a separate
+ * by the Hugging Face Papers provider; see RetrievalService.search_evidence).
+ * GitHub is not itself a retrieval source for a citation -- it is per-paper
+ * code metadata attached during ingestion -- so it is reported as a separate
  * annotation, not a trust_tier value. */
 function paperProvenance(paper: JsonRecord | undefined): { tierLabel: string; hasGithubCode: boolean; githubUrl: string | null } {
   const tier = stringField(paper, "trust_tier");
@@ -43,7 +44,7 @@ export interface ExperimentRow {
 
 /** Summarizes where a research() cycle's cited evidence came from -- the set
  * of trust tiers among its supporting/contradicting papers (Curated bank vs
- * OpenAlex), plus whether any of them carry an attached GitHub implementation. */
+ * Hugging Face), plus whether any of them carry an attached GitHub implementation. */
 function evidenceSourceSummary(payload: JsonRecord | undefined): string {
   const tiers = new Set<string>();
   let hasGithubCode = false;
@@ -263,7 +264,14 @@ export interface TimelineRow {
 
 /** The Autonomy Log is the same ordered ledger the Live Workflow view
  * animates in real time (Plan_UI.md #5.2), so it reads directly off the
- * event stream instead of a separate static log. */
+ * event stream instead of a separate static log. Every row's stage label
+ * must resolve through `uiNodeIdForEvent` -- the same routing the cards
+ * themselves use -- not the raw `component_id`. Several backend components
+ * multiplex more than one presentation card (`trainer` covers Tier 1-4 plus
+ * baseline reproduction; `phase_guard` covers the baseline safety gate plus
+ * a proxy-stage rejection), so labeling directly off `component_id` showed
+ * "Train the Model" for baseline events and "Check Data Safety" for a
+ * proxy-only rejection -- both belonging to a different card entirely. */
 export function selectAutonomyTimeline(events: RunEventDTO[]): TimelineRow[] {
   return [...events]
     .sort((a, b) => b.sequence - a.sequence)
@@ -272,8 +280,21 @@ export function selectAutonomyTimeline(events: RunEventDTO[]): TimelineRow[] {
       occurredAt: event.occurred_at,
       componentLabel: event.component_id === "orchestrator"
         ? "Workflow Orchestrator"
-        : NODES.find((node) => node.id === event.component_id)?.label ?? event.component_id,
+        : NODES.find((node) => node.id === uiNodeIdForEvent(event))?.label ?? event.component_id,
       action: event.plain_summary,
       status: event.status,
     }));
+}
+
+/** The stage-detail "Continue to" control must be branch-aware: after a
+ * rejected watchdog decision the real next LangGraph step is another
+ * research cycle, not the ledger/package tail of the run (AGENTS.md #5). */
+export function selectLatestWatchdogDecision(events: RunEventDTO[]): string | null {
+  const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const event = ordered[i];
+    if (event.component_id !== "watchdog" || event.event_type !== "frontier") continue;
+    return stringField(asRecord(event.payload), "decision");
+  }
+  return null;
 }

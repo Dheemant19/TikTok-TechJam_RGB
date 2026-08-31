@@ -4,18 +4,20 @@ import asyncio
 from pathlib import Path
 import time
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
 import torch
 
-from rigor_rs.contract.challenge import load_challenge_contract
-from rigor_rs.contract.models import ComponentStatus, FrontierState
-from rigor_rs.ledger.workflow import WorkflowLedger
-from rigor_rs.models.experimental import FactorizationMachine
-from rigor_rs.orchestration.graph import AutonomousResearchWorkflow
-from rigor_rs.recovery.controller import RecoveryController
-from rigor_rs.reporting.finalizer import SubmissionFinalizer
+from flowstate.contract.challenge import load_challenge_contract
+from flowstate.contract.models import ComponentStatus, FrontierState
+from flowstate.knowledge.models import EvidenceFilters
+from flowstate.ledger.workflow import WorkflowLedger
+from flowstate.models.experimental import FactorizationMachine
+from flowstate.orchestration.graph import AutonomousResearchWorkflow
+from flowstate.recovery.controller import RecoveryController
+from flowstate.reporting.finalizer import SubmissionFinalizer
 
 
 def test_langgraph_contains_durable_research_loop() -> None:
@@ -26,7 +28,7 @@ def test_langgraph_contains_durable_research_loop() -> None:
 
 def test_training_entrypoint_guard_rejects_truncated_valid_python(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    experiment = workspace / "src/rigor_rs/training/experiment.py"
+    experiment = workspace / "src/flowstate/training/experiment.py"
     experiment.parent.mkdir(parents=True)
     experiment.write_text(
         "def train():\n"
@@ -52,7 +54,7 @@ def test_training_entrypoint_guard_rejects_truncated_valid_python(tmp_path: Path
 
 def test_training_entrypoint_guard_accepts_executable_contract(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    experiment = workspace / "src/rigor_rs/training/experiment.py"
+    experiment = workspace / "src/flowstate/training/experiment.py"
     experiment.parent.mkdir(parents=True)
     experiment.write_text(
         "def train():\n"
@@ -72,6 +74,51 @@ def test_training_entrypoint_guard_accepts_executable_contract(tmp_path: Path) -
     )
 
     workflow._verify_training_entrypoint(workspace)
+
+
+@pytest.mark.asyncio
+async def test_prepare_bootstraps_curated_code_bank_under_training_data(tmp_path: Path) -> None:
+    # Every research() call now requires cited evidence to carry verified
+    # code; the curated bank is the only source guaranteed to be present
+    # before the very first research() call (live Hugging Face Papers
+    # discovery is hard-checked per-experiment instead), so prepare() must
+    # resolve it once, up front -- not leave it as a manual CLI step nobody
+    # ran. Logged under `train_data` -- this is still data preparation, so
+    # it groups with "Training and validation data contract locked" in the
+    # Autonomy Log -- and never under `ledger` ("Save Run Evidence"), whose
+    # own real "Succeeded" status only ever fires much later when B0 is
+    # registered as the frontier baseline (the exact premature-status bug
+    # just fixed for Check Data Safety, now avoided here too).
+    from flowstate.knowledge.config import repository_root
+    from flowstate.knowledge.models import IngestionReceipt
+
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
+    session_id = ledger.create_session()
+    calls = {"count": 0}
+
+    async def fake_ensure_curated_bank() -> list[IngestionReceipt]:
+        calls["count"] += 1
+        return [IngestionReceipt(
+            receipt_id="ing-test", paper_id="arxiv:bpr", work_key="arxiv:bpr",
+            source="curated", outcome="updated", content_hash="a" * 64,
+        )]
+
+    services = SimpleNamespace(
+        contract=load_challenge_contract(),
+        repository=repository_root(),
+        ledger=ledger,
+        knowledge=SimpleNamespace(ingestion=SimpleNamespace(ensure_curated_bank=fake_ensure_curated_bank)),
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    result = await workflow.prepare({"session_id": session_id, "run_id": "workflow"})
+
+    assert calls["count"] == 1
+    assert result["status"] == "running"
+    bank_events = [event for event in ledger.events(session_id) if event.event_type == "curated_bank_ready"]
+    assert len(bank_events) == 1
+    assert bank_events[0].component_id == "train_data"
+    assert bank_events[0].payload["receipts"][0]["paper_id"] == "arxiv:bpr"
 
 
 @pytest.mark.asyncio
@@ -137,7 +184,7 @@ def test_ranking_guard_rejects_different_scores_with_identical_within_user_order
 
 @pytest.mark.asyncio
 async def test_execute_short_circuits_before_expensive_tiers_on_dead_patch(tmp_path: Path, monkeypatch) -> None:
-    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
 
     contract = ExperimentContract(
         experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
@@ -210,7 +257,7 @@ async def test_execute_contains_unhandled_exceptions_as_recoverable_errors(tmp_p
     # graph node entirely -- LangGraph recorded an internal __error__ write and
     # the whole run died with no ledger event, no recovery, and no visible
     # failure. It must become a routed, recoverable error instead.
-    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches, PatchProposal
 
     contract = ExperimentContract(
         experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
@@ -265,6 +312,10 @@ def test_recover_node_has_outgoing_edges_back_into_the_loop() -> None:
     assert ("recover", "__end__") in edges
     # Code-level failures retry the patch for the same contract.
     assert ("recover", "code") in edges
+    # Byte-identical full-validation predictions are implementation failures,
+    # so evaluation must be able to recover instead of counting convergence.
+    assert ("evaluate", "recover") in edges
+    assert ("evaluate", "decide") in edges
 
 
 def test_activation_selects_the_loss_branch_the_patch_introduced(tmp_path: Path) -> None:
@@ -274,9 +325,9 @@ def test_activation_selects_the_loss_branch_the_patch_introduced(tmp_path: Path)
     # unreachable. Two rounds of explicit prompting plus feeding the exact
     # diagnosis back did not stop it, so the switch is thrown deterministically.
     workspace = tmp_path / "ws"
-    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "src/flowstate/training").mkdir(parents=True)
     (workspace / "configs/experiments").mkdir(parents=True)
-    experiment = workspace / "src/rigor_rs/training/experiment.py"
+    experiment = workspace / "src/flowstate/training/experiment.py"
     config = workspace / "configs/experiments/bce_fm.yaml"
 
     head_source = 'if loss_name == "bpr":\n    pass\n'
@@ -289,7 +340,7 @@ def test_activation_selects_the_loss_branch_the_patch_introduced(tmp_path: Path)
     ))
     workflow = AutonomousResearchWorkflow(services)
 
-    assert workflow._activate_patch_capability(workspace) == "bpr_longview"
+    assert workflow._activate_patch_capability(workspace, head_source) == "bpr_longview"
     updated = config.read_text(encoding="utf-8")
     assert "loss: bpr_longview" in updated
     # Comments and sibling keys must survive the in-place edit.
@@ -297,17 +348,17 @@ def test_activation_selects_the_loss_branch_the_patch_introduced(tmp_path: Path)
     assert "epochs: 20" in updated
 
     # Already-selected: nothing further to do.
-    assert workflow._activate_patch_capability(workspace) is None
+    assert workflow._activate_patch_capability(workspace, head_source) is None
 
 
 def test_activation_ignores_patches_that_add_no_loss_branch(tmp_path: Path) -> None:
     # A pure architecture change must not be touched just because HEAD already
     # carries its own already-unselected branch.
     workspace = tmp_path / "ws2"
-    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "src/flowstate/training").mkdir(parents=True)
     (workspace / "configs/experiments").mkdir(parents=True)
     source = 'if loss_name == "bpr":\n    pass\n'
-    (workspace / "src/rigor_rs/training/experiment.py").write_text(source, encoding="utf-8")
+    (workspace / "src/flowstate/training/experiment.py").write_text(source, encoding="utf-8")
     config = workspace / "configs/experiments/bce_fm.yaml"
     config.write_text("training:\n  loss: bce\n", encoding="utf-8")
 
@@ -317,15 +368,50 @@ def test_activation_ignores_patches_that_add_no_loss_branch(tmp_path: Path) -> N
     ))
     workflow = AutonomousResearchWorkflow(services)
 
-    assert workflow._activate_patch_capability(workspace) is None
+    assert workflow._activate_patch_capability(workspace, source) is None
+    assert "loss: bce" in config.read_text(encoding="utf-8")
+
+
+def test_activation_uses_agent_source_snapshot_not_stale_git_head(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws-uncommitted"
+    (workspace / "src/flowstate/training").mkdir(parents=True)
+    (workspace / "configs/experiments").mkdir(parents=True)
+    existing_source = (
+        'if loss_name == "bpr":\n'
+        '    run_bpr()\n'
+        'else:\n'
+        '    run_bce()\n'
+    )
+    patched_source = existing_source.replace("run_bce()", "run_recency_weighted_bce()")
+    (workspace / "src/flowstate/training/experiment.py").write_text(
+        patched_source,
+        encoding="utf-8",
+    )
+    config = workspace / "configs/experiments/bce_fm.yaml"
+    config.write_text(
+        "training:\n  loss: bce\n  recency_half_life_days: 7\n",
+        encoding="utf-8",
+    )
+    workflow = AutonomousResearchWorkflow(
+        SimpleNamespace(
+            workspace=SimpleNamespace(
+                file_at_head=lambda *_args: "",
+                revert=lambda _workspace: pytest.fail("existing branch must not be activated"),
+            )
+        )
+    )
+
+    activated = workflow._activate_patch_capability(workspace, existing_source)
+
+    assert activated is None
     assert "loss: bce" in config.read_text(encoding="utf-8")
 
 
 def test_activation_raises_when_multiple_new_branches_are_ambiguous(tmp_path: Path) -> None:
     workspace = tmp_path / "ws3"
-    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "src/flowstate/training").mkdir(parents=True)
     (workspace / "configs/experiments").mkdir(parents=True)
-    (workspace / "src/rigor_rs/training/experiment.py").write_text(
+    (workspace / "src/flowstate/training/experiment.py").write_text(
         'if loss_name == "a":\n    pass\nif loss_name == "b":\n    pass\n', encoding="utf-8"
     )
     (workspace / "configs/experiments/bce_fm.yaml").write_text("training:\n  loss: bce\n", encoding="utf-8")
@@ -338,12 +424,12 @@ def test_activation_raises_when_multiple_new_branches_are_ambiguous(tmp_path: Pa
     workflow = AutonomousResearchWorkflow(services)
 
     with pytest.raises(ValueError, match="ambiguous activation"):
-        workflow._activate_patch_capability(workspace)
+        workflow._activate_patch_capability(workspace, "")
     assert reverted["value"], "must revert so the repaired patch still applies"
 
 
 def _minimal_contract(allowed_files: list[str]):
-    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
     return ExperimentContract(
         experiment_id="E1", parent_run_id="B0", hypothesis="Some sufficiently long hypothesis text for validation",
         observed_evidence_ids=[], primary_change="test change", allowed_files=allowed_files,
@@ -364,18 +450,18 @@ def test_new_symbol_wiring_check_rejects_a_class_train_never_calls(tmp_path: Pat
     # discovered a bit-identical proxy ranking with only a generic error.
     # This must be caught immediately, for free, right after patch apply.
     workspace = tmp_path / "ws"
-    (workspace / "src/rigor_rs/training").mkdir(parents=True)
-    (workspace / "src/rigor_rs/models").mkdir(parents=True)
-    (workspace / "src/rigor_rs/training/experiment.py").write_text(
-        "from rigor_rs.models.experimental import FactorizationMachine\n"
+    (workspace / "src/flowstate/training").mkdir(parents=True)
+    (workspace / "src/flowstate/models").mkdir(parents=True)
+    (workspace / "src/flowstate/training/experiment.py").write_text(
+        "from flowstate.models.experimental import FactorizationMachine\n"
         "def train():\n    model = FactorizationMachine()\n",
         encoding="utf-8",
     )
-    (workspace / "src/rigor_rs/models/experimental.py").write_text(
+    (workspace / "src/flowstate/models/experimental.py").write_text(
         "class FactorizationMachine:\n    pass\n\n\nclass MMoEFactorizationMachine:\n    pass\n",
         encoding="utf-8",
     )
-    contract = _minimal_contract(["src/rigor_rs/models/experimental.py", "src/rigor_rs/training/experiment.py"])
+    contract = _minimal_contract(["src/flowstate/models/experimental.py", "src/flowstate/training/experiment.py"])
 
     reverted = {"value": False}
     services = SimpleNamespace(workspace=SimpleNamespace(
@@ -387,7 +473,7 @@ def test_new_symbol_wiring_check_rejects_a_class_train_never_calls(tmp_path: Pat
     with pytest.raises(ValueError, match="inert patch") as excinfo:
         workflow._verify_new_symbols_wired(workspace, contract)
     assert "MMoEFactorizationMachine" in str(excinfo.value)
-    assert "src/rigor_rs/models/experimental.py" in str(excinfo.value)
+    assert "src/flowstate/models/experimental.py" in str(excinfo.value)
     assert reverted["value"]
     # This exact wording must classify as behavior_unchanged, not infrastructure,
     # so the ledger routes it through the same bounded code retry as the tier2
@@ -398,17 +484,17 @@ def test_new_symbol_wiring_check_rejects_a_class_train_never_calls(tmp_path: Pat
 
 def test_new_symbol_wiring_check_passes_when_train_references_the_new_class(tmp_path: Path) -> None:
     workspace = tmp_path / "ws2"
-    (workspace / "src/rigor_rs/training").mkdir(parents=True)
-    (workspace / "src/rigor_rs/models").mkdir(parents=True)
-    (workspace / "src/rigor_rs/training/experiment.py").write_text(
-        "from rigor_rs.models.experimental import MMoEFactorizationMachine\n"
+    (workspace / "src/flowstate/training").mkdir(parents=True)
+    (workspace / "src/flowstate/models").mkdir(parents=True)
+    (workspace / "src/flowstate/training/experiment.py").write_text(
+        "from flowstate.models.experimental import MMoEFactorizationMachine\n"
         "def train():\n    model = MMoEFactorizationMachine()\n",
         encoding="utf-8",
     )
-    (workspace / "src/rigor_rs/models/experimental.py").write_text(
+    (workspace / "src/flowstate/models/experimental.py").write_text(
         "class MMoEFactorizationMachine:\n    pass\n", encoding="utf-8",
     )
-    contract = _minimal_contract(["src/rigor_rs/models/experimental.py", "src/rigor_rs/training/experiment.py"])
+    contract = _minimal_contract(["src/flowstate/models/experimental.py", "src/flowstate/training/experiment.py"])
 
     services = SimpleNamespace(workspace=SimpleNamespace(
         file_at_head=lambda _ws, _rel: "",
@@ -423,15 +509,15 @@ def test_new_symbol_wiring_check_ignores_test_only_helpers(tmp_path: Path) -> No
     # A helper class defined only for a unit test is not a training capability;
     # it must not be flagged just because train() never calls it.
     workspace = tmp_path / "ws3"
-    (workspace / "src/rigor_rs/training").mkdir(parents=True)
+    (workspace / "src/flowstate/training").mkdir(parents=True)
     (workspace / "tests/workflow").mkdir(parents=True)
-    (workspace / "src/rigor_rs/training/experiment.py").write_text(
+    (workspace / "src/flowstate/training/experiment.py").write_text(
         "def train():\n    pass\n", encoding="utf-8",
     )
     (workspace / "tests/workflow/test_experiment.py").write_text(
         "class _FakeLoader:\n    pass\n", encoding="utf-8",
     )
-    contract = _minimal_contract(["src/rigor_rs/training/experiment.py", "tests/workflow/test_experiment.py"])
+    contract = _minimal_contract(["src/flowstate/training/experiment.py", "tests/workflow/test_experiment.py"])
 
     services = SimpleNamespace(workspace=SimpleNamespace(
         file_at_head=lambda _ws, _rel: "",
@@ -443,12 +529,95 @@ def test_new_symbol_wiring_check_ignores_test_only_helpers(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_code_agent_patch_call_has_one_ten_minute_deadline(monkeypatch) -> None:
+    observed: dict[str, Any] = {}
+
+    def propose_patch(_contract, context):
+        observed["context"] = context
+
+        async def hang():
+            await asyncio.sleep(3600)
+
+        return hang()
+
+    workflow = AutonomousResearchWorkflow(
+        SimpleNamespace(agents=SimpleNamespace(propose_patch=propose_patch))
+    )
+
+    async def fake_wait_for(coro, timeout):
+        observed["timeout"] = timeout
+        coro.close()
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr("flowstate.orchestration.graph.asyncio.wait_for", fake_wait_for)
+
+    deadline = time.monotonic() + workflow.CODE_STAGE_TIMEOUT_SECONDS
+    with pytest.raises(TimeoutError, match="600-second code-writing limit"):
+        await workflow._propose_patch_before_deadline(object(), {}, deadline)
+
+    assert 599.0 <= observed["timeout"] <= 600.0
+    context = observed["context"]
+    assert isinstance(context, dict)
+    assert 599 <= context["code_writing_seconds_remaining"] <= 600
+
+
+@pytest.mark.asyncio
+async def test_code_node_labels_stage_deadline_for_contract_abandonment(tmp_path: Path, monkeypatch) -> None:
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+
+    contract = ExperimentContract(
+        experiment_id="E-timeout", parent_run_id="B0", hypothesis="Pairwise ranking loss",
+        observed_evidence_ids=[], primary_change="swap to pairwise loss", allowed_files=["a.py"],
+        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+        fallback_run_id="B0", recovery_attempt_limit=2,
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    async def reference_code_for_experiment(*_args, **_kwargs):
+        return "", []
+
+    workflow = AutonomousResearchWorkflow(SimpleNamespace(
+        workspace=SimpleNamespace(create=lambda *_args, **_kwargs: (workspace, "parent")),
+        knowledge=SimpleNamespace(retrieval=SimpleNamespace(
+            reference_code_for_experiment=reference_code_for_experiment
+        )),
+        bedrock_output_limit=10_000,
+        recovery=RecoveryController(),
+    ))
+
+    async def control_gate(_state):
+        return None
+
+    async def timed_out(_contract, _context, _deadline):
+        raise TimeoutError("Code Agent exceeded the 600-second code-writing limit")
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_propose_patch_before_deadline", timed_out)
+    monkeypatch.setattr(workflow, "_event", lambda *_args, **_kwargs: None)
+
+    result = await workflow.code({
+        "session_id": "s", "run_id": "run-timeout",
+        "experiment_contract": contract.model_dump(mode="json"),
+        "agent_output_tokens": 0, "recovery_attempt": 0,
+    })
+
+    assert result["failure_stage"] == "code"
+    assert result["error_category"] == "code_stage_timeout"
+    assert "600-second code-writing limit" in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_research(tmp_path: Path, monkeypatch) -> None:
     # Reproduced in session-20260830T062240630878Z-599bf0db: the live inert
     # message said "ranking behavior", while the classifier only recognized
     # the obsolete phrase "training behavior". Eight code failures were
     # misclassified as infrastructure and each burned a fresh research plan.
-    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
     contract = ExperimentContract(
         experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
@@ -500,8 +669,53 @@ async def test_inert_patch_retries_code_with_the_diagnosis_instead_of_new_resear
 
 
 @pytest.mark.asyncio
+async def test_code_agent_timeout_abandons_contract_and_returns_to_research(monkeypatch) -> None:
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+
+    contract = ExperimentContract(
+        experiment_id="E-timeout", parent_run_id="B0", hypothesis="Pairwise ranking loss",
+        observed_evidence_ids=[], primary_change="swap to pairwise loss", allowed_files=["a.py"],
+        prohibited_files=[], predicted_gauc_direction="up", predicted_ndcg_at_5_direction="up",
+        falsifiers=["regression"], outcome_branches=OutcomeBranches(success="retain", ambiguous="confirm", regression="reject"),
+        comparator_run_id="B0", minimum_primary_improvement=0.002, guardrails=["official evaluator"],
+        budget=ExperimentBudget(wall_seconds=60, gpu_hours=0, bedrock_input_tokens=1000, bedrock_output_tokens=1000),
+        fallback_run_id="B0", recovery_attempt_limit=2,
+    )
+    recovery_events: list[dict] = []
+    workflow = AutonomousResearchWorkflow(SimpleNamespace(
+        recovery=RecoveryController(), maximum_experiments=10,
+        ledger=SimpleNamespace(store_recovery_receipt=lambda *_args: None),
+    ))
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(
+        workflow, "_event",
+        lambda _state, _component, _stage, _event_type, _status, _summary, payload=None: recovery_events.append(payload or {}),
+    )
+    state = {
+        "session_id": "s", "run_id": "run-timeout",
+        "error": "TimeoutError: Code Agent exceeded the 600-second code-writing limit",
+        "error_category": "code_stage_timeout", "failure_stage": "code",
+        "experiment_contract": contract.model_dump(mode="json"),
+        "experiment_count": 0, "experiment_attempt_count": 1, "recovery_attempt": 0,
+        "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+    }
+
+    result = await workflow.recover(state)
+
+    assert result["retry_target"] == "research"
+    assert result["last_execution_error"] == ""
+    assert result["recovery_action"] == "abandon_timed_out_contract"
+    assert workflow._route_recovery({**state, **result}) == "research"
+    assert recovery_events[-1]["retry_target"] == "research"
+
+
+@pytest.mark.asyncio
 async def test_exhausted_code_retries_fall_back_to_fresh_research(tmp_path: Path, monkeypatch) -> None:
-    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
     contract = ExperimentContract(
         experiment_id="E1", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
@@ -554,6 +768,7 @@ async def test_research_stops_at_completed_experiment_budget(monkeypatch) -> Non
         knowledge=SimpleNamespace(),
         agents=SimpleNamespace(),
     )
+
     workflow = AutonomousResearchWorkflow(services)
 
     async def control_gate(_state):
@@ -578,10 +793,112 @@ async def test_research_stops_at_completed_experiment_budget(monkeypatch) -> Non
 
 
 
+@pytest.mark.asyncio
+async def test_code_agent_infeasible_contract_returns_to_research(monkeypatch) -> None:
+    contract = _minimal_contract(["a.py"])
+    workflow = AutonomousResearchWorkflow(
+        SimpleNamespace(
+            recovery=RecoveryController(),
+            maximum_experiments=10,
+            ledger=SimpleNamespace(store_recovery_receipt=lambda *_args: None),
+        )
+    )
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(workflow, "_event", lambda *_args, **_kwargs: None)
+    state = {
+        "session_id": "s",
+        "run_id": "run-scope",
+        "error": "ExperimentScopeError: full transformer pipeline cannot fit",
+        "error_category": "experiment_scope",
+        "failure_stage": "code",
+        "experiment_contract": contract.model_dump(mode="json"),
+        "experiment_count": 0,
+        "experiment_attempt_count": 1,
+        "recovery_attempt": 0,
+        "frontier": {
+            "validation_best": "B0",
+            "stable_fallback": "B0",
+            "accepted_parent": "B0",
+            "locked": False,
+        },
+    }
+
+    result = await workflow.recover(state)
+
+    assert result["retry_target"] == "research"
+    assert result["recovery_action"] == "abandon_oversized_contract"
+
+
 def test_route_recovery_retries_unless_explicitly_stopped() -> None:
     workflow = AutonomousResearchWorkflow(SimpleNamespace())
     assert workflow._route_recovery({"stop": False}) == "research"
     assert workflow._route_recovery({"stop": True}) == "stop"
+
+
+def test_research_history_exposes_code_timeout_as_scope_evidence(tmp_path: Path) -> None:
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
+    session_id = ledger.create_session()
+    contract = {
+        "experiment_id": "E-sasrec",
+        "hypothesis": "Build a full SASRec history pipeline",
+        "primary_change": "Add SASRec transformer",
+    }
+    ledger.append_event(
+        session_id=session_id,
+        run_id="run-sasrec",
+        component_id="scientist",
+        execution_id="research-1",
+        stage="research",
+        event_type="plan",
+        status=ComponentStatus.SUCCEEDED,
+        plain_summary="One bounded experiment selected",
+        payload={"contract": contract},
+    )
+    ledger.append_event(
+        session_id=session_id,
+        run_id="run-sasrec",
+        component_id="coder",
+        execution_id="code-1",
+        stage="patch",
+        event_type="failed",
+        status=ComponentStatus.FAILED,
+        plain_summary="Code Agent exceeded the 600-second code-writing limit",
+        payload={"error": "TimeoutError"},
+    )
+    ledger.append_event(
+        session_id=session_id,
+        run_id="run-sasrec",
+        component_id="recovery",
+        execution_id="recovery-1",
+        stage="recovery",
+        event_type="recovery",
+        status=ComponentStatus.READY,
+        plain_summary="abandon_timed_out_contract",
+        payload={
+            "category": "code_stage_timeout",
+            "retry_target": "research",
+        },
+    )
+    workflow = AutonomousResearchWorkflow(SimpleNamespace(ledger=ledger))
+
+    summaries = workflow._prior_run_summaries(session_id, [contract])
+
+    assert summaries == [
+        {
+            **contract,
+            "run_id": "run-sasrec",
+            "outcome": "abandoned_after_code_timeout",
+            "failure_stage": "code",
+            "failure_category": "code_stage_timeout",
+            "failure_summary": "Code Agent exceeded the 600-second code-writing limit",
+            "recovery_action": "abandon_timed_out_contract",
+            "retry_target": "research",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -614,8 +931,8 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
             seen_contexts.append(context)
             if fail_next["value"]:
                 raise ValueError("Research Agent cited evidence not supplied by MCP")
-            from rigor_rs.agents.azure_foundry import AgentUsage
-            from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+            from flowstate.agents.azure_foundry import AgentUsage
+            from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
             contract = ExperimentContract(
                 experiment_id="E2", parent_run_id="B0", hypothesis="A genuinely new mechanism, not repeated",
                 observed_evidence_ids=[], primary_change="try something new", allowed_files=["a.py"],
@@ -658,7 +975,18 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
     failure_result = await workflow.research(base_state)
     assert failure_result["recovery_attempt"] == 0
     assert failure_result["error"]
-    assert seen_contexts[-1]["runs"] == [prior_contract]
+    assert seen_contexts[-1]["runs"][0] == {
+        **prior_contract,
+        "run_id": None,
+        "outcome": "unknown",
+        "failure_stage": None,
+        "failure_category": None,
+        "failure_summary": None,
+        "recovery_action": None,
+        "retry_target": None,
+    }
+    assert seen_contexts[-1]["execution_constraints"]["code_writing_wall_seconds"] == 600
+    assert seen_contexts[-1]["execution_constraints"]["fast_proxy_wall_seconds"] == 600
 
     fail_next["value"] = False
     success_result = await workflow.research({**base_state, "recovery_attempt": 2})
@@ -673,9 +1001,11 @@ async def test_research_query_rotates_priority_area_by_experiment_count(tmp_path
     # cited only 5 distinct paper_ids total out of 20 curated papers spanning
     # 7 priority areas. The query and its priority_area filter must now vary
     # with how many contracts this session has already produced. No
-    # trust_tier filter -- curated and discovered (OpenAlex) papers are both
-    # ranked and handed to the agent -- and every call bypasses the 7-day
-    # query cache so it genuinely searches again each experiment.
+    # trust_tier filter -- curated and discovered (Hugging Face) papers are both
+    # ranked and handed to the agent -- but every call now requires the
+    # cited evidence to carry verified code (EvidenceFilters(require_code=True)),
+    # and every call bypasses the 7-day query cache so it genuinely searches
+    # again each experiment.
     profile_path = tmp_path / "profile.json"
     profile_path.write_text("{}", encoding="utf-8")
 
@@ -693,8 +1023,8 @@ async def test_research_query_rotates_priority_area_by_experiment_count(tmp_path
             seen_calls.append({"hypothesis": hypothesis, "filters": kwargs.get("filters"), "bypass_cache": kwargs.get("bypass_cache")})
             return FakeCard()
 
-    from rigor_rs.agents.azure_foundry import AgentUsage
-    from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+    from flowstate.agents.azure_foundry import AgentUsage
+    from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
 
     class FakeAgents:
         async def research(self, _context):
@@ -743,7 +1073,7 @@ async def test_research_query_rotates_priority_area_by_experiment_count(tmp_path
         await workflow.research(state)
         expected_area = rotation[i % len(rotation)]
         assert seen_calls[-1]["hypothesis"] == queries[expected_area]
-        assert seen_calls[-1]["filters"] is None
+        assert seen_calls[-1]["filters"] == EvidenceFilters(require_code=True)
         assert seen_calls[-1]["bypass_cache"] is True
 
     # Every call in the cycle must have used a distinct query.
@@ -782,8 +1112,8 @@ async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: 
     class FakeAgents:
         async def research(self, context):
             seen_contexts.append(context)
-            from rigor_rs.agents.azure_foundry import AgentUsage
-            from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+            from flowstate.agents.azure_foundry import AgentUsage
+            from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
             contract = ExperimentContract(
                 experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
                 observed_evidence_ids=[paper.content_hash], primary_change="swap to BPR", allowed_files=["a.py"],
@@ -849,8 +1179,8 @@ async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, m
 
     class FakeAgents:
         async def research(self, context):
-            from rigor_rs.agents.azure_foundry import AgentUsage
-            from rigor_rs.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
+            from flowstate.agents.azure_foundry import AgentUsage
+            from flowstate.contract.models import ExperimentBudget, ExperimentContract, OutcomeBranches
             contract = ExperimentContract(
                 experiment_id="E2", parent_run_id="B0", hypothesis="Pairwise BPR ranking loss for long_view",
                 observed_evidence_ids=["fabricated-paper-id"], primary_change="swap to BPR", allowed_files=["a.py"],
@@ -897,7 +1227,7 @@ async def test_baseline_runs_label_shuffle_control_and_halts_when_suspicious(tmp
     # Plan_Workflow §5.3 requires the label-shuffle negative control inside the
     # run. It previously only existed in the `reproduce-baseline` CLI, so the
     # "Check Data Safety" component never executed during `run`.
-    from rigor_rs.contract.models import MetricReceipt
+    from flowstate.contract.models import MetricReceipt
 
     receipt = MetricReceipt(
         receipt_id="m", run_id="harness", prediction_artifact_id="memory", evaluator_hash="h",
@@ -1024,6 +1354,9 @@ async def test_baseline_evidence_is_persisted_before_sanity_check_failure(tmp_pa
     assert ("trainer", "completed", ComponentStatus.SUCCEEDED) in [
         (component, event_type, status) for component, event_type, status, _payload in events
     ]
+    assert ("phase_guard", "sanity_checks", ComponentStatus.RUNNING) in [
+        (component, event_type, status) for component, event_type, status, _payload in events
+    ]
     failure = events[-1]
     assert failure[:3] == ("phase_guard", "failed", ComponentStatus.FAILED)
     assert failure[3]["baseline_result"] == baseline_result
@@ -1040,7 +1373,7 @@ async def test_baseline_comparator_averages_all_five_seeds_not_seed_zero(tmp_pat
     # "Official FM Baseline (5 seeds)" table showed the honest mean of all
     # five -- two different numbers, only one of which actually drove
     # decisions. Reproduced with the session's real seed values.
-    from rigor_rs.contract.models import MetricReceipt
+    from flowstate.contract.models import MetricReceipt
 
     seed_values = [
         (0.6671326321610643, 0.5358048805448538, 0.601468756352959),
@@ -1093,9 +1426,9 @@ async def test_baseline_comparator_averages_all_five_seeds_not_seed_zero(tmp_pat
 
 @pytest.mark.asyncio
 async def test_baseline_terminal_failure_is_not_attributed_to_decision_agent(tmp_path: Path, monkeypatch) -> None:
-    import rigor_rs.orchestration.graph as graph_module
+    import flowstate.orchestration.graph as graph_module
 
-    ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
     session = ledger.create_session()
 
     class FakeSaver:
@@ -1141,7 +1474,7 @@ async def test_baseline_terminal_failure_is_not_attributed_to_decision_agent(tmp
     assert "baseline execution" in terminal.plain_summary
 
 def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:
-    ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
     session = ledger.create_session()
     transform = tmp_path / "transform"; transform.mkdir()
     (transform / "transform_state.json").write_text("{}", encoding="utf-8")
@@ -1180,7 +1513,7 @@ def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:
         "users": np.asarray(["u"]), "videos": np.asarray(["v"]),
     }, ["u"], ["v"]))
     monkeypatch.setattr(
-        "rigor_rs.reporting.finalizer.subprocess.run",
+        "flowstate.reporting.finalizer.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="✓ ok".encode("utf-8"), stderr=b""),
     )
     result = finalizer.package(session)
@@ -1198,8 +1531,17 @@ def test_finalization_is_one_way(tmp_path: Path, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_completed_experiment_budget_increments_only_after_official_validation(tmp_path: Path, monkeypatch) -> None:
-    from rigor_rs.contract.models import MetricReceipt
+@pytest.mark.parametrize(
+    ("duplicate_of_run_id", "expected_count"),
+    [(None, 4), ("run-prior", None)],
+)
+async def test_completed_experiment_budget_increments_only_after_official_validation(
+    tmp_path: Path,
+    monkeypatch,
+    duplicate_of_run_id: str | None,
+    expected_count: int | None,
+) -> None:
+    from flowstate.contract.models import MetricReceipt
 
     transform = tmp_path / "transform"
     model = tmp_path / "tier4" / "model"
@@ -1225,6 +1567,7 @@ async def test_completed_experiment_budget_increments_only_after_official_valida
         ),
         ledger=SimpleNamespace(
             store_metric_receipt=lambda *_args: None,
+            prior_run_for_prediction=lambda *_args: duplicate_of_run_id,
             store_resource_sample=lambda *_args: None,
             manual_intervention_count=lambda _session: 0,
         ),
@@ -1249,5 +1592,13 @@ async def test_completed_experiment_budget_increments_only_after_official_valida
 
     result = await workflow.evaluate(state)
 
-    assert result["experiment_count"] == 4
+    if expected_count is None:
+        assert "experiment_count" not in result
+        assert result["error_category"] == "behavior_unchanged"
+        assert result["duplicate_prediction_run_id"] == "run-prior"
+        assert workflow._route_evaluate(result) == "recover"
+    else:
+        assert result["experiment_count"] == expected_count
+        assert result["error"] == ""
+        assert workflow._route_evaluate(result) == "decide"
     assert state["experiment_attempt_count"] == 9

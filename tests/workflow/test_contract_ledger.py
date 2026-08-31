@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from rigor_rs.contract.challenge import load_challenge_contract
-from rigor_rs.contract.models import ComponentStatus
-from rigor_rs.ledger.workflow import WorkflowLedger
+from flowstate.contract.challenge import load_challenge_contract
+from flowstate.contract.models import ComponentStatus
+from flowstate.ledger.workflow import WorkflowLedger
 
 
 def test_challenge_contract_derives_official_values() -> None:
@@ -20,7 +20,7 @@ def test_challenge_contract_derives_official_values() -> None:
 
 
 def test_ledger_is_append_only_hash_chained_and_replayable(tmp_path: Path) -> None:
-    ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
     session = ledger.create_session()
     first = ledger.append_event(
         session_id=session, run_id="B0", component_id="trainer", execution_id="exec-1",
@@ -41,7 +41,7 @@ def test_ledger_is_append_only_hash_chained_and_replayable(tmp_path: Path) -> No
     assert [event.event_id for event in ledger.events(session, after_sequence=1)] == [second.event_id]
 
 def test_component_events_do_not_overwrite_workflow_lifecycle(tmp_path: Path) -> None:
-    ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
     session = ledger.create_session()
     ledger.set_session_status(session, ComponentStatus.RUNNING)
     ledger.append_event(
@@ -63,7 +63,7 @@ def test_manual_interventions_are_recorded_and_counted(tmp_path: Path) -> None:
     # The count was previously always 0: nothing ever wrote the
     # manual_interventions table, so "zero human intervention" was an
     # unverifiable claim. Pause/resume/cancel are the explicit policy.
-    ledger = WorkflowLedger(tmp_path / "rigor.sqlite3")
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
     session = ledger.create_session()
     ledger.set_session_status(session, ComponentStatus.RUNNING)
     assert ledger.snapshot(session).manual_interventions == 0

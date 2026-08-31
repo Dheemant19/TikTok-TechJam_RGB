@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import { TopToolbar } from "./components/TopToolbar";
+import { RouteEdgeNavigation } from "./components/RouteEdgeNavigation";
 import { LiveWorkflow } from "./routes/LiveWorkflow";
 import { DataProfile } from "./routes/DataProfile";
 import { Experiments } from "./routes/Experiments";
@@ -16,9 +17,9 @@ export function App() {
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="app-shell">
       <TopToolbar pillFluidity={0.7} />
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <main className="app-shell__content">
         <Routes>
           <Route path="/" element={<LiveWorkflow />} />
           <Route path="/data-profile" element={<DataProfile />} />
@@ -28,7 +29,8 @@ export function App() {
           <Route path="/package" element={<FinalPackage />} />
           <Route path="/autonomy" element={<AutonomyLog />} />
         </Routes>
-      </div>
+      </main>
+      <RouteEdgeNavigation />
     </div>
   );
 }

@@ -768,7 +768,7 @@ Keep the current mobile workflow safety behavior from the repository.
 
 ## Visual design
 
-Preserve the existing RIGOR-RS visual language:
+Preserve the existing FlowState visual language:
 
 - light neutral surfaces
 - subtle dotted workflow background

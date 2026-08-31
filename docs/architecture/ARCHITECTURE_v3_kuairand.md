@@ -1,6 +1,6 @@
-# RIGOR-RS: Autonomous ML Research Architecture v3 (KuaiRand-Pure)
+# FlowState: Autonomous ML Research Architecture v3 (KuaiRand-Pure)
 
-**RIGOR-RS** stands for **Reproducible, Integrity-Gated, Outcome-Registered Research for Recommender Systems**. It is an autonomous ML research agent architecture designed for the **TikTok TechJam 2026 Track #2 Challenge** on the **KuaiRand-Pure** benchmark.
+**FlowState** is a Reproducible, Integrity-Gated, Outcome-Registered Research system for Recommender Systems. It is an autonomous ML research agent architecture designed for the **TikTok TechJam 2026 Track #2 Challenge** on the **KuaiRand-Pure** benchmark.
 
 This document represents the official Architecture v3 specification, incorporating all new design decisions, the Research Knowledge MCP layer, multi-tier filter-only proxy pruning, transactional rollback mechanisms, and exact alignment with organizer problem constraints (`GAUC`, `nDCG@5`, `long_view` relevance label, and within-user ranking).
 
@@ -10,7 +10,7 @@ This document represents the official Architecture v3 specification, incorporati
 
 The complete end-to-end architecture is illustrated below:
 
-![RIGOR-RS Core Architecture v3](./diagrams/ARCHITECTURE_v3_kuairand.svg)
+![FlowState Core Architecture v3](./diagrams/ARCHITECTURE_v3_kuairand.svg)
 
 *High-resolution raster version available at:* [`docs/architecture/diagrams/ARCHITECTURE_v3_kuairand.png`](./diagrams/ARCHITECTURE_v3_kuairand.png)
 
@@ -120,7 +120,7 @@ Implements 4 absolute sequential validation gates (never relative "bottom perfor
 
 ## 4. Layered System Architecture
 
-The RIGOR-RS v3 architecture is partitioned into four decoupled layers:
+The FlowState v3 architecture is partitioned into four decoupled layers:
 
 ### Layer 1: Data, Artifact & Provenance Layer
 - **Train Split**: `log_standard_4_08_to_4_21_pure.csv` (1.14M rows, 14 days). Tainted as `TRAIN_FEATURES` and `TRAIN_LABELS`.

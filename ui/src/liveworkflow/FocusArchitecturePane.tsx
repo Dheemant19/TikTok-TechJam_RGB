@@ -1,8 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { GROUP_LABELS, GROUP_ORDER, NODES, type NodeStatus } from "../data/nodeRegistry";
-import { contentBounds, laneColorFor, NODE_H, NODE_W, type Vec2 } from "./laneData";
+import { EDGES, GROUP_LABELS, GROUP_ORDER, LOOP_EDGES, NODES, type NodeStatus } from "../data/nodeRegistry";
+import { contentBounds, laneColorFor, loopClearanceY, NODE_H, NODE_W, type Vec2 } from "./laneData";
 import { EdgesLayer } from "./EdgesLayer";
 import { FOCUS_NODE_H, FOCUS_NODE_W, NodeCard } from "./NodeCard";
+import { useRunStore } from "./runStore";
 
 interface Props {
   positions: Record<string, Vec2>;
@@ -56,9 +57,14 @@ export function FocusArchitecturePane({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [surface, setSurface] = useState<SurfaceSize>({ width: 0, height: 0 });
   const bounds = useMemo(() => contentBounds(positions), [positions]);
+  // The loop arch can legitimately peek above the tightest node bounds;
+  // reserve exactly the room `EdgesLayer` will actually use (same helper),
+  // rather than a fixed guess that either clips the arch or over-reserves.
+  const visualMinY = Math.min(bounds.minY, ...LOOP_EDGES.map(([from, to]) => loopClearanceY(positions, from, to)));
   const boundsWidth = Math.max(1, bounds.maxX - bounds.minX);
-  const boundsHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const boundsHeight = Math.max(1, bounds.maxY - visualMinY);
   const selectedNode = NODES.find((node) => node.id === selectedNodeId) ?? NODES[0];
+  const activeTransitionEdge = useRunStore((state) => state.activeTransitionEdge);
 
   useLayoutEffect(() => {
     const element = surfaceRef.current;
@@ -81,7 +87,7 @@ export function FocusArchitecturePane({
     ? Math.min(0.86, Math.max(0.26, Math.min((surface.width - 58) / boundsWidth, (surface.height - 98) / boundsHeight)))
     : 0.42;
   const worldLeft = (surface.width - boundsWidth * fitScale) / 2 - bounds.minX * fitScale;
-  const worldTop = (surface.height - boundsHeight * fitScale) / 2 - bounds.minY * fitScale + 12;
+  const worldTop = (surface.height - boundsHeight * fitScale) / 2 - visualMinY * fitScale + 12;
   const focusWidth = Math.min(FOCUS_NODE_W, Math.max(268, surface.width - 32));
   const focusHeight = surface.width <= 720 ? 190 : FOCUS_NODE_H;
   const focusPosition = {
@@ -93,7 +99,7 @@ export function FocusArchitecturePane({
     <div className="focus-architecture-pane" style={{ "--focus-pane-accent": laneColorFor(selectedNode).b } as CSSProperties}>
       <div className="focus-architecture__readout" aria-hidden="true">
         <span>Live architecture</span>
-        <span className="mono">{NODES.length} nodes / 12 links</span>
+        <span className="mono">{NODES.length} nodes / {EDGES.length} links</span>
       </div>
 
       <div ref={surfaceRef} className="focus-architecture__surface">
@@ -119,6 +125,7 @@ export function FocusArchitecturePane({
                 reducedMotion={reducedMotion}
                 isDragging={false}
                 isSelected={selectedNodeId === node.id}
+                isArriving={activeTransitionEdge?.to === node.id}
                 mode="context"
                 interactive={interactive}
                 onPointerDownCard={() => undefined}
@@ -141,6 +148,7 @@ export function FocusArchitecturePane({
             isDragging={false}
             isSelected={false}
             mode="focus"
+            isArriving={activeTransitionEdge?.to === selectedNode.id}
             interactive={interactive}
             onPointerDownCard={() => undefined}
             onOpen={() => {

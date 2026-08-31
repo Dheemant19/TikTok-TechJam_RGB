@@ -33,8 +33,12 @@ export function nodeForId(nodeId: string | null) {
   return nodeId ? NODES.find((node) => node.id === nodeId) ?? null : null;
 }
 
-export function nextStageId(nodeId: string): string | null {
+export function nextStageId(nodeId: string, watchdogDecision?: string | null): string | null {
   if (nodeId === "recovery") return "evaluator";
+  // A rejected decision loops back into another research cycle instead of
+  // continuing on to Save Run Evidence (AGENTS.md #5); this is a visual/
+  // navigation branch only and never changes backend routing.
+  if (nodeId === "watchdog" && watchdogDecision === "reject") return "knowledge_mcp";
   const index = RUN_ORDER.indexOf(nodeId);
   if (index < 0 || index >= RUN_ORDER.length - 1) return null;
   return RUN_ORDER[index + 1];

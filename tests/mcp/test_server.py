@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from rigor_rs.knowledge.models import ToolLifecycleEvent
-from rigor_rs.ledger.mcp import MCPReceiptMirror
-from rigor_rs.mcp.server import get_application
+from flowstate.knowledge.models import ToolLifecycleEvent
+from flowstate.ledger.mcp import MCPReceiptMirror
+from flowstate.mcp.server import get_application
 
 
 @pytest.mark.asyncio
@@ -16,13 +16,13 @@ async def test_exact_agent_tool_surface() -> None:
     names = {tool.name for tool in tools}
     assert names == {
         "search_evidence", "get_paper", "get_fulltext", "search_code",
-        "get_code_for_paper", "expand_citations", "get_research_card",
+        "get_code_for_paper", "discover_paper_with_code", "expand_citations", "get_research_card",
     }
     assert "submit_curated_paper" not in names
 
 
 def test_ledger_mirror_is_append_only(tmp_path: Path) -> None:
-    database = tmp_path / "rigor.sqlite3"
+    database = tmp_path / "flowstate.sqlite3"
     mirror = MCPReceiptMirror(database)
     event = ToolLifecycleEvent(
         receipt_id="receipt-1", request_id="request-1", tool_name="search_evidence",

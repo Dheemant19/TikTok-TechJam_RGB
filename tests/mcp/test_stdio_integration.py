@@ -21,23 +21,23 @@ async def test_stdio_offline_search_and_tool_surface(tmp_path: Path) -> None:
     # manual/interactive testing against the shared file (e.g. --resolve-code runs)
     # would otherwise silently change this test's expected unresolved-code assertions.
     config_document["storage"]["database"] = str(tmp_path / "test-knowledge.sqlite3")
-    config_document["providers"]["openalex"]["enabled"] = False
+    config_document["providers"]["huggingface_papers"]["enabled"] = False
     config_document["providers"]["github"]["enabled"] = False
     offline_config = tmp_path / "offline-knowledge.yaml"
     offline_config.write_text(yaml.safe_dump(config_document, sort_keys=False), encoding="utf-8")
     environment["HF_HUB_OFFLINE"] = "1"
-    environment["RIGOR_RS_MCP_TRANSPORT"] = "stdio"
-    environment["RIGOR_RS_KNOWLEDGE_CONFIG"] = str(offline_config)
-    environment["RIGOR_RS_SESSION_ID"] = f"mcp-smoke-{uuid.uuid4().hex}"
-    environment["RIGOR_RS_EXPERIMENT_ID"] = "offline-tools"
+    environment["FLOWSTATE_MCP_TRANSPORT"] = "stdio"
+    environment["FLOWSTATE_KNOWLEDGE_CONFIG"] = str(offline_config)
+    environment["FLOWSTATE_SESSION_ID"] = f"mcp-smoke-{uuid.uuid4().hex}"
+    environment["FLOWSTATE_EXPERIMENT_ID"] = "offline-tools"
     subprocess.run(
-        [sys.executable, "-m", "rigor_rs.cli", "knowledge", "ingest-curated",
+        [sys.executable, "-m", "flowstate.cli", "knowledge", "ingest-curated",
          "--config", str(offline_config), "--no-enrich", "--no-resolve-code"],
         cwd=str(root), env=environment, check=True, capture_output=True,
     )
     server = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "rigor_rs.mcp.server"],
+        args=["-m", "flowstate.mcp.server"],
         cwd=str(root),
         env=environment,
     )
@@ -47,7 +47,7 @@ async def test_stdio_offline_search_and_tool_surface(tmp_path: Path) -> None:
             tools = await session.list_tools()
             assert {tool.name for tool in tools.tools} == {
                 "search_evidence", "get_paper", "get_fulltext", "search_code",
-                "get_code_for_paper", "expand_citations", "get_research_card",
+                "get_code_for_paper", "discover_paper_with_code", "expand_citations", "get_research_card",
             }
             response = await session.call_tool(
                 "search_evidence",

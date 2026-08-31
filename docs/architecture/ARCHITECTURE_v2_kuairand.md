@@ -1,7 +1,7 @@
-# RIGOR-RS: End-to-End Architecture
+# FlowState: End-to-End Architecture
 
-**RIGOR-RS** stands for **Reproducible, Integrity-Gated, Outcome-Registered
-Research for Recommender Systems**. It is an autonomous ML research system
+**FlowState** is a Reproducible, Integrity-Gated, Outcome-Registered
+Research system for Recommender Systems. It is an autonomous ML research system
 designed for TikTok TechJam 2026 Track #2. Its primary responsibility is to
 reproduce the organizer-provided KuaiRand-Pure baseline and then improve the
 equal-weighted NDCG@10/Recall@50 validation objective through a bounded,
@@ -14,26 +14,26 @@ unsafe condition fails closed and is recorded instead of being guessed through.
 
 ## 1. Architecture at a glance
 
-![RIGOR-RS readable end-to-end architecture](./rigor-rs-overview-readable.svg)
+![FlowState readable end-to-end architecture](./flowstate-overview-readable.svg)
 
 PNG version:
-[`rigor-rs-overview-readable.png`](./rigor-rs-overview-readable.png)
+[`flowstate-overview-readable.png`](./flowstate-overview-readable.png)
 
 The detailed experiment state machine is shown below.
 
-![RIGOR-RS readable experiment decisions](./rigor-rs-decisions-readable.svg)
+![FlowState readable experiment decisions](./flowstate-decisions-readable.svg)
 
 PNG version:
-[`rigor-rs-decisions-readable.png`](./rigor-rs-decisions-readable.png)
+[`flowstate-decisions-readable.png`](./flowstate-decisions-readable.png)
 
 The detailed Mermaid sources remain available for implementation-level
 reference:
-[`rigor-rs-overview.mmd`](./rigor-rs-overview.mmd) and
-[`rigor-rs-control-loop.mmd`](./rigor-rs-control-loop.mmd).
+[`flowstate-overview.mmd`](./flowstate-overview.mmd) and
+[`flowstate-control-loop.mmd`](./flowstate-control-loop.mmd).
 
 ## 2. The central design decision
 
-RIGOR-RS uses **two recurring LLM roles and a deterministic orchestrator**:
+FlowState uses **two recurring LLM roles and a deterministic orchestrator**:
 
 1. **Research Agent**: interprets diagnostics, retrieves relevant evidence,
    proposes one bounded causal hypothesis, and analyzes valid results.
@@ -700,7 +700,7 @@ improvement honestly.
 11. Treat the hidden result as terminal. It cannot cause another experiment.
 12. Render final reports and resource totals from the immutable ledger.
 
-Unless the organizer explicitly permits it, RIGOR-RS does not retrain on train
+Unless the organizer explicitly permits it, FlowState does not retrain on train
 plus validation after model selection; it retains the validation-best artifact
 as required.
 
@@ -835,7 +835,7 @@ Rules:
 ## 11. Token and compute efficiency
 
 The original shared-report pattern grows approximately quadratically because
-every agent repeatedly rereads an ever-growing history. RIGOR-RS uses a context
+every agent repeatedly rereads an ever-growing history. FlowState uses a context
 compiler instead.
 
 Per-call context includes only:
@@ -877,9 +877,9 @@ Judge-facing efficiency metrics:
 - Peak GPU memory, wall time, and dataloader throughput.
 - Percentage of workflow completed deterministically.
 
-## 12. Standout innovation: the RIGOR Contract Engine
+## 12. Standout innovation: the FlowState Contract Engine
 
-The differentiator is not merely using several agents. The **RIGOR Contract
+The differentiator is not merely using several agents. The **FlowState Contract
 Engine** combines four mechanisms into one auditable scientific workflow:
 
 ### 12.1 Taint-aware research integrity
@@ -987,16 +987,16 @@ data/
 docs/
   architecture/
     ARCHITECTURE.md
-    rigor-rs-overview-readable.svg
-    rigor-rs-overview-readable.png
-    rigor-rs-decisions-readable.svg
-    rigor-rs-decisions-readable.png
-    rigor-rs-overview.mmd
-    rigor-rs-overview.svg
-    rigor-rs-overview.png
-    rigor-rs-control-loop.mmd
-    rigor-rs-control-loop.svg
-    rigor-rs-control-loop.png
+    flowstate-overview-readable.svg
+    flowstate-overview-readable.png
+    flowstate-decisions-readable.svg
+    flowstate-decisions-readable.png
+    flowstate-overview.mmd
+    flowstate-overview.svg
+    flowstate-overview.png
+    flowstate-control-loop.mmd
+    flowstate-control-loop.svg
+    flowstate-control-loop.png
 src/
   contract/
   integrity/
@@ -1049,23 +1049,23 @@ The implementation should expose cross-platform, non-interactive commands
 equivalent to:
 
 ```bash
-python -m rigor_rs.cli validate \
+python -m flowstate.cli validate \
   --challenge configs/challenge/kuairand_pure.yaml
 
-python -m rigor_rs.cli reproduce-baseline \
+python -m flowstate.cli reproduce-baseline \
   --challenge configs/challenge/kuairand_pure.yaml
 
-python -m rigor_rs.cli run \
+python -m flowstate.cli run \
   --challenge configs/challenge/kuairand_pure.yaml \
   --budget configs/budgets/competition.yaml
 
-python -m rigor_rs.cli replay \
+python -m flowstate.cli replay \
   --run-id <run_id>
 
-python -m rigor_rs.cli report \
+python -m flowstate.cli report \
   --session-id <session_id>
 
-python -m rigor_rs.cli package-submission \
+python -m flowstate.cli package-submission \
   --session-id <session_id>
 ```
 
@@ -1168,7 +1168,7 @@ even when full training is too long for a live presentation.
 | Judging criterion                    | Architecture evidence                                                                                                                                                    |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Technical Execution — 35%            | Official-baseline gate, exact evaluator, real isolated code changes, primary metric vector, split firewall, contract tests, bounded recovery, validation-best finalizer  |
-| Innovation and Problem Insight — 20% | RIGOR Contract Engine, pre-registered counterfactual branches, taint-aware lineage, evidence-priced frontier, scope-aware contradictory memory, task-interference sensor |
+| Innovation and Problem Insight — 20% | FlowState Contract Engine, pre-registered counterfactual branches, taint-aware lineage, evidence-priced frontier, scope-aware contradictory memory, task-interference sensor |
 | Impact and Relevance — 20%           | Autonomous state machine, zero-click operation, deterministic recovery, negative-result memory, minimal manual intervention, end-to-end replay                           |
 | Feasibility and Practicality — 15%   | Two LLM roles, deterministic services, context compiler, token/GPU budgets, local SQLite mode, optional S3/PostgreSQL scale-up, bounded proxies and retries              |
 | Presentation and Communication — 10% | Judge observer UI, immutable timeline, readable generated reports, architecture diagrams, finalization receipt, exact reproduction commands                              |
@@ -1228,7 +1228,7 @@ The finalizer must verify all items before declaring the session complete:
 
 ## 22. Definition of success
 
-RIGOR-RS succeeds architecturally when a judge can start from a clean documented
+FlowState succeeds architecturally when a judge can start from a clean documented
 environment, reproduce the organizer baseline, launch a bounded autonomous
 KuaiRand-Pure research session, inspect every hypothesis and code change, verify all
 validation metrics with the official evaluator, observe safe recovery from

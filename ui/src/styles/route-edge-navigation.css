@@ -1,0 +1,115 @@
+.route-edge-navigation {
+  position: fixed;
+  z-index: 108;
+  inset: 72px 0 0;
+  pointer-events: none;
+}
+
+.route-edge-navigation__control {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 84px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  color: var(--text-1);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 78%, transparent), color-mix(in srgb, var(--surface-2) 48%, transparent));
+  box-shadow:
+    0 18px 42px -26px rgba(19, 42, 67, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.46),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 10%, transparent);
+  backdrop-filter: blur(16px) saturate(1.22);
+  -webkit-backdrop-filter: blur(16px) saturate(1.22);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateY(-50%);
+  transition:
+    color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 260ms ease,
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.route-edge-navigation__control::before {
+  content: "";
+  position: absolute;
+  inset: 6px 8px auto;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), transparent);
+  filter: blur(5px);
+  pointer-events: none;
+}
+
+.route-edge-navigation__control.is-previous {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 18px 18px 0;
+}
+
+.route-edge-navigation__control.is-next {
+  right: 0;
+  border-right: 0;
+  border-radius: 18px 0 0 18px;
+}
+
+.route-edge-navigation__control:hover {
+  color: var(--primary-dim);
+  box-shadow:
+    0 22px 48px -24px color-mix(in srgb, var(--primary) 26%, rgba(19, 42, 67, 0.72)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+}
+
+.route-edge-navigation__control.is-previous:hover {
+  transform: translateY(-50%) translateX(3px) perspective(500px) rotateY(5deg);
+}
+
+.route-edge-navigation__control.is-next:hover {
+  transform: translateY(-50%) translateX(-3px) perspective(500px) rotateY(-5deg);
+}
+
+.route-edge-navigation__control:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
+.route-edge-navigation__control:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 58%, transparent);
+  outline-offset: -4px;
+}
+
+:root[data-theme="dark"] .route-edge-navigation__control {
+  color: color-mix(in srgb, var(--text-0) 82%, var(--primary));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 68%, transparent), color-mix(in srgb, var(--primary-muted) 24%, transparent));
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border-strong));
+  box-shadow:
+    0 20px 46px -24px rgba(0, 0, 0, 0.82),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 0 color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+@media (max-width: 720px) {
+  .route-edge-navigation {
+    inset-block-start: 64px;
+  }
+
+  .route-edge-navigation__control {
+    width: 44px;
+    height: 62px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-edge-navigation__control {
+    transition: color 120ms ease, background-color 120ms ease;
+  }
+
+  .route-edge-navigation__control:hover,
+  .route-edge-navigation__control:active {
+    transform: translateY(-50%);
+  }
+}

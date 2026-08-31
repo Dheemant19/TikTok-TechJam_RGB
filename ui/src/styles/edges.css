@@ -1,0 +1,89 @@
+/* Idle, active, and dark-mode workflow-edge treatment. The active handoff
+ * is a short lane-colored packet moving on the exact route, including the
+ * rejected-decision return rail. */
+
+/* Idle edges read too faint at the experience.css baseline (1.7px / 0.6
+ * opacity) -- raised here so a resting workflow is legible at a glance.
+ * Every edge gets this; only the single active-transition edge below also
+ * gets the glow, so the canvas never looks like it is "all lit up". */
+.workflow-edge__line {
+  stroke-width: 2.6;
+  opacity: 0.84;
+}
+
+.workflow-edge__arrow {
+  opacity: 0.72;
+  transform: scale(1.05);
+}
+
+/* The one edge named by runStore's `activeTransitionEdge`. Deliberately a
+ * new modifier class (not the older `.is-active` in experience.css, which
+ * this file leaves untouched) so its restrained glow lives entirely here. */
+.workflow-edge.is-flowing .workflow-edge__line {
+  stroke-width: 3.2;
+  opacity: 1;
+  filter: drop-shadow(0 0 4px var(--flow-glow));
+  animation: dashFlow 700ms linear infinite;
+}
+
+.workflow-edge.is-flowing .workflow-edge__arrow {
+  opacity: 1;
+  transform: scale(1.12);
+  animation: none;
+}
+
+/* The rejected-decision backward loop (watchdog -> knowledge_mcp) must read
+ * as a loop even at rest -- dashed and slightly recessed, never a plain
+ * solid idle edge -- then picks up the same is-flowing glow as any other
+ * edge only while it is the active transition. */
+.workflow-loop-edge .workflow-edge__line {
+  opacity: 0.7;
+}
+
+.workflow-loop-edge .workflow-edge__arrow {
+  opacity: 0.55;
+}
+
+.workflow-loop-edge.is-flowing .workflow-edge__arrow {
+  opacity: 1;
+}
+
+/* A single rounded dash travels on the path itself. One composited SVG
+ * stroke is cheaper and steadier under live event traffic than two moving
+ * circles with separate blur filters. */
+.workflow-edge-tracker {
+  stroke-width: 5.2;
+  opacity: 0.96;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px color-mix(in srgb, currentColor 30%, transparent));
+}
+
+/* Keep lane titles above the elevated return route at both canvas scales. */
+.lane-scaffold > strong,
+.focus-architecture__lane > strong {
+  z-index: 3;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface-1) 84%, transparent);
+  backdrop-filter: blur(5px);
+}
+
+:root[data-theme="dark"] .workflow-edge__line {
+  opacity: 0.94;
+}
+
+:root[data-theme="dark"] .workflow-edge__arrow {
+  opacity: 0.8;
+}
+
+/* Dark surfaces make the 1.4px port ring read thin; widen it slightly so
+ * each port stays a distinct outlined dot against `--surface-1` instead of
+ * blurring into its own fill color. */
+:root[data-theme="dark"] .workflow-edge__port {
+  stroke-width: 1.9;
+}
+
+:root[data-theme="dark"] .workflow-edge-tracker {
+  stroke-width: 5.6;
+  opacity: 1;
+}
