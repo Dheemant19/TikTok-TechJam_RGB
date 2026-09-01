@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from flowstate.contract.challenge import load_challenge_contract
-from flowstate.contract.models import ComponentStatus, FrontierState
+from flowstate.contract.models import ComponentStatus, FrontierState, MetricReceipt
 from flowstate.knowledge.models import EvidenceFilters
 from flowstate.ledger.workflow import WorkflowLedger
 from flowstate.models.experimental import FactorizationMachine
@@ -1173,6 +1173,7 @@ async def test_research_resets_recovery_attempt_and_forwards_real_run_history(tm
         "session_id": "session-1",
         "profile_receipt": {"profile": {"path": str(profile_path)}},
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+        "baseline_metric": {"primary": 0.60},
         "experiment_count": 3, "agent_input_tokens": 0, "agent_output_tokens": 0,
         "recovery_attempt": 2,  # simulates an unrelated earlier failure's leftover count
         "consecutive_research_failures": 2,
@@ -1270,6 +1271,7 @@ async def test_research_query_rotates_priority_area_by_attempt_count(tmp_path: P
         "session_id": "session-1",
         "profile_receipt": {"profile": {"path": str(profile_path)}},
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+        "baseline_metric": {"primary": 0.60},
         "experiment_count": 0, "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
     }
 
@@ -1352,6 +1354,7 @@ async def test_research_auto_corrects_content_hash_citation_confusion(tmp_path: 
         "session_id": "session-1",
         "profile_receipt": {"profile": {"path": str(profile_path)}},
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+        "baseline_metric": {"primary": 0.60},
         "experiment_count": 0, "experiment_attempt_count": 0,
         "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
     }
@@ -1419,6 +1422,7 @@ async def test_research_still_rejects_a_truly_unknown_citation(tmp_path: Path, m
         "session_id": "session-1",
         "profile_receipt": {"profile": {"path": str(profile_path)}},
         "frontier": {"validation_best": "B0", "stable_fallback": "B0", "accepted_parent": "B0", "locked": False},
+        "baseline_metric": {"primary": 0.60},
         "experiment_count": 0, "agent_input_tokens": 0, "agent_output_tokens": 0, "recovery_attempt": 0,
     }
 
@@ -1627,6 +1631,89 @@ async def test_baseline_comparator_averages_all_five_seeds_not_seed_zero(tmp_pat
         assert metric["run_id"] == "B0"
         # Must still validate as a real MetricReceipt (decide() does exactly this).
         MetricReceipt.model_validate(metric)
+
+
+@pytest.mark.asyncio
+async def test_1k_decision_uses_observed_b0_when_no_published_baseline(
+    monkeypatch,
+) -> None:
+    def metric(run_id: str, primary: float) -> dict[str, Any]:
+        return MetricReceipt(
+            receipt_id=f"metric-{run_id}",
+            run_id=run_id,
+            prediction_artifact_id=f"prediction-{run_id}",
+            evaluator_hash="e" * 64,
+            config_hash="c" * 64,
+            gauc=primary,
+            ndcg_at_5=primary,
+            primary=primary,
+            users=978,
+            rows=2_524_980,
+            comparable=True,
+            scope="validation",
+            receipt_hash="r" * 64,
+        ).model_dump(mode="json")
+
+    frontier = FrontierState(
+        validation_best="B0",
+        stable_fallback="B0",
+        accepted_parent="B0",
+    )
+    events: list[dict[str, Any]] = []
+    services = SimpleNamespace(
+        contract=SimpleNamespace(baseline_valid={}),
+        research_strategy={},
+        frontier=SimpleNamespace(
+            decide=lambda current, _receipt, run_id, _best, _parent, **_kwargs: (
+                current.model_copy(update={"rejected": [run_id]}),
+                "reject",
+                False,
+            ),
+            budget_stop=lambda current: current,
+        ),
+        ledger=SimpleNamespace(store_frontier=lambda *_args: None),
+        maximum_experiments=10,
+        bedrock_input_limit=10_000,
+        bedrock_output_limit=10_000,
+        total_gpu_hours=0.0,
+        total_wall_seconds=0,
+    )
+    workflow = AutonomousResearchWorkflow(services)
+
+    async def control_gate(_state):
+        return None
+
+    monkeypatch.setattr(workflow, "_control_gate", control_gate)
+    monkeypatch.setattr(
+        workflow,
+        "_event",
+        lambda *_args, **_kwargs: events.append(
+            _kwargs.get("payload")
+            or (_args[-1] if _args and isinstance(_args[-1], dict) else {})
+        ),
+    )
+    baseline = metric("B0", 0.6358024841378812)
+    candidate = metric("E1", 0.6273305833984772)
+    result = await workflow.decide(
+        {
+            "session_id": "session",
+            "run_id": "E1",
+            "frontier": frontier.model_dump(mode="json"),
+            "baseline_metric": baseline,
+            "best_metric": baseline,
+            "parent_metric": baseline,
+            "metric_receipt": candidate,
+            "experiment_contract": _minimal_contract(
+                ["src/flowstate/training/experiment.py"]
+            ).model_dump(mode="json"),
+            "experiment_count": 1,
+        }
+    )
+
+    assert result["stop"] is False
+    assert events[-1]["delta_vs_official_baseline"] == pytest.approx(
+        0.6273305833984772 - 0.6358024841378812
+    )
 
 
 

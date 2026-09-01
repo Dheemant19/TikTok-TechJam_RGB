@@ -677,7 +677,26 @@ class AutonomousResearchWorkflow:
                 return str(previous.get("mechanism_id") or previous.get("experiment_id")), similarity
         return None, 0.0
 
-    def _innovation_frontier(self, prior_runs: list[dict[str, Any]]) -> dict[str, Any]:
+    def _baseline_primary(self, state: WorkflowState | None = None) -> float:
+        if state is not None:
+            observed = state.get("baseline_metric")
+            if isinstance(observed, dict) and observed.get("primary") is not None:
+                return float(observed["primary"])
+        published = getattr(self.s.contract, "baseline_valid", {}) or {}
+        if published.get("primary") is not None:
+            return float(published["primary"])
+        raise RuntimeError(
+            "baseline primary is unavailable; the observed B0 metric must be "
+            "present for benchmarks without a published baseline"
+        )
+
+
+
+    def _innovation_frontier(
+        self,
+        prior_runs: list[dict[str, Any]],
+        baseline_primary: float | None = None,
+    ) -> dict[str, Any]:
         strategy = getattr(self.s, "research_strategy", {}) or {}
         fm_names = {
             str(value).strip().lower()
@@ -686,8 +705,10 @@ class AutonomousResearchWorkflow:
                 ["factorization_machine", "fm", "deepfm", "deep_factorization_machine"],
             )
         }
-        baseline_valid = getattr(self.s.contract, "baseline_valid", {}) or {}
-        threshold = float(baseline_valid.get("primary", float("inf"))) + float(
+        reference_primary = (
+            self._baseline_primary() if baseline_primary is None else baseline_primary
+        )
+        threshold = reference_primary + float(
             strategy.get("innovation_minimum_delta_vs_baseline", 0.0)
         )
         candidates = []
@@ -718,7 +739,7 @@ class AutonomousResearchWorkflow:
             "experiment_id": best.get("experiment_id"),
             "method_family": best.get("method_family"),
             "primary": primary,
-            "delta_vs_official_baseline": primary - float(baseline_valid["primary"]),
+            "delta_vs_official_baseline": primary - reference_primary,
             "purpose": "innovation_story_only",
             "eligible_for_final_artifact": False,
         }
@@ -726,9 +747,11 @@ class AutonomousResearchWorkflow:
     def _eligible_ensemble_candidates(
         self,
         prior_runs: list[dict[str, Any]],
+        baseline_primary: float | None = None,
     ) -> list[dict[str, Any]]:
-        baseline_valid = getattr(self.s.contract, "baseline_valid", {}) or {}
-        baseline_primary = float(baseline_valid.get("primary", float("inf")))
+        reference_primary = (
+            self._baseline_primary() if baseline_primary is None else baseline_primary
+        )
         best_by_family: dict[str, dict[str, Any]] = {}
         for run in prior_runs:
             metrics = run.get("metrics")
@@ -736,7 +759,7 @@ class AutonomousResearchWorkflow:
             if not family or not isinstance(metrics, dict):
                 continue
             primary = metrics.get("primary")
-            if primary is None or float(primary) <= baseline_primary:
+            if primary is None or float(primary) <= reference_primary:
                 continue
             current = best_by_family.get(family)
             if current is None or float(primary) > float(current["primary"]):
@@ -871,7 +894,10 @@ class AutonomousResearchWorkflow:
             and str(run.get("outcome", "")).strip().lower() != "retain"
         })
         diversity_policy["forbidden_rejected_mechanism_ids"] = rejected_mechanisms
-        ensemble_candidates = self._eligible_ensemble_candidates(prior_runs)
+        baseline_primary = self._baseline_primary(state)
+        ensemble_candidates = self._eligible_ensemble_candidates(
+            prior_runs, baseline_primary
+        )
         diversity_policy["ensemble_candidates"] = ensemble_candidates
         diversity_policy["ensemble_allowed"] = len(ensemble_candidates) >= int(
             diversity_policy.get("minimum_eligible_models_for_ensemble", 2)
@@ -882,7 +908,9 @@ class AutonomousResearchWorkflow:
             "B0",
             str(frontier_state.accepted_parent),
         })
-        innovation_frontier = self._innovation_frontier(prior_runs)
+        innovation_frontier = self._innovation_frontier(
+            prior_runs, baseline_primary
+        )
         context = {
             "challenge": self.s.contract.public_summary(), "profile": profile,
             "runs": prior_runs,
@@ -1817,7 +1845,8 @@ class AutonomousResearchWorkflow:
                 ["factorization_machine", "fm", "deepfm", "deep_factorization_machine"],
             )
         }
-        innovation_threshold = float(self.s.contract.baseline_valid["primary"]) + float(
+        baseline_primary = self._baseline_primary(state)
+        innovation_threshold = baseline_primary + float(
             strategy.get("innovation_minimum_delta_vs_baseline", 0.0)
         )
         if (
@@ -1832,9 +1861,7 @@ class AutonomousResearchWorkflow:
                 "mechanism_id": contract.mechanism_id,
                 "method_family": contract.method_family,
                 "primary": receipt.primary,
-                "delta_vs_official_baseline": (
-                    receipt.primary - float(self.s.contract.baseline_valid["primary"])
-                ),
+                "delta_vs_official_baseline": receipt.primary - baseline_primary,
                 "purpose": "innovation_story_only",
                 "eligible_for_final_artifact": False,
             }
@@ -1862,7 +1889,7 @@ class AutonomousResearchWorkflow:
                 "converged": converged,
                 "delta_vs_parent": receipt.primary - parent.primary,
                 "delta_vs_best": receipt.primary - best.primary,
-                "delta_vs_official_baseline": receipt.primary - float(self.s.contract.baseline_valid["primary"]),
+                "delta_vs_official_baseline": receipt.primary - baseline_primary,
                 "budget_stop": budget_stop,
                 "budget_reason": exhausted,
                 "experiment_id": contract.experiment_id,
