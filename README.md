@@ -195,14 +195,19 @@ npm run build
 - Full runs need the official data, Azure model access, and a capable GPU; they are not practical on every laptop.
 - The agent uses a bounded experiment budget. More compute would allow repeated-seed confirmation of small validation gains and more focused tests of ranking losses and temporal or sequential features.
 - The browser observer is local by design. It does not expose credentials, raw data, checkpoints, validation labels, or test labels.
-- The validation result above is evidence for model selection, not a substitute for the competition's one-time hidden-test evaluation.
+
 
 ## Team contributions
 
-Solo project — design, research workflow, backend, local observer, training pipeline, evaluation integration, and submission packaging by Dheemant.
+Team Members:
+Dheemant Rastogi,
+Arushi Verma and
+Sanjana Yalamanchili.
+
+Every member has contributed equally to the development of this project.
 
 ## Best-run demo
 
-A separate, data-free mockup shows the completed metrics and audit trail from the selected session. It is safe to host as a static Vercel site because it contains no dataset, checkpoint, credential, or live training endpoint.
+A separate, data-free mockup shows the completed metrics and audit trail from the best FlowState session on KuaiRand - Pure dataset. 
 
-**Vercel demo:** `[add deployment link here]`
+**Vercel demo:** `https://flowstate-demo-nine.vercel.app/`
