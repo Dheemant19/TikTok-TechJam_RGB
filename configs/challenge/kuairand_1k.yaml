@@ -1,0 +1,40 @@
+schema_version: 1
+benchmark: kuairand_1k
+display_name: KuaiRand-1K
+
+dataset:
+  directory: "${KUAIRAND_1K_DATA_DIR}"
+  default_directory: KuaiRand-1K/data
+  files:
+    train_log: log_standard_4_08_to_4_21_1k.csv
+    followup_log: log_standard_4_22_to_5_08_1k.csv
+    video_features: video_features_basic_1k.csv
+    user_features: user_features_1k.csv
+    randomized_exposure: log_random_4_22_to_5_08_1k.csv
+
+# KuaiRand-1K uses the same long_view within-user ranking metrics and date
+# boundaries as Pure. The Pure starter-kit files remain byte-for-byte unchanged.
+official_files:
+  data_loader: kuairand-1k-starter-kit/data.py
+  evaluator: kuairand-starter-kit/evaluate.py
+  submission_checker: kuairand-1k-starter-kit/submit.py
+  baseline: kuairand-starter-kit/baseline.py
+  baseline_scores: kuairand-1k-starter-kit/baseline_scores.json
+  data_adapter: src/flowstate/data/kuairand_1k.py
+
+baseline:
+  runtime_config: configs/baseline/kuairand_1k_fm.yaml
+  display_name: KuaiRand-1K FM reference
+
+integrity:
+  derive_contract_from_official_files: true
+  hash_official_files_at_session_start: true
+  reject_changed_official_files: true
+  allow_test_labels_during_development: false
+  allow_test_score_command: false
+  sanity_shuffle_tolerance: 0.02
+
+finalization:
+  require_explicit_confirmation: true
+  allow_only_one_test_prediction_pass: true
+  submission_check_split: test

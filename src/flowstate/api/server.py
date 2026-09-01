@@ -5,12 +5,12 @@ import json
 from contextlib import suppress
 import re
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable, Literal
 
 from fastapi import Body, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from flowstate.contract.models import ComponentStatus
 from flowstate.ledger.workflow import WorkflowLedger
@@ -60,16 +60,53 @@ class PackageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmation: str
 
+class ChatTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4_000)
+
+
+class SessionChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question: str = Field(min_length=1, max_length=4_000)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=12)
+
+
+def _session_chat_context(ledger: WorkflowLedger, session_id: str) -> dict[str, Any]:
+    snapshot = redact(ledger.snapshot(session_id).model_dump(mode="json"))
+    timeline: list[dict[str, Any]] = []
+    for event in ledger.events(session_id):
+        payload = redact(event.payload)
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        timeline.append({
+            "sequence": event.sequence,
+            "run_id": event.run_id,
+            "component": event.component_id,
+            "stage": event.stage,
+            "event_type": event.event_type,
+            "status": event.status,
+            "occurred_at": str(event.occurred_at),
+            "summary": event.plain_summary,
+            "payload": payload if len(encoded) <= 2_000 else {
+                "truncated": True,
+                "preview": encoded[:2_000],
+            },
+            "artifact_ids": event.artifact_ids,
+        })
+    return {"snapshot": snapshot, "timeline": timeline}
+
 
 class WorkflowHost:
     def __init__(
         self, ledger: WorkflowLedger,
         workflow_factory: Callable[[str, str], Any],
         package_callback: Callable[[str], dict[str, Any]],
+        chat_callback: Callable[[dict[str, Any], str, list[dict[str, str]]], Awaitable[dict[str, Any]]] | None = None,
     ) -> None:
         self.ledger = ledger
         self.workflow_factory = workflow_factory
         self.package_callback = package_callback
+        self.chat_callback = chat_callback
         self.tasks: dict[str, asyncio.Task[Any]] = {}
 
     def start(self, challenge: str, budget: str) -> str:
@@ -88,6 +125,15 @@ class WorkflowHost:
 
         task.add_done_callback(discard)
         return session_id
+
+    def package(self, session_id: str) -> dict[str, Any]:
+        snapshot = self.ledger.snapshot(session_id)
+        if "package" not in snapshot.allowed_actions:
+            raise RuntimeError(
+                f"package is not allowed while session is {snapshot.status}; "
+                "the workflow must finish with a locked validation-best result"
+            )
+        return self.package_callback(session_id)
 
 
 def create_app(host: WorkflowHost, ui_dist: Path | None = None) -> FastAPI:
@@ -215,6 +261,23 @@ def create_app(host: WorkflowHost, ui_dist: Path | None = None) -> FastAPI:
             metadata["content"] = REDACTED
         return metadata
 
+    @app.post("/api/v1/sessions/{session_id}/chat")
+    async def session_chat(session_id: str, request: SessionChatRequest) -> dict[str, Any]:
+        if host.chat_callback is None:
+            raise HTTPException(503, detail="session chat is not configured")
+        try:
+            context = _session_chat_context(host.ledger, session_id)
+        except KeyError as error:
+            raise HTTPException(404, detail="session not found") from error
+        try:
+            return await host.chat_callback(
+                context,
+                request.question,
+                [message.model_dump(mode="json") for message in request.history],
+            )
+        except Exception as error:
+            raise HTTPException(502, detail=f"session chat failed: {error}") from error
+
     def control(session_id: str, action: str, request: ControlRequest) -> dict[str, Any]:
         try:
             accepted, reason = host.ledger.control(session_id, action, request.expected_sequence)
@@ -250,7 +313,7 @@ def create_app(host: WorkflowHost, ui_dist: Path | None = None) -> FastAPI:
         if request.confirmation != session_id:
             raise HTTPException(422, detail="confirmation must exactly match session_id")
         try:
-            return host.package_callback(session_id)
+            return host.package(session_id)
         except (ValueError, RuntimeError) as error:
             raise HTTPException(409, detail=str(error)) from error
 

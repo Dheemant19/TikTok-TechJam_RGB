@@ -42,14 +42,20 @@ export function EdgesLayer({ positions, nodeStatus: _nodeStatus, nodeElapsed: _n
     [positions, activeTransitionEdge],
   );
 
-  // The backward loop (watchdog -> knowledge_mcp) arcs above the lanes it
-  // crosses so it never cuts straight through the Code/Train cards between
-  // them. Attach at each node's top-center rather than the left/right ports
-  // the forward edges already occupy.
+  // A rejected decision exits from the watchdog's left edge and returns to
+  // the top edge of Find Research Evidence. This endpoint pair makes the
+  // return path visibly terminate at that card instead of appearing to feed
+  // through it into Choose the Next Experiment.
   const loopEdges = useMemo(() => {
     return LOOP_EDGES.map(([from, to], index) => {
-      const p1: Vec2 = { x: positions[from].x, y: positions[from].y + NODE_H * 0.42 };
-      const p2: Vec2 = { x: positions[to].x + NODE_W, y: positions[to].y + NODE_H * 0.42 };
+      const p1: Vec2 = {
+        x: positions[from].x,
+        y: positions[from].y + NODE_H / 2,
+      };
+      const p2: Vec2 = {
+        x: positions[to].x + NODE_W / 2,
+        y: positions[to].y,
+      };
       const clearanceY = loopClearanceY(positions, from, to);
       const { d } = loopPath(p1, p2, clearanceY);
       const isActive = !!activeTransitionEdge && activeTransitionEdge.isLoop && activeTransitionEdge.from === from && activeTransitionEdge.to === to;
@@ -126,7 +132,7 @@ export function EdgesLayer({ positions, nodeStatus: _nodeStatus, nodeElapsed: _n
             <circle className="workflow-edge__port" cx={edge.p2.x} cy={edge.p2.y} r={3.4} fill={edge.toColor} />
             <g className="workflow-edge__arrow" style={{ transformOrigin: `${edge.p2.x}px ${edge.p2.y}px` }}>
               <path
-                d={`M ${edge.p2.x + 10.5} ${edge.p2.y - 4.6} L ${edge.p2.x + 2} ${edge.p2.y} L ${edge.p2.x + 10.5} ${edge.p2.y + 4.6} Z`}
+                d={`M ${edge.p2.x - 4.6} ${edge.p2.y - 10.5} L ${edge.p2.x} ${edge.p2.y - 2} L ${edge.p2.x + 4.6} ${edge.p2.y - 10.5} Z`}
                 fill={arrowColor}
               />
             </g>

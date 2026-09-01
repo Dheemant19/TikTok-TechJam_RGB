@@ -242,16 +242,21 @@ class AutonomousResearchWorkflow:
         await self._control_gate(state)
         self.s.contract.verify_hashes()
         source_files = [
-            self.s.contract.dataset_dir / "log_standard_4_08_to_4_21_pure.csv",
-            self.s.contract.dataset_dir / "log_standard_4_22_to_5_08_pure.csv",
+            *self.s.contract.log_paths("train"),
+            *self.s.contract.log_paths("followup"),
         ]
         source_hash = canonical_hash({str(path): sha256_file(path) for path in source_files})
         artifact = DataArtifact(
             artifact_id=new_id("data"), path=self.s.contract.dataset_dir,
             taints={SplitTaint.TRAIN_FEATURES, SplitTaint.TRAIN_LABELS, SplitTaint.VALIDATION_FEATURES},
-            row_count=sum(1 for _ in ()), schema_fingerprint="kuairand-dev-logs",
+            row_count=sum(1 for _ in ()), schema_fingerprint=f"{self.s.contract.benchmark}-dev-logs",
             source_hash=source_hash,
-            code_hash=sha256_file(self.s.repository / "src/flowstate/data/profiler.py"),
+            code_hash=sha256_file(
+                self.s.contract.official_files.get(
+                    "data_adapter",
+                    self.s.repository / "src/flowstate/data/profiler.py",
+                )
+            ),
             creation_receipt_id=new_id("receipt"),
         )
         self._event(
@@ -261,6 +266,8 @@ class AutonomousResearchWorkflow:
                 "splits": {name: f"{lo}-{hi}" for name, (lo, hi) in self.s.contract.splits.items()},
                 "source_hash": source_hash,
                 "label": self.s.contract.label,
+                "benchmark": self.s.contract.benchmark,
+                "dataset": self.s.contract.display_name,
             },
         )
         gpu_devices = self._hardware.get("devices", [])
@@ -340,7 +347,21 @@ class AutonomousResearchWorkflow:
 
     async def baseline(self, state: WorkflowState) -> dict[str, Any]:
         await self._control_gate(state)
-        self._event(state, "trainer", "baseline", "started", ComponentStatus.RUNNING, "Reproducing official FM baseline on validation")
+        contract = getattr(self.s, "contract", None)
+        baseline_label = getattr(contract, "baseline_display_name", "Official FM baseline")
+        reference_mode = getattr(contract, "baseline_reference_mode", "published")
+        self._event(
+            state,
+            "trainer",
+            "baseline",
+            "started",
+            ComponentStatus.RUNNING,
+            (
+                "Reproducing official FM baseline on validation"
+                if reference_mode == "published"
+                else f"Reproducing fixed {baseline_label} on validation"
+            ),
+        )
         try:
             result = await asyncio.to_thread(
                 self.s.baseline.reproduce,
@@ -349,15 +370,35 @@ class AutonomousResearchWorkflow:
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
             self._event(
-                state, "trainer", "baseline", "failed", ComponentStatus.FAILED,
-                f"Official FM baseline execution failed: {message}",
+                state,
+                "trainer",
+                "baseline",
+                "failed",
+                ComponentStatus.FAILED,
+                (
+                    "Official FM baseline execution failed"
+                    if reference_mode == "published"
+                    else f"{baseline_label} execution failed"
+                ) + f": {message}",
                 {"error": message},
             )
             return {
                 "error": message, "stop": True, "stop_reason": "baseline_failure",
             }
         if result["status"] != "succeeded":
-            self._event(state, "phase_guard", "baseline", "integrity_halt", ComponentStatus.BLOCKED, "Official FM baseline reproduction missed tolerance", result)
+            self._event(
+                state,
+                "phase_guard",
+                "baseline",
+                "integrity_halt",
+                ComponentStatus.BLOCKED,
+                (
+                    "Official FM baseline reproduction missed tolerance"
+                    if reference_mode == "published"
+                    else f"{baseline_label} reproduction failed"
+                ),
+                result,
+            )
             return {"baseline_result": result, "error": "baseline reproduction failed", "stop": True, "stop_reason": "baseline_gate"}
 
         # Every downstream decision compares against this value (decide() builds
@@ -378,8 +419,15 @@ class AutonomousResearchWorkflow:
             )
         self._event(
             state, "trainer", "baseline", "completed", ComponentStatus.SUCCEEDED,
-            "Official FM baseline reproduced within organizer tolerance",
-            {"baseline_result": result},
+            (
+                "Official FM baseline reproduced within organizer tolerance"
+                if reference_mode == "published"
+                else f"{baseline_label} reproduced and locked as this session's B0"
+            ),
+            {
+                "baseline_result": result,
+                "benchmark": getattr(contract, "benchmark", "kuairand_pure"),
+            },
         )
 
         self._event(
@@ -508,6 +556,11 @@ class AutonomousResearchWorkflow:
         "kuairand-starter-kit/evaluate.py",
         "kuairand-starter-kit/data.py",
         "kuairand-starter-kit/baseline_scores.json",
+        "kuairand-1k-starter-kit/data.py",
+        "kuairand-1k-starter-kit/submit.py",
+        "kuairand-1k-starter-kit/baseline_scores.json",
+        "configs/challenge/kuairand_1k.yaml",
+        "src/flowstate/data/kuairand_1k.py",
         "src/flowstate/evaluation/",
         "src/flowstate/reporting/",
         "runs/",

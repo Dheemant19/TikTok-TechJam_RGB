@@ -8,6 +8,7 @@
 @import "./shell-controls.css";
 @import "./autonomy-log.css";
 @import "./route-empty-state.css";
+@import "./session-chat.css";
 
 * {
   box-sizing: border-box;

@@ -13,6 +13,24 @@ function stringField(record: JsonRecord | undefined, key: string): string | null
   return typeof value === "string" ? value : null;
 }
 
+export interface BenchmarkSelection {
+  id: string;
+  label: string;
+}
+
+export function selectBenchmark(events: RunEventDTO[]): BenchmarkSelection | null {
+  const event = [...events]
+    .sort((left, right) => right.sequence - left.sequence)
+    .find((item) => item.component_id === "train_data" && item.event_type === "data_ready");
+  if (!event) return null;
+  const payload = asRecord(event.payload);
+  const id = stringField(payload, "benchmark");
+  if (!id) return null;
+  const label = stringField(payload, "dataset")
+    ?? (id === "kuairand_1k" ? "KuaiRand-1K" : "KuaiRand-Pure");
+  return { id, label };
+}
+
 const TRUST_TIER_LABEL: Record<string, string> = { curated: "Curated bank", discovered: "Hugging Face" };
 
 /** Papers ingested via search_evidence() carry a trust_tier of either

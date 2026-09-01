@@ -15,6 +15,7 @@ from flowstate.api.server import WorkflowHost, create_app
 from flowstate.contract.challenge import load_challenge_contract, sha256_file
 from flowstate.contract.models import ComponentStatus, DataArtifact, ProfileConfig, SplitTaint, TransformSpec
 from flowstate.data.profiler import PreprocessorService, ProfilerService
+from flowstate.data.kuairand_1k import KuaiRand1KPreprocessorService, KuaiRand1KProfilerService
 from flowstate.evaluation.official import OfficialEvaluator
 from flowstate.integrity.gates import evaluator_metamorphic_checks
 from flowstate.knowledge.config import load_budget_config, repository_root
@@ -37,18 +38,25 @@ def emit(value: Any) -> None:
 
 def _data_artifact(contract) -> DataArtifact:
     root = repository_root()
-    files = [
-        contract.dataset_dir / "log_standard_4_08_to_4_21_pure.csv",
-        contract.dataset_dir / "log_standard_4_22_to_5_08_pure.csv",
-    ]
+    files = [*contract.log_paths("train"), *contract.log_paths("followup")]
     return DataArtifact(
         artifact_id=new_id("data"), path=contract.dataset_dir,
         taints={SplitTaint.TRAIN_FEATURES, SplitTaint.TRAIN_LABELS, SplitTaint.VALIDATION_FEATURES},
         row_count=0, schema_fingerprint="kuairand-dev-logs",
         source_hash=canonical_hash({str(path): sha256_file(path) for path in files}),
-        code_hash=sha256_file(root / "src/flowstate/data/profiler.py"), creation_receipt_id=new_id("receipt"),
+        code_hash=sha256_file(contract.official_files.get("data_adapter", root / "src/flowstate/data/profiler.py")),
+        creation_receipt_id=new_id("receipt"),
     )
 
+
+
+def _data_services(contract, artifacts: Path):
+    if contract.benchmark == "kuairand_1k":
+        return (
+            KuaiRand1KProfilerService(contract, artifacts),
+            KuaiRand1KPreprocessorService(contract, artifacts),
+        )
+    return ProfilerService(contract, artifacts), PreprocessorService(contract, artifacts)
 
 def build_workflow(challenge_path: str, budget_path: str, ledger: WorkflowLedger | None = None) -> tuple[AutonomousResearchWorkflow, WorkflowLedger, SubmissionFinalizer]:
     root = repository_root()
@@ -56,12 +64,18 @@ def build_workflow(challenge_path: str, budget_path: str, ledger: WorkflowLedger
     budget = load_budget_config(root / budget_path if not Path(budget_path).is_absolute() else Path(budget_path))
     ledger = ledger or WorkflowLedger(root / "state/flowstate.sqlite3")
     artifacts = root / "artifacts"
+    profiler, preprocessor = _data_services(contract, artifacts)
+    baseline_config = (
+        contract.baseline_runtime_config
+        if contract.baseline_runtime_config.is_absolute()
+        else root / contract.baseline_runtime_config
+    )
     agents = AzureAgentFactory()
     knowledge = KnowledgeRuntime()
     services = WorkflowServices(
         contract=contract, ledger=ledger,
-        profiler=ProfilerService(contract, artifacts), preprocessor=PreprocessorService(contract, artifacts),
-        baseline=BaselineReproducer(contract, root / "configs/baseline/official_fm.yaml", artifacts),
+        profiler=profiler, preprocessor=preprocessor,
+        baseline=BaselineReproducer(contract, baseline_config, artifacts),
         agents=agents, knowledge=knowledge,
         workspace=WorkspaceManager(root, root / "state/worktrees", agents.config.context_limits.maximum_patch_characters, agents.config.context_limits.maximum_reference_code_characters),
         funnel=ExecutionFunnel(contract, artifacts, int(budget.limits["per_run_timeout_seconds"]), budget.proxy_tier),
@@ -102,8 +116,7 @@ def profile(
 ) -> None:
     root = repository_root(); contract = load_challenge_contract(challenge)
     artifact = _data_artifact(contract)
-    profiler = ProfilerService(contract, root / "artifacts")
-    preprocessor = PreprocessorService(contract, root / "artifacts")
+    profiler, preprocessor = _data_services(contract, root / "artifacts")
     receipt = profiler.profile(artifact, ProfileConfig())
     transform = preprocessor.fit_apply(artifact, TransformSpec())
     emit({"status": "completed", "profile": receipt.model_dump(mode="json"), "transform": transform.model_dump(mode="json")})
@@ -159,8 +172,10 @@ def reproduce_baseline(
     seeds: Annotated[str | None, typer.Option("--seeds", help="Comma-separated; omit for configured 0-4")]=None,
 ) -> None:
     root = repository_root(); contract = load_challenge_contract(challenge); artifact = _data_artifact(contract)
-    transform = PreprocessorService(contract, root / "artifacts").fit_apply(artifact, TransformSpec())
-    reproducer = BaselineReproducer(contract, root / "configs/baseline/official_fm.yaml", root / "artifacts")
+    _, preprocessor = _data_services(contract, root / "artifacts")
+    transform = preprocessor.fit_apply(artifact, TransformSpec())
+    baseline_config = contract.baseline_runtime_config if contract.baseline_runtime_config.is_absolute() else root / contract.baseline_runtime_config
+    reproducer = BaselineReproducer(contract, baseline_config, root / "artifacts")
     result = reproducer.reproduce(transform.receipt.path.parent, seeds=[int(value) for value in seeds.split(",")] if seeds else None)
     result["harness"] = {name: value.model_dump(mode="json") for name, value in reproducer.harness_checks(transform.receipt.path.parent).items()}
     result["label_shuffle"] = reproducer.label_shuffle_control(transform.receipt.path.parent)
@@ -233,12 +248,36 @@ def serve_ui(
     challenge: Annotated[str, typer.Option("--challenge")] = "configs/challenge/kuairand_pure.yaml",
     budget: Annotated[str, typer.Option("--budget")] = "configs/budgets/competition.yaml",
 ) -> None:
-    root = repository_root(); contract = load_challenge_contract(challenge)
+    root = repository_root()
     ledger = WorkflowLedger(root / "state/flowstate.sqlite3")
-    finalizer = SubmissionFinalizer(contract, ledger, root / "artifacts")
+    chat_agents = AzureAgentFactory()
+
     def factory(challenge_value: str, budget_value: str):
         return build_workflow(challenge_value, budget_value, ledger)[0]
-    host = WorkflowHost(ledger, factory, finalizer.package)
+
+    def package_session(session_id: str) -> dict[str, Any]:
+        benchmark = "kuairand_pure"
+        for event in ledger.events(session_id):
+            if event.component_id == "train_data" and event.event_type == "data_ready":
+                benchmark = str(event.payload.get("benchmark", benchmark))
+                break
+        challenge_config = {
+            "kuairand_pure": "configs/challenge/kuairand_pure.yaml",
+            "kuairand_1k": "configs/challenge/kuairand_1k.yaml",
+        }.get(benchmark)
+        if challenge_config is None:
+            raise RuntimeError(f"unsupported benchmark in session history: {benchmark}")
+        contract = load_challenge_contract(challenge_config)
+        return SubmissionFinalizer(contract, ledger, root / "artifacts").package(session_id)
+
+    async def chat_session(
+        context: dict[str, Any],
+        question: str,
+        history: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        return await chat_agents.answer_session_question(context, question, history)
+
     ui_config = yaml.safe_load((root / "configs/ui/observer.yaml").read_text(encoding="utf-8"))
+    host = WorkflowHost(ledger, factory, package_session, chat_session)
     app_instance = create_app(host, root / "ui/dist")
     uvicorn.run(app_instance, host=ui_config["server"]["host"], port=int(ui_config["server"]["port"]))

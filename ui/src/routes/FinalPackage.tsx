@@ -63,7 +63,16 @@ export function FinalPackage() {
   const isBaselinePackage = winner === "B0";
   const hasIntegrityWarning = duplicateRuns.length > 0;
   const canPackage = Boolean(sessionId)
-    && Boolean(attachedSnapshot?.allowed_actions.includes("package"))
+    && !attachedSnapshot?.finalized
+    && !attachedSnapshot?.cancelled
+    && (
+      Boolean(attachedSnapshot?.allowed_actions.includes("package"))
+      || (
+        attachedSnapshot?.status === "succeeded"
+        && attachedSnapshot.frontier.locked
+        && Boolean(attachedSnapshot.frontier.validation_best)
+      )
+    )
     && !packageResult;
 
   const packageSessionId = packageResult

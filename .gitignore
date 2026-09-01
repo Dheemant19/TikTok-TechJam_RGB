@@ -36,3 +36,4 @@ ui/test-results/
 *.tar.gz
 *.tar.gz.aria2
 KuaiRand-1K/
+KuaiRand-27K/

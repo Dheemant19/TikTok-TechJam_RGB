@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from flowstate.contract.models import DependencyChange, ExperimentContract, PatchProposal
@@ -46,6 +47,7 @@ class AzureFoundryConfig(BaseModel):
     api_version_env: str
     research_agent: AgentConfig
     code_recovery_agent: AgentConfig
+    session_chat: AgentConfig
     context_limits: ContextLimits
 
 
@@ -104,6 +106,7 @@ class RecoveryDiagnosis(BaseModel):
 class AzureAgentFactory:
     def __init__(self, path: str | Path = "configs/agents/azure_foundry.yaml") -> None:
         root = repository_root()
+        load_dotenv(root / ".env", override=False)
         config_path = Path(path)
         if not config_path.is_absolute():
             config_path = root / config_path
@@ -179,6 +182,68 @@ class AzureAgentFactory:
             raise TimeoutError(
                 f"Azure Foundry call to {config.model_deployment_env} did not respond within {bound}s"
             ) from error
+
+    @staticmethod
+    def _text_content(raw: Any) -> str:
+        content = getattr(raw, "content", "")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text") or block.get("content")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "\n".join(parts).strip()
+        return str(content).strip()
+
+    async def answer_session_question(
+        self,
+        session_context: dict[str, Any],
+        question: str,
+        history: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        config = self.config.session_chat
+        model_id = os.environ[config.model_deployment_env]
+        prompt: list[Any] = [
+            SystemMessage(content=(
+                "You are FlowState's read-only session observer. Explain only what is present "
+                "in the supplied redacted session snapshot and event history. You cannot start, "
+                "pause, cancel, package, edit, train, or otherwise change anything. Never claim "
+                "that you performed an action. If the evidence does not answer a question, say "
+                "exactly what is missing. Keep technical explanations concrete and concise. "
+                "Format answers as readable Markdown: short paragraphs, descriptive headings "
+                "only when useful, bullet lists for multiple facts, **bold** for key run names "
+                "or conclusions, and `code` formatting for field names and metric keys. Never "
+                "return raw JSON or wrap the whole answer in a code block."
+            )),
+            HumanMessage(content=(
+                "Authoritative read-only session context follows:\n"
+                + json.dumps(session_context, ensure_ascii=False, separators=(",", ":"))
+            )),
+        ]
+        for message in history[-12:]:
+            text = message.get("content", "")[:4_000]
+            prompt.append(
+                AIMessage(content=text)
+                if message.get("role") == "assistant"
+                else HumanMessage(content=text)
+            )
+        prompt.append(HumanMessage(content=question))
+        raw = await self._invoke(self._chat(config), prompt, config)
+        answer = self._text_content(raw)
+        if not answer:
+            raise RuntimeError("session chat model returned an empty response")
+        usage = self._usage(raw, model_id)
+        return {
+            "answer": answer,
+            "model": model_id,
+            "reasoning_effort": config.reasoning_effort,
+            "usage": usage.model_dump(mode="json"),
+        }
 
     @staticmethod
     def _research_contract_violations(

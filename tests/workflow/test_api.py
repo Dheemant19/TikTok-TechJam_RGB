@@ -156,3 +156,127 @@ def test_final_package_files_are_downloadable_only_from_finalized_directory(tmp_
     assert manifest_response.status_code == 200
     assert manifest_response.json()["validation_best"] == "B0"
     assert client.get(f"/api/v1/sessions/{session}/package/checkpoint.pt").status_code == 404
+
+
+def test_start_session_passes_selected_kuairand_1k_config_to_workflow(tmp_path: Path) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class Workflow:
+        async def run(self, _session_id: str) -> None:
+            return None
+
+    def factory(challenge: str, budget: str) -> Workflow:
+        calls.append((challenge, budget))
+        return Workflow()
+
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
+    client = TestClient(create_app(WorkflowHost(ledger, factory, lambda _: {})))
+
+    response = client.post(
+        "/api/v1/sessions",
+        json={
+            "challenge_config_path": "configs/challenge/kuairand_1k.yaml",
+            "budget_config_path": "configs/budgets/competition.yaml",
+        },
+    )
+
+    assert response.status_code == 201
+    assert calls == [(
+        "configs/challenge/kuairand_1k.yaml",
+        "configs/budgets/competition.yaml",
+    )]
+
+
+def test_budget_stopped_completed_session_can_package(tmp_path: Path) -> None:
+    from flowstate.contract.models import FrontierState
+
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
+    session = ledger.create_session()
+    ledger.store_frontier(
+        session,
+        FrontierState(
+            validation_best="B0",
+            stable_fallback="B0",
+            accepted_parent="B0",
+            locked=True,
+        ),
+    )
+    ledger.append_event(
+        session_id=session,
+        run_id="workflow",
+        component_id="watchdog",
+        execution_id="budget-stop",
+        stage="decision",
+        event_type="frontier",
+        status=ComponentStatus.SUCCEEDED,
+        plain_summary="Experiment budget reached",
+        payload={
+            "frontier": {
+                "validation_best": "B0",
+                "stable_fallback": "B0",
+                "accepted_parent": "B0",
+                "pending_candidate": None,
+                "rejected": [],
+                "failed": [],
+                "no_improvement_count": 0,
+                "locked": True,
+            },
+            "budget_stop": True,
+        },
+    )
+    ledger.set_session_status(session, ComponentStatus.SUCCEEDED)
+    packaged: list[str] = []
+    host = WorkflowHost(
+        ledger,
+        lambda *_: None,
+        lambda session_id: packaged.append(session_id) or {"session_id": session_id},
+    )
+    client = TestClient(create_app(host))
+
+    snapshot = client.get(f"/api/v1/sessions/{session}/snapshot").json()
+    response = client.post(
+        f"/api/v1/sessions/{session}/package",
+        json={"confirmation": session},
+    )
+
+    assert snapshot["allowed_actions"] == ["package"]
+    assert response.status_code == 200
+    assert packaged == [session]
+
+
+def test_session_chat_receives_only_redacted_read_context(tmp_path: Path) -> None:
+    ledger = WorkflowLedger(tmp_path / "flowstate.sqlite3")
+    session = ledger.create_session()
+    ledger.append_event(
+        session_id=session,
+        run_id="run",
+        component_id="trainer",
+        execution_id="training",
+        stage="training",
+        event_type="started",
+        status=ComponentStatus.RUNNING,
+        plain_summary="Training started",
+        payload={"github_token": "must-not-leak", "primary": 0.61},
+    )
+    received: dict = {}
+
+    async def chat(context, question, history):
+        received.update(context=context, question=question, history=history)
+        return {
+            "answer": "Training started.",
+            "model": "gpt-5.6-terra-2",
+            "reasoning_effort": "medium",
+            "usage": {"input_tokens": 1, "output_tokens": 1, "model_id": "gpt-5.6-terra-2"},
+        }
+
+    client = TestClient(create_app(WorkflowHost(ledger, lambda *_: None, lambda _: {}, chat)))
+    response = client.post(
+        f"/api/v1/sessions/{session}/chat",
+        json={"question": "What is happening?", "history": []},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reasoning_effort"] == "medium"
+    assert received["question"] == "What is happening?"
+    assert received["context"]["timeline"][0]["payload"]["github_token"] == REDACTED
+    assert received["context"]["timeline"][0]["payload"]["primary"] == 0.61

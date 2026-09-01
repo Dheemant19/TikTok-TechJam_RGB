@@ -138,4 +138,34 @@ describe("FinalPackage verdict", () => {
     fireEvent.click(screen.getByRole("button", { name: "Build final package" }));
     expect(packageRun).toHaveBeenCalledOnce();
   });
+
+  it("unlocks packaging from terminal frontier facts when allowed_actions is briefly stale", () => {
+    const staleSnapshot = snapshot();
+    staleSnapshot.finalized = false;
+    staleSnapshot.status = "succeeded";
+    staleSnapshot.frontier.locked = true;
+    staleSnapshot.frontier.validation_best = "B0";
+    staleSnapshot.allowed_actions = [];
+    const packageRun = vi.fn(async () => undefined);
+    useRunStore.setState({
+      sessionId: SESSION_ID,
+      snapshot: staleSnapshot,
+      events: [],
+      packageResult: null,
+      packageError: null,
+      packaging: false,
+      packageRun,
+    });
+
+    render(
+      <MemoryRouter>
+        <FinalPackage />
+      </MemoryRouter>,
+    );
+
+    const button = screen.getByRole("button", { name: "Build final package" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+    expect(packageRun).toHaveBeenCalledOnce();
+  });
 });

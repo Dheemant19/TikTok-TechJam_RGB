@@ -5,12 +5,21 @@ import type { JsonRecord, RunEventDTO, SessionListItem, SessionSnapshotDTO } fro
 import { EDGES, NODES, type NodeStatus } from "../data/nodeRegistry";
 import { deriveNodeStates, nodeStatusMap, uiNodeIdForEvent, type NodeRuntimeState } from "./eventMapping";
 
-// Matches configs/ui/observer.yaml `frontend.default_challenge_config` /
-// `default_budget_config`. The observer API server resolves these relative
-// to the repository root it was launched from (`serve-ui`).
-const DEFAULT_CHALLENGE_CONFIG = "configs/challenge/kuairand_pure.yaml";
+export const BENCHMARK_OPTIONS = [
+  { id: "kuairand_pure", label: "KuaiRand-Pure", challengeConfig: "configs/challenge/kuairand_pure.yaml" },
+  { id: "kuairand_1k", label: "KuaiRand-1K", challengeConfig: "configs/challenge/kuairand_1k.yaml" },
+] as const;
+export type BenchmarkId = (typeof BENCHMARK_OPTIONS)[number]["id"];
 const DEFAULT_BUDGET_CONFIG = "configs/budgets/competition.yaml";
 const SESSION_STORAGE_KEY = "flowstate.session-id";
+const BENCHMARK_STORAGE_KEY = "flowstate.benchmark";
+
+function initialBenchmark(): BenchmarkId {
+  const stored = window.localStorage.getItem(BENCHMARK_STORAGE_KEY);
+  return BENCHMARK_OPTIONS.some((option) => option.id === stored)
+    ? stored as BenchmarkId
+    : "kuairand_pure";
+}
 
 export type ConnectionPhase = "idle" | "connecting" | "live" | "retrying" | "error";
 
@@ -204,6 +213,7 @@ function detectTransitionEdge(
 
 interface RunState {
   sessionId: string | null;
+  selectedBenchmark: BenchmarkId;
   phase: ConnectionPhase;
   snapshot: SessionSnapshotDTO | null;
   events: RunEventDTO[];
@@ -218,6 +228,7 @@ interface RunState {
   packageError: string | null;
   sessions: SessionListItem[];
   refreshSessions: () => Promise<void>;
+  setSelectedBenchmark: (benchmark: BenchmarkId) => void;
   bootstrap: () => Promise<void>;
   startRun: () => Promise<void>;
   attach: (sessionId: string) => Promise<void>;
@@ -240,11 +251,22 @@ interface DerivedNodeState {
   nodeStatus: Record<string, NodeStatus>;
 }
 
+function snapshotCanPackage(snapshot: SessionSnapshotDTO | null): boolean {
+  if (!snapshot || snapshot.finalized || snapshot.cancelled) return false;
+  if (snapshot.allowed_actions.includes("package")) return true;
+  // A terminal SSE event can arrive one render before the follow-up snapshot
+  // request. Use the same facts the backend enforces so the package card does
+  // not remain disabled because that one read was briefly stale.
+  return snapshot.status === "succeeded"
+    && snapshot.frontier.locked
+    && Boolean(snapshot.frontier.validation_best);
+}
+
 function recomputeDerived(get: () => RunState): DerivedNodeState {
   const { events, snapshot, packaging, packageResult, packageError } = get();
   const replayedStates = deriveNodeStates(events);
   const baseStates = withCancelledSessionOverlay(replayedStates, snapshot?.cancelled ?? false);
-  const canPackage = snapshot?.allowed_actions.includes("package") ?? false;
+  const canPackage = snapshotCanPackage(snapshot);
   const nodeStates = withPackagingOverlay(baseStates, packaging, packageResult, packageError, canPackage);
   return { nodeStates, nodeStatus: nodeStatusMap(nodeStates) };
 }
@@ -279,6 +301,7 @@ function optimisticSession(sessionId: string): SessionListItem {
 
 export const useRunStore = create<RunState>((set, get) => ({
   sessionId: null,
+  selectedBenchmark: initialBenchmark(),
   phase: "idle",
   snapshot: null,
   events: [],
@@ -293,6 +316,10 @@ export const useRunStore = create<RunState>((set, get) => ({
   packageError: null,
   sessions: [],
 
+  setSelectedBenchmark: (benchmark) => {
+    window.localStorage.setItem(BENCHMARK_STORAGE_KEY, benchmark);
+    set({ selectedBenchmark: benchmark });
+  },
   refreshSessions: async () => {
     try {
       set({ sessions: await api.listSessions() });
@@ -317,7 +344,10 @@ export const useRunStore = create<RunState>((set, get) => ({
   startRun: async () => {
     set({ phase: "connecting", error: null });
     try {
-      const { session_id } = await api.startSession(DEFAULT_CHALLENGE_CONFIG, DEFAULT_BUDGET_CONFIG);
+      const selected = BENCHMARK_OPTIONS.find(
+        (option) => option.id === get().selectedBenchmark,
+      ) ?? BENCHMARK_OPTIONS[0];
+      const { session_id } = await api.startSession(selected.challengeConfig, DEFAULT_BUDGET_CONFIG);
       // Insert the optimistic entry and select it before the network round
       // trip to attach() even begins, so `<select value={sessionId}>` always
       // has a matching option (AGENTS.md #9) -- never wait on a server-list

@@ -250,13 +250,19 @@ class BaselineReproducer:
             receipts.append(receipt)
             seed_runs.append({"seed": seed, "metrics": receipt.model_dump(mode="json"), "checkpoint": str(checkpoint), "prediction": str(prediction_path)})
         mean_primary = float(np.mean([item.primary for item in receipts]))
-        reference = float(self.contract.baseline_valid["primary"])
-        tolerance = float(self.config["acceptance"]["absolute_primary_tolerance"])
-        passed = abs(mean_primary - reference) <= tolerance
+        if self.contract.baseline_reference_mode == "reproduced":
+            reference = mean_primary
+            tolerance = 0.0
+            passed = True
+        else:
+            reference = float(self.contract.baseline_valid["primary"])
+            tolerance = float(self.config["acceptance"]["absolute_primary_tolerance"])
+            passed = abs(mean_primary - reference) <= tolerance
         result = {
             "run_id": "B0", "status": "succeeded" if passed else "failed",
             "reference_primary": reference, "observed_mean_primary": mean_primary,
             "absolute_difference": abs(mean_primary - reference), "tolerance": tolerance,
+            "reference_mode": self.contract.baseline_reference_mode,
             "seeds": seed_runs, "wall_seconds": time.perf_counter() - started,
             "parallel_seed_workers": workers,
             "starter_hashes": self.contract.official_hashes,
@@ -292,9 +298,23 @@ class BaselineReproducer:
             config_hash=sha256_file(self.config_path), users=valid["users"].tolist(),
             labels=valid["y"].tolist(), scores=model.predict(valid["X"]), comparable=False,
         )
-        random_bound = float(
-            json.loads(
-                self.contract.official_files["baseline_scores"].read_text(encoding="utf-8")
-            )["scores"]["random"]["valid"]["primary"]
-        ) + self.contract.sanity_shuffle_tolerance
-        return {"receipt": receipt.model_dump(mode="json"), "bound": random_bound, "passed": receipt.primary <= random_bound, "seed": seed}
+        if self.contract.baseline_reference_mode == "reproduced":
+            random_scores = np.random.default_rng(seed).random(len(valid["y"]))
+            random_receipt = self.evaluator.score(
+                run_id="sanity-random-bound",
+                prediction_artifact_id="memory",
+                config_hash=sha256_file(self.config_path),
+                users=valid["users"].tolist(),
+                labels=valid["y"].tolist(),
+                scores=random_scores,
+                comparable=False,
+            )
+            random_primary = random_receipt.primary
+        else:
+            random_primary = float(
+                json.loads(
+                    self.contract.official_files["baseline_scores"].read_text(encoding="utf-8")
+                )["scores"]["random"]["valid"]["primary"]
+            )
+        bound = random_primary + self.contract.sanity_shuffle_tolerance
+        return {"receipt": receipt.model_dump(mode="json"), "bound": bound, "passed": receipt.primary <= bound, "seed": seed}

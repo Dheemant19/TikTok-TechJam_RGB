@@ -1,0 +1,18 @@
+schema_version: 1
+challenge_config: configs/challenge/kuairand_1k.yaml
+score_split: valid
+run_harness_checks:
+  random: true
+  item_popularity: true
+  label_shuffle: true
+seed_policy:
+  seeds: [0, 1, 2, 3, 4]
+# The 1K vocabulary is much larger than Pure. Sequential seeds avoid holding
+# five complete FM optimizer states in memory at once.
+parallel_seed_workers: 1
+acceptance:
+  absolute_primary_tolerance: 0.0
+register_as:
+  - B0
+  - validation_best
+  - stable_fallback

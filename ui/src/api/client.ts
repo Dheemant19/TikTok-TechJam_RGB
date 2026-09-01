@@ -1,4 +1,4 @@
-import type { AllowedAction, ArtifactResponse, JsonRecord, RunEventDTO, SessionListItem, SessionSnapshotDTO } from "./types";
+import type { AllowedAction, ArtifactResponse, ChatTurnDTO, JsonRecord, RunEventDTO, SessionChatResponse, SessionListItem, SessionSnapshotDTO } from "./types";
 
 async function asJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -19,7 +19,7 @@ async function asEmpty(response: Response): Promise<void> {
   if (!response.ok) await asJson<unknown>(response);
 }
 
-function postJson<T>(url: string, body: JsonRecord): Promise<T> {
+function postJson<T>(url: string, body: unknown): Promise<T> {
   return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -59,6 +59,16 @@ export const api = {
 
   packageSession: (sessionId: string): Promise<JsonRecord> =>
     postJson(`/api/v1/sessions/${sessionId}/package`, { confirmation: sessionId }),
+
+  chatSession: (
+    sessionId: string,
+    question: string,
+    history: ChatTurnDTO[],
+  ): Promise<SessionChatResponse> =>
+    postJson(`/api/v1/sessions/${encodeURIComponent(sessionId)}/chat`, {
+      question,
+      history,
+    }),
 };
 
 /**

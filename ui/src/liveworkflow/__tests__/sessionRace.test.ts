@@ -116,6 +116,25 @@ describe("session-picker race (AGENTS.md #9)", () => {
     expect(state.sessions.some((session) => session.session_id === newSessionId && session.status === "running")).toBe(true);
   });
 
+  it("starts KuaiRand-1K with its isolated challenge config", async () => {
+    useRunStore.getState().setSelectedBenchmark("kuairand_1k");
+    vi.mocked(api.startSession).mockResolvedValue({
+      session_id: newSessionId,
+      snapshot_url: `/api/v1/sessions/${newSessionId}/snapshot`,
+    });
+    vi.mocked(api.getSnapshot).mockResolvedValue(makeSnapshot(newSessionId));
+    vi.mocked(api.listSessions).mockResolvedValue([]);
+
+    await useRunStore.getState().startRun();
+
+    expect(api.startSession).toHaveBeenCalledWith(
+      "configs/challenge/kuairand_1k.yaml",
+      "configs/budgets/competition.yaml",
+    );
+    expect(useRunStore.getState().sessionId).toBe(newSessionId);
+  });
+
+
   it("shows the real error and leaves the old session selected when startSession fails", async () => {
     vi.mocked(api.getSnapshot).mockImplementation((sessionId: string) => Promise.resolve(makeSnapshot(sessionId)));
     await useRunStore.getState().attach(oldSessionId);

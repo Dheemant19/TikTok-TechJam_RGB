@@ -1,0 +1,40 @@
+{
+  "dataset": "KuaiRand-1K",
+  "label": "long_view",
+  "task": "within-user ranking over logged impressions",
+  "split": {
+    "train": "20220408-20220421",
+    "valid": "20220422-20220428",
+    "test": "20220429-20220508"
+  },
+  "metrics": [
+    "GAUC",
+    "nDCG@5"
+  ],
+  "primary": "mean(GAUC, nDCG@5)",
+  "baseline_reference_mode": "reproduced",
+  "convergence_rule": {
+    "epsilon": 0.002,
+    "N": 3
+  },
+  "scores": {
+    "fm_reference": {
+      "config": {
+        "model": "FM",
+        "k": 16,
+        "lr": 0.001,
+        "batch": 8192,
+        "max_epochs": 40,
+        "patience": 4,
+        "fields": [
+          "user_id",
+          "video_id",
+          "author_id",
+          "tab",
+          "dur_bucket"
+        ]
+      },
+      "note": "No organizer-published KuaiRand-1K FM score is available. Each session reproduces this fixed FM and uses its observed validation mean as B0."
+    }
+  }
+}

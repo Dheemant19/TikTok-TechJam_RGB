@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTheme } from "../hooks/useTheme";
-import { useRunStore } from "../liveworkflow/runStore";
+import { BENCHMARK_OPTIONS, useRunStore, type BenchmarkId } from "../liveworkflow/runStore";
+import { selectBenchmark } from "../liveworkflow/selectors";
 import { PRIMARY_ROUTES } from "../data/routeRegistry";
 
 
@@ -425,6 +426,9 @@ function RunControls() {
   const phase = useRunStore((state) => state.phase);
   const snapshot = useRunStore((state) => state.snapshot);
   const error = useRunStore((state) => state.error);
+  const events = useRunStore((state) => state.events);
+  const selectedBenchmark = useRunStore((state) => state.selectedBenchmark);
+  const setSelectedBenchmark = useRunStore((state) => state.setSelectedBenchmark);
   const startRun = useRunStore((state) => state.startRun);
   const pauseRun = useRunStore((state) => state.pauseRun);
   const resumeRun = useRunStore((state) => state.resumeRun);
@@ -439,6 +443,7 @@ function RunControls() {
   const isConnecting = phase === "connecting";
   const allowed = snapshot?.allowed_actions ?? [];
   const label = isConnecting ? "Starting..." : "Start Run";
+  const activeBenchmark = selectBenchmark(events);
 
   if (!sessionId) {
     return (
@@ -448,6 +453,18 @@ function RunControls() {
             {error}
           </span>
         )}
+        <label className="benchmark-picker">
+          <select
+            aria-label="Training dataset"
+            value={selectedBenchmark}
+            onChange={(event) => setSelectedBenchmark(event.target.value as BenchmarkId)}
+            disabled={isConnecting}
+          >
+            {BENCHMARK_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>{option.label}</option>
+            ))}
+          </select>
+        </label>
         <SessionPicker />
         <button type="button" onClick={() => void startRun()} disabled={isConnecting} className="toolbar-button toolbar-button--run">
           {isConnecting ? <span className="toolbar-spinner" aria-hidden="true" /> : (
@@ -469,6 +486,11 @@ function RunControls() {
         </svg>
         <span>{phase === "live" ? "Live" : phase === "retrying" ? "Reconnecting" : phase === "connecting" ? "Connecting" : phase}</span>
       </span>
+      {activeBenchmark && (
+        <span className="benchmark-chip" title={`Training dataset: ${activeBenchmark.label}`}>
+          {activeBenchmark.label}
+        </span>
+      )}
       <SessionPicker />
       <button type="button" onClick={() => void detach()} className="toolbar-icon-action" aria-label="Detach from session" title="Detach from session">
         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">

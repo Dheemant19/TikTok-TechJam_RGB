@@ -81,14 +81,21 @@ class SubmissionFinalizer:
         unknown = state["unknown_ids"]
         offsets = state["offsets"]
         edges = np.asarray(state["duration_bucket_edges"])
-        videos = pl.read_csv(self.contract.dataset_dir / "video_features_basic_pure.csv", columns=["video_id", "author_id"])
+        videos = pl.read_csv(
+            self.contract.dataset_dir / self.contract.dataset_files["video_features"],
+            columns=["video_id", "author_id"],
+        )
         author = dict(zip(videos["video_id"].cast(pl.String).to_list(), videos["author_id"].cast(pl.String).to_list()))
         lo, hi = self.contract.splits["test"]
         # Feature-only projection: long_view and all feedback labels are never read.
-        table = pl.read_csv(
-            self.contract.dataset_dir / "log_standard_4_22_to_5_08_pure.csv",
-            columns=["date", "time_ms", "hourmin", "user_id", "video_id", "tab", "duration_ms"],
-        ).filter(pl.col("date").is_between(lo, hi))
+        table = (
+            pl.scan_csv(
+                self.contract.dataset_dir / self.contract.dataset_files["followup_log"],
+            )
+            .select(["date", "time_ms", "hourmin", "user_id", "video_id", "tab", "duration_ms"])
+            .filter(pl.col("date").is_between(lo, hi))
+            .collect(engine="streaming")
+        )
         users = table["user_id"].cast(pl.String).to_list()
         video_ids = table["video_id"].cast(pl.String).to_list()
         tabs = table["tab"].cast(pl.String).to_list()
@@ -228,7 +235,10 @@ class SubmissionFinalizer:
             raise IntegrityViolation(f"official submission check failed: {check_stderr}")
         events = self.ledger.events(session_id)
         manifest = {
-            "schema_version": 1, "session_id": session_id, "validation_best": winner,
+            "schema_version": 1,
+            "session_id": session_id,
+            "benchmark": self.contract.benchmark,
+            "validation_best": winner,
             "experiment_id": experiment_id, "checkpoint": str(checkpoint), "checkpoint_hash": sha256_file(checkpoint),
             "transform_state": str(transform_dir / "transform_state.json"),
             "transform_state_hash": sha256_file(transform_dir / "transform_state.json"),

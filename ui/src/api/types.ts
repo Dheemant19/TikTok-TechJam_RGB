@@ -70,6 +70,22 @@ export interface SessionListItem {
   cancelled: number;
 }
 
+export interface ChatTurnDTO {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface SessionChatResponse {
+  answer: string;
+  model: string;
+  reasoning_effort: string;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    model_id: string;
+  };
+}
+
 export interface ArtifactResponse {
   artifact_id: string;
   path: string;

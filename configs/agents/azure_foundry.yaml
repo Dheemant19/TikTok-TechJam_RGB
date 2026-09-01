@@ -27,6 +27,14 @@ code_recovery_agent:
   # is used here for feature parity with the research agent.
   use_responses_api: true
 
+session_chat:
+  model_deployment_env: AZURE_CHAT_MODEL_DEPLOYMENT
+  temperature: 0
+  reasoning_effort: medium
+  timeout_seconds: 120
+  transient_retry_limit: 2
+  use_responses_api: true
+
 structured_output:
   require_pydantic_validation: true
   reject_unknown_fields: true

@@ -19,6 +19,9 @@ class IntegrityViolation(RuntimeError):
 PROTECTED_PATHS = {
     "kuairand-starter-kit/evaluate.py", "kuairand-starter-kit/data.py",
     "kuairand-starter-kit/baseline_scores.json", "configs/challenge/kuairand_pure.yaml",
+    "kuairand-1k-starter-kit/data.py", "kuairand-1k-starter-kit/submit.py",
+    "kuairand-1k-starter-kit/baseline_scores.json", "configs/challenge/kuairand_1k.yaml",
+    "src/flowstate/data/kuairand_1k.py",
 }
 
 

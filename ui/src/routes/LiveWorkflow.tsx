@@ -1,4 +1,5 @@
 import { LiveWorkflowCanvas } from "../liveworkflow/LiveWorkflowCanvas";
+import { SessionChat } from "../components/SessionChat";
 import { StageListFallback } from "../components/StageListFallback";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -16,6 +17,7 @@ export function LiveWorkflow() {
           <LiveWorkflowCanvas reducedMotion={reducedMotion} isNarrow={false} idleEdgeSpeed={3} />
         )}
       </div>
+      <SessionChat />
     </div>
   );
 }
