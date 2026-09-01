@@ -270,7 +270,8 @@ class AutonomousResearchWorkflow:
                 "dataset": self.s.contract.display_name,
             },
         )
-        gpu_devices = self._hardware.get("devices", [])
+        accelerator = str(self._hardware.get("accelerator", "cpu"))
+        accelerator_name = str(self._hardware.get("accelerator_name", "CPU"))
         self._event(
             state,
             "train_data",
@@ -278,9 +279,9 @@ class AutonomousResearchWorkflow:
             "hardware_ready",
             ComponentStatus.SUCCEEDED,
             (
-                f"CUDA training available on {gpu_devices[0]['name']}"
-                if self._hardware.get("cuda_usable") and gpu_devices
-                else "CUDA unavailable; experiments will use CPU-compatible methods"
+                f"{accelerator_name} acceleration available"
+                if accelerator != "cpu"
+                else "No supported GPU available; using optimized CPU-compatible methods"
             ),
             {"hardware": self._hardware},
         )
@@ -401,17 +402,14 @@ class AutonomousResearchWorkflow:
             )
             return {"baseline_result": result, "error": "baseline reproduction failed", "stop": True, "stop_reason": "baseline_gate"}
 
-        # Every downstream decision compares against this value (decide() builds
-        # its MetricReceipt comparator straight from state["best_metric"]/
-        # "parent_metric"), so it must be the same 5-seed mean the UI already
-        # shows as "the baseline" -- using seeds[0] alone silently compared
-        # every experiment against one arbitrary noisy seed instead of the
-        # stable aggregate the reproduction was designed to produce.
+        # Every downstream decision compares against this value, so use the
+        # aggregate of every seed required by this benchmark's locked runtime
+        # config. Pure uses its five-seed policy; 1K uses its deterministic
+        # single-seed reference because no organizer-published 1K score exists.
         metrics = self._average_seed_metrics([entry["metrics"] for entry in result["seeds"]])
         # Persist successful baseline evidence before running secondary sanity
-        # controls. The 2026-08-30 Windows failure happened after all five FM
-        # seeds completed; because this was previously deferred, the UI falsely
-        # looked as though the baseline itself had never computed.
+        # controls. This must happen immediately after configured seeds finish
+        # so a later control failure cannot make the completed baseline look lost.
         for seed_result in result["seeds"]:
             metric = seed_result["metrics"]
             self.s.ledger.store_metric_receipt(

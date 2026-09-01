@@ -14,4 +14,4 @@ training:
   patience: 3
   # Graceful per-run limit; the execution funnel also enforces a hard process timeout.
   maximum_seconds: 1200
-device: cuda
+device: auto

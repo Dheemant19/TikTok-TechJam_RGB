@@ -5,11 +5,17 @@ run_harness_checks:
   random: true
   item_popularity: true
   label_shuffle: true
+# KuaiRand-1K has no organizer-published FM score. One locked seed produces
+# the deterministic session reference without pretending a five-seed policy
+# exists. The model, split, batch size, epochs, and evaluator stay unchanged.
 seed_policy:
-  seeds: [0, 1, 2, 3, 4]
-# The 1K vocabulary is much larger than Pure. Sequential seeds avoid holding
-# five complete FM optimizer states in memory at once.
+  seeds: [0]
 parallel_seed_workers: 1
+
+# The 2.9M-entry vocabulary makes dense NumPy Adam scan hundreds of
+# megabytes for every batch. Run the same FM equations and fixed batches
+# through Torch on CUDA, Apple MPS, or optimized CPU kernels.
+execution_device: auto
 acceptance:
   absolute_primary_tolerance: 0.0
 register_as:

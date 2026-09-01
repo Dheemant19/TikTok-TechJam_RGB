@@ -17,7 +17,9 @@ dependencies = [
   "langgraph>=0.6,<2",
   "langgraph-checkpoint-sqlite>=2,<4",
   "mcp[cli]>=1.28,<2",
-  "numpy>=2.2,<3",
+  "numpy>=1.26,<2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "numpy>=2.2,<3; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+  "onnxruntime==1.23.2",
   "polars>=1.32,<2",
   "psutil>=7,<8",
   "pyarrow>=20,<24",
@@ -25,7 +27,8 @@ dependencies = [
   "nvidia-ml-py>=13,<14",
   "python-dotenv>=1.1,<2",
   "PyYAML>=6.0,<7",
-  "torch==2.11.0+cu128",
+  "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "torch==2.11.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
   "typer>=0.20,<1",
   "uvicorn[standard]>=0.35,<1",
 ]
@@ -44,7 +47,9 @@ flowstate-mcp = "flowstate.mcp.server:main"
 packages = ["src/flowstate"]
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu128" }
+torch = [
+  { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

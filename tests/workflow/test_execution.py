@@ -183,6 +183,20 @@ def test_cuda_device_request_resolves_unspecified_index(monkeypatch) -> None:
 
     assert str(resolve_device("cuda")) == "cuda:0"
 
+
+def test_auto_device_uses_cpu_without_supported_gpu(monkeypatch) -> None:
+    monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+    monkeypatch.setattr("torch.backends.mps.is_available", lambda: False)
+
+    assert str(resolve_device("auto")) == "cpu"
+
+
+def test_auto_device_uses_apple_mps_when_available(monkeypatch) -> None:
+    monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+    monkeypatch.setattr("torch.backends.mps.is_available", lambda: True)
+
+    assert str(resolve_device("auto")) == "mps"
+
 def test_checkpoint_prediction_uses_training_model_contract(tmp_path: Path) -> None:
     from flowstate.models.experimental import FactorizationMachine
 

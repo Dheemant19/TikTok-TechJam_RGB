@@ -42,6 +42,16 @@ def hardware_capabilities() -> dict[str, Any]:
             )
 
     cuda_usable = bool(torch.cuda.is_available() and devices and torch.version.cuda)
+    mps_backend = getattr(torch.backends, "mps", None)
+    mps_available = bool(mps_backend and mps_backend.is_available())
+    accelerator = "cuda" if cuda_usable else "mps" if mps_available else "cpu"
+    accelerator_name = (
+        devices[0]["name"]
+        if cuda_usable
+        else "Apple Metal Performance Shaders"
+        if mps_available
+        else "CPU"
+    )
     return {
         "platform": platform.platform(),
         "cpu_logical_cores": psutil.cpu_count(logical=True),
@@ -51,12 +61,14 @@ def hardware_capabilities() -> dict[str, Any]:
         "nvidia_driver": driver_version,
         "cuda_available": torch.cuda.is_available(),
         "cuda_usable": cuda_usable,
+        "mps_available": mps_available,
+        "accelerator": accelerator,
+        "accelerator_name": accelerator_name,
         "devices": devices,
         "compatibility_decision": (
-            "CUDA training is available for PyTorch models. Select cuda unless the model or operation "
-            "requires an unsupported kernel, exceeds device memory, or is faster on CPU."
-            if cuda_usable
-            else "CUDA training is unavailable in this runtime; select cpu."
+            f"{accelerator_name} acceleration is available; device=auto selects it."
+            if accelerator != "cpu"
+            else "No supported GPU is available; device=auto uses optimized Torch CPU kernels."
         ),
         "telemetry_warning": nvml_error,
     }

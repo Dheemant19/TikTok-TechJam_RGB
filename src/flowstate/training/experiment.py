@@ -65,10 +65,20 @@ def bpr_pairs(
 
 def resolve_device(requested: str) -> torch.device:
     value = requested.strip().lower()
+    mps_backend = getattr(torch.backends, "mps", None)
+    mps_available = bool(mps_backend and mps_backend.is_available())
     if value == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        return torch.device("mps" if mps_available else "cpu")
     if value == "cpu":
         return torch.device("cpu")
+    if value == "mps":
+        if not mps_available:
+            raise RuntimeError(
+                f"device={requested!r} requires Apple MPS, but this PyTorch build cannot access it"
+            )
+        return torch.device("mps")
     if value == "cuda" or value.startswith("cuda:"):
         if not torch.cuda.is_available():
             raise RuntimeError(
@@ -83,7 +93,17 @@ def resolve_device(requested: str) -> torch.device:
                 f"{torch.cuda.device_count()} CUDA device(s) are visible"
             )
         return torch.device("cuda", index)
-    raise ValueError(f"unsupported device {requested!r}; expected auto, cpu, cuda, or cuda:<index>")
+    raise ValueError(
+        f"unsupported device {requested!r}; expected auto, cpu, mps, cuda, or cuda:<index>"
+    )
+
+
+def device_name(device: torch.device) -> str:
+    if device.type == "cuda":
+        return torch.cuda.get_device_name(device)
+    if device.type == "mps":
+        return "Apple Metal Performance Shaders"
+    return "CPU"
 
 
 def build_model(dimension: int, field_count: int, config: dict[str, Any]) -> torch.nn.Module:
@@ -307,7 +327,7 @@ def train(
         "uses_chronological_history": bool(getattr(model, "requires_history", False)),
         "seed": seed,
         "device": str(device),
-        "device_name": torch.cuda.get_device_name(device) if device.type == "cuda" else None,
+        "device_name": device_name(device),
         "cuda_version": torch.version.cuda if device.type == "cuda" else None,
         "compute_capability": list(torch.cuda.get_device_capability(device)) if device.type == "cuda" else None,
         "rows_train": len(train_data["y"]),
@@ -355,7 +375,7 @@ def predict(checkpoint_path: Path, data_path: Path, output_path: Path) -> dict[s
         "data": str(data_path),
         "scores": str(output_path),
         "device": str(device),
-        "device_name": torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU",
+        "device_name": device_name(device),
     }
 
 

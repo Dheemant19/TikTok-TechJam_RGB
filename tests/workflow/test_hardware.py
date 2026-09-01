@@ -6,6 +6,9 @@ def test_hardware_capabilities_report_device_compatibility() -> None:
 
     assert isinstance(capabilities["cuda_available"], bool)
     assert isinstance(capabilities["cuda_usable"], bool)
+    assert isinstance(capabilities["mps_available"], bool)
+    assert capabilities["accelerator"] in {"cuda", "mps", "cpu"}
+    assert capabilities["accelerator_name"]
     assert capabilities["torch_version"]
     assert capabilities["compatibility_decision"]
     if capabilities["cuda_usable"]:
