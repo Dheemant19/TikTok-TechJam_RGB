@@ -1,6 +1,6 @@
 schema_version: 1
 
-# Tighter team recommendation for a complete local demo and a bounded research loop.
+# Six-hour team ceiling for a bounded competition research run.
 # Azure AI Foundry calls plan and patch code; model training uses the local machine.
 # This block is cost-tracking documentation only; the fields below are not read by
 # the workflow code (which enforces the token/experiment caps under `limits`).
@@ -13,14 +13,14 @@ azure:
     reserve: 20
   stop_before_credit_limit: true
 
-# Supports B0 plus up to nine novel experiments, enough to apply the organizer's
-# three-consecutive-non-improvement convergence rule without an open-ended loop.
+# Supports B0 plus up to fifty novel experiments. The loop normally stops
+# earlier when the organizer's three-consecutive-non-improvement rule converges.
 limits:
-  total_wall_seconds: 43200
+  total_wall_seconds: 21600
   total_gpu_hours: 4
   bedrock_input_tokens: 6000000
   bedrock_output_tokens: 1200000
-  maximum_experiments: 3
+  maximum_experiments: 50
   # Hard stop for one full model. A timeout abandons the method and returns to research.
   per_run_timeout_seconds: 1800
   recovery_attempts_per_run: 2
